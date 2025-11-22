@@ -203,7 +203,8 @@
         // --- Constants ---
         const HELIX_RADIUS = 30;
         const HELIX_HEIGHT_STEP = 8;
-        const SATELLITE_RADIUS = 25; // Increased from 15
+        const SATELLITE_RADIUS = 35; // Increased from 25
+        const FOCUS_GAP = 80; // Vertical gap to create around active root
 
         // --- Three.js Globals ---
         let scene, camera, renderer, labelRenderer, controls, raycaster, mouse;
@@ -379,35 +380,73 @@
             const halfHeight = totalHeight / 2;
             const centerY = controls.target.y; // Center wrapping around look target
 
+            // Find active root index if any
+            let activeIndex = -1;
+            if (state.activeRoot) {
+                const activeObj = state.objects.roots.find(o => o.root === state.activeRoot);
+                if (activeObj) activeIndex = activeObj.mesh.userData.baseIndex;
+            }
+
             state.objects.roots.forEach(obj => {
+                // 1. Calculate Base Position (Infinite Scroll)
                 let y = obj.mesh.position.y;
                 const originalY = (obj.mesh.userData.baseIndex - totalRoots / 2) * HELIX_HEIGHT_STEP;
                 
-                // Calculate offset from center
-                let diff = y - centerY;
+                // The ideal Y is originalY + k * totalHeight
+                const k = Math.round((centerY - originalY) / totalHeight);
+                let newY = originalY + k * totalHeight;
 
-                // Wrap logic
-                if (diff > halfHeight) {
-                    y -= totalHeight;
-                } else if (diff < -halfHeight) {
-                    y += totalHeight;
+                // 2. Apply Focus Distortion (Gap)
+                // We want to push items away from the active root to make space
+                if (activeIndex !== -1) {
+                    // We need to know the "virtual index" of this item relative to the active one
+                    // taking wrapping into account.
+                    // The active item is at activeIndex.
+                    // This item is at obj.mesh.userData.baseIndex.
+                    // But they might be wrapped.
+                    
+                    // Let's use Y distance to determine relative position
+                    const activeObj = state.objects.roots.find(o => o.root === state.activeRoot);
+                    // We can't rely on activeObj.mesh.position.y because it's being animated/updated
+                    // Instead, calculate the "undistorted" Y of the active object closest to centerY
+                    const activeOriginalY = (activeIndex - totalRoots / 2) * HELIX_HEIGHT_STEP;
+                    const activeK = Math.round((centerY - activeOriginalY) / totalHeight);
+                    const activeY = activeOriginalY + activeK * totalHeight;
+
+                    const distY = newY - activeY;
+                    
+                    // Apply gap
+                    if (Math.abs(distY) < 0.1) {
+                        // This is the active root, no offset
+                    } else if (distY > 0) {
+                        newY += FOCUS_GAP / 2;
+                    } else {
+                        newY -= FOCUS_GAP / 2;
+                    }
                 }
 
-                // If we wrapped, we need to snap to the correct multiple of totalHeight relative to originalY
-                // Actually, simpler:
-                // The ideal Y is originalY + k * totalHeight
-                // We want the k that minimizes |idealY - centerY|
+                // Smoothly interpolate to newY? 
+                // For infinite scroll, we usually snap. But for focus gap, we want smooth.
+                // However, updateHelixInfinite runs every frame. If we just set it, it snaps.
+                // We can use a simple lerp factor.
                 
-                const k = Math.round((centerY - originalY) / totalHeight);
-                const newY = originalY + k * totalHeight;
-
-                if (Math.abs(newY - obj.mesh.position.y) > 0.1) {
-                    obj.mesh.position.y = newY;
+                const diff = newY - obj.mesh.position.y;
+                if (Math.abs(diff) > 0.1) {
+                    // If the difference is huge (wrapping), snap.
+                    if (Math.abs(diff) > totalHeight / 2) {
+                        obj.mesh.position.y = newY;
+                    } else {
+                        // Lerp for smooth gap opening
+                        obj.mesh.position.y += diff * 0.1;
+                    }
                     
                     // Update X/Z to maintain spiral
                     // The angle depends on the continuous index
                     // continuousIndex = newY / HELIX_HEIGHT_STEP + totalRoots/2
-                    const continuousIndex = newY / HELIX_HEIGHT_STEP + totalRoots / 2;
+                    // Note: We use the *undistorted* Y for X/Z to keep the spiral shape consistent?
+                    // Or do we want the spiral to stretch? 
+                    // If we stretch X/Z, it looks like the spring is being pulled apart. That's good.
+                    const continuousIndex = obj.mesh.position.y / HELIX_HEIGHT_STEP + totalRoots / 2;
                     const angle = continuousIndex * 0.5;
                     
                     obj.mesh.position.x = Math.cos(angle) * HELIX_RADIUS;
@@ -428,7 +467,7 @@
 
             // Move Camera to focus (smooth tween)
             const targetPos = position.clone();
-            const camOffset = new THREE.Vector3(0, 0, 100); // Distance from root (increased from 70)
+            const camOffset = new THREE.Vector3(0, 0, 150); // Distance from root (increased from 100)
             const endCamPos = targetPos.clone().add(camOffset);
 
             new TWEEN.Tween(camera.position)
@@ -444,14 +483,22 @@
             // Expand Satellites
             const rootObj = state.objects.roots.find(o => o.root === rootStr);
             const rootColor = rootObj ? rootObj.mesh.userData.color : new THREE.Color(0x4db8ff);
-            spawnSatellites(rootStr, position, rootColor);
+            // Pass the mesh itself so satellites can be parented
+            spawnSatellites(rootStr, rootObj.mesh, rootColor);
         }
 
-        function spawnSatellites(rootStr, centerPos, rootColor) {
+        function spawnSatellites(rootStr, rootMesh, rootColor) {
             // Clear existing satellites
-            while(satelliteGroup.children.length > 0){ 
-                satelliteGroup.remove(satelliteGroup.children[0]); 
-            }
+            // Note: We need to remove them from their parents (which are root meshes)
+            // But state.objects.satellites stores { labelObj, verb }.
+            // labelObj is a CSS2DObject.
+            // We also added a Line to satelliteGroup? No, we should add Line to rootMesh too.
+            
+            // Clean up previous satellites
+            state.objects.satellites.forEach(obj => {
+                if (obj.line) obj.line.removeFromParent();
+                if (obj.labelObj) obj.labelObj.removeFromParent();
+            });
             state.objects.satellites = [];
 
             const verbs = state.roots[rootStr];
@@ -459,22 +506,22 @@
 
             // Helical arrangement parameters
             const turns = 2; 
-            const heightSpread = 20;
+            const heightSpread = 40; // Increased from 20 to use the gap
             
             verbs.forEach((verb, i) => {
-                // Helical path around the root
+                // Helical path around the root (Local Coordinates)
                 const progress = i / count;
                 const angle = progress * Math.PI * 2 * turns;
                 const yOffset = (progress - 0.5) * heightSpread;
                 
-                const x = centerPos.x + Math.cos(angle) * SATELLITE_RADIUS;
-                const y = centerPos.y + yOffset;
-                const z = centerPos.z + Math.sin(angle) * SATELLITE_RADIUS;
+                const x = Math.cos(angle) * SATELLITE_RADIUS;
+                const y = yOffset;
+                const z = Math.sin(angle) * SATELLITE_RADIUS;
 
                 const pos = new THREE.Vector3(x, y, z);
 
-                // Line to center
-                const points = [centerPos, pos];
+                // Line to center (0,0,0 is root center in local space)
+                const points = [new THREE.Vector3(0,0,0), pos];
                 const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
                 const lineMat = new THREE.LineBasicMaterial({ 
                     color: rootColor, 
@@ -482,7 +529,7 @@
                     opacity: 0.4 
                 });
                 const line = new THREE.Line(lineGeo, lineMat);
-                satelliteGroup.add(line);
+                rootMesh.add(line);
 
                 // Verb Node
                 const div = document.createElement('div');
@@ -495,9 +542,9 @@
                 
                 const labelObj = new CSS2DObject(div);
                 labelObj.position.copy(pos);
-                satelliteGroup.add(labelObj);
+                rootMesh.add(labelObj);
 
-                state.objects.satellites.push({ labelObj, verb });
+                state.objects.satellites.push({ labelObj, line, verb });
             });
 
             updateSatelliteLabels();
