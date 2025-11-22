@@ -309,7 +309,7 @@
                                     <span style="color: #aaa; font-size: 0.9em;">${form.trl}</span>
                                 </div>
                                 ${audioPath ? `
-                                <button class="play-btn" onclick="new Audio('${audioPath}').play()">
+                                <button class="play-btn" onclick="playAudio(this, '${audioPath}')">
                                     ▶
                                 </button>` : ''}
                             </div>
@@ -322,6 +322,25 @@
             content.innerHTML = html;
             panel.style.display = 'block';
         }
+
+        window.playAudio = async function(btn, path) {
+            try {
+                const audio = new Audio(path);
+                // Handle 404s or other loading errors
+                audio.addEventListener('error', (e) => {
+                    console.warn('Audio load failed:', path);
+                    btn.style.background = '#ff4d4d';
+                    btn.title = 'Audio unavailable';
+                    btn.innerHTML = '✖';
+                });
+                await audio.play();
+            } catch (e) {
+                console.warn('Audio playback failed:', e);
+                btn.style.background = '#ff4d4d';
+                btn.title = 'Audio unavailable';
+                btn.innerHTML = '✖';
+            }
+        };
 
         function animate() {
             requestAnimationFrame(animate);
