@@ -1,6 +1,5 @@
-# Cloudflare Pages configuration
 name = "sandbox-miami"
 compatibility_date = "2024-01-01"
 
-[site]
-bucket = "."
+[assets]
+directory = "."
