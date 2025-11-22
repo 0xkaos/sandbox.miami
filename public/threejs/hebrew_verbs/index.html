@@ -89,6 +89,16 @@
         }
         #info-panel.visible { transform: translateX(0); }
 
+        #close-panel {
+            position: absolute; top: 10px; right: 10px;
+            background: none; border: none;
+            color: #666; font-size: 24px; line-height: 1;
+            cursor: pointer; padding: 5px;
+            transition: color 0.2s;
+            z-index: 10;
+        }
+        #close-panel:hover { color: #fff; }
+
         h1 { margin: 0; font-size: 1.5em; background: linear-gradient(45deg, #4db8ff, #b84dff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         
         /* Search */
@@ -140,6 +150,7 @@
         </div>
 
         <div id="info-panel">
+            <button id="close-panel">&times;</button>
             <div id="panel-content"></div>
         </div>
     </div>
@@ -208,6 +219,13 @@
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
             controls.maxDistance = 200;
+            controls.enablePan = true;
+            controls.screenSpacePanning = false; // Pan up/down moves camera Y, not screen Y
+            controls.mouseButtons = {
+                LEFT: THREE.MOUSE.ROTATE,
+                MIDDLE: THREE.MOUSE.PAN,
+                RIGHT: THREE.MOUSE.PAN
+            };
 
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
@@ -228,6 +246,9 @@
             // Event Listeners
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('pointerdown', onPointerDown);
+            document.getElementById('close-panel').addEventListener('click', () => {
+                document.getElementById('info-panel').classList.remove('visible');
+            });
 
             // 2. Load & Process Data
             try {
@@ -260,21 +281,26 @@
 
         function buildHelix() {
             const roots = Object.keys(state.roots).sort(); // Alphabetical sort
+            const totalRoots = roots.length;
             
             roots.forEach((rootStr, index) => {
                 const angle = index * 0.5; // Spiral angle step
-                const y = (index - roots.length / 2) * HELIX_HEIGHT_STEP;
+                const y = (index - totalRoots / 2) * HELIX_HEIGHT_STEP;
                 const x = Math.cos(angle) * HELIX_RADIUS;
                 const z = Math.sin(angle) * HELIX_RADIUS;
 
+                // Gradient Color (Rainbow along the helix)
+                const hue = index / totalRoots; 
+                const color = new THREE.Color().setHSL(hue, 1.0, 0.6);
+
                 // 3D Object (Glowing Sphere)
                 const geometry = new THREE.SphereGeometry(0.8, 16, 16);
-                const material = new THREE.MeshBasicMaterial({ color: 0x4db8ff });
+                const material = new THREE.MeshBasicMaterial({ color: color });
                 const mesh = new THREE.Mesh(geometry, material);
                 mesh.position.set(x, y, z);
                 
                 // Store data in mesh
-                mesh.userData = { type: 'root', root: rootStr };
+                mesh.userData = { type: 'root', root: rootStr, baseIndex: index, color: color };
                 rootGroup.add(mesh);
 
                 // Label
@@ -288,6 +314,51 @@
                 mesh.add(label);
 
                 state.objects.roots.push({ mesh, label, root: rootStr });
+            });
+        }
+
+        function updateHelixInfinite() {
+            if (state.objects.roots.length === 0) return;
+
+            const totalRoots = state.objects.roots.length;
+            const totalHeight = totalRoots * HELIX_HEIGHT_STEP;
+            const halfHeight = totalHeight / 2;
+            const centerY = controls.target.y; // Center wrapping around look target
+
+            state.objects.roots.forEach(obj => {
+                let y = obj.mesh.position.y;
+                const originalY = (obj.mesh.userData.baseIndex - totalRoots / 2) * HELIX_HEIGHT_STEP;
+                
+                // Calculate offset from center
+                let diff = y - centerY;
+
+                // Wrap logic
+                if (diff > halfHeight) {
+                    y -= totalHeight;
+                } else if (diff < -halfHeight) {
+                    y += totalHeight;
+                }
+
+                // If we wrapped, we need to snap to the correct multiple of totalHeight relative to originalY
+                // Actually, simpler:
+                // The ideal Y is originalY + k * totalHeight
+                // We want the k that minimizes |idealY - centerY|
+                
+                const k = Math.round((centerY - originalY) / totalHeight);
+                const newY = originalY + k * totalHeight;
+
+                if (Math.abs(newY - obj.mesh.position.y) > 0.1) {
+                    obj.mesh.position.y = newY;
+                    
+                    // Update X/Z to maintain spiral
+                    // The angle depends on the continuous index
+                    // continuousIndex = newY / HELIX_HEIGHT_STEP + totalRoots/2
+                    const continuousIndex = newY / HELIX_HEIGHT_STEP + totalRoots / 2;
+                    const angle = continuousIndex * 0.5;
+                    
+                    obj.mesh.position.x = Math.cos(angle) * HELIX_RADIUS;
+                    obj.mesh.position.z = Math.sin(angle) * HELIX_RADIUS;
+                }
             });
         }
 
@@ -499,6 +570,7 @@
             requestAnimationFrame(animate);
             TWEEN.update();
             controls.update();
+            updateHelixInfinite();
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
         }
