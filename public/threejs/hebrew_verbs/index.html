@@ -13,6 +13,7 @@
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none;
             display: flex; flex-direction: column;
+            z-index: 1000;
         }
 
         /* Top Bar */
@@ -176,7 +177,7 @@
         const SATELLITE_RADIUS = 15;
 
         // --- Three.js Globals ---
-        let scene, camera, renderer, labelRenderer, controls;
+        let scene, camera, renderer, labelRenderer, controls, raycaster, mouse;
         let rootGroup, satelliteGroup;
 
         init();
@@ -192,18 +193,23 @@
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.domElement.style.zIndex = '0';
             document.getElementById('canvas-container').appendChild(renderer.domElement);
 
             labelRenderer = new CSS2DRenderer();
             labelRenderer.setSize(window.innerWidth, window.innerHeight);
             labelRenderer.domElement.style.position = 'absolute';
             labelRenderer.domElement.style.top = '0px';
+            labelRenderer.domElement.style.zIndex = '1'; // Ensure it's above WebGL but below UI
             document.getElementById('canvas-container').appendChild(labelRenderer.domElement);
 
             controls = new OrbitControls(camera, labelRenderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
             controls.maxDistance = 200;
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
 
             // Groups
             rootGroup = new THREE.Group();
@@ -217,6 +223,10 @@
             const pointLight = new THREE.PointLight(0x4db8ff, 1, 100);
             pointLight.position.set(0, 0, 0);
             scene.add(pointLight);
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('pointerdown', onPointerDown);
 
             // 2. Load & Process Data
             try {
@@ -490,6 +500,26 @@
             controls.update();
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
+        }
+
+        function onPointerDown(event) {
+            // Only handle clicks on the canvas/renderer, not UI
+            if (event.target.closest('#ui-layer')) return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            // Check intersections with Root Spheres
+            const intersects = raycaster.intersectObjects(rootGroup.children);
+
+            if (intersects.length > 0) {
+                const object = intersects[0].object;
+                if (object.userData.type === 'root') {
+                    selectRoot(object.userData.root, object.position);
+                }
+            }
         }
     </script>
 </body>
