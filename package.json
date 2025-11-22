@@ -4,8 +4,10 @@
   "description": "Three.js sandbox hosted on Cloudflare Pages",
   "main": "index.html",
   "scripts": {
-    "dev": "python3 -m http.server 8000",
-    "preview": "python3 -m http.server 8000"
+    "dev": "python3 -m http.server --directory public 8000",
+    "dev:wrangler": "wrangler pages dev public",
+    "deploy": "wrangler pages deploy public",
+    "preview": "python3 -m http.server --directory public 8000"
   },
   "keywords": [
     "threejs",
@@ -20,5 +22,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/0xkaos/sandbox.miami.git"
+  },
+  "devDependencies": {
+    "wrangler": "^4.50.0"
   }
 }
