@@ -4,10 +4,11 @@
   "description": "Three.js sandbox hosted on Cloudflare Pages",
   "main": "index.html",
   "scripts": {
-    "dev": "python3 -m http.server --directory public 8000",
-    "dev:wrangler": "wrangler pages dev public",
-    "deploy": "wrangler pages deploy public",
-    "preview": "python3 -m http.server --directory public 8000"
+    "build": "node scripts/generate-manifest.js",
+    "dev": "npm run build && python3 -m http.server --directory public 8000",
+    "dev:wrangler": "npm run build && wrangler pages dev public",
+    "deploy": "npm run build && wrangler pages deploy public",
+    "preview": "npm run build && python3 -m http.server --directory public 8000"
   },
   "keywords": [
     "threejs",

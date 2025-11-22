@@ -87,12 +87,41 @@
         <h1>🌴 Sandbox Miami</h1>
         <p>A digital playground for 3D experiments and creative coding.</p>
         
-        <div class="links">
-            <a href="/threejs/demo_1/" class="link-card">
-                <span class="link-title">Three.js Demo 1</span>
-                <span class="link-desc">Interactive torus knot with orbiting spheres and particle system.</span>
-            </a>
+        <div class="links" id="demo-list">
+            <!-- Demos will be loaded here dynamically -->
+            <div style="padding: 1rem; opacity: 0.7;">Loading demos...</div>
         </div>
     </div>
+
+    <script>
+        async function loadDemos() {
+            try {
+                const response = await fetch('/manifest.json');
+                const demos = await response.json();
+                const container = document.getElementById('demo-list');
+                
+                if (demos.length === 0) {
+                    container.innerHTML = '<div style="padding: 1rem;">No demos found.</div>';
+                    return;
+                }
+
+                container.innerHTML = demos.map(demo => `
+                    <a href="${demo.path}" class="link-card">
+                        <span class="link-title">${demo.title}</span>
+                        <span class="link-desc">${demo.description}</span>
+                        <span style="font-size: 0.8rem; opacity: 0.6; margin-top: 0.5rem; display: block;">
+                            Category: ${demo.category}
+                        </span>
+                    </a>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading demos:', error);
+                document.getElementById('demo-list').innerHTML = 
+                    '<div style="color: #ff6b6b;">Error loading demos. Please try again later.</div>';
+            }
+        }
+
+        loadDemos();
+    </script>
 </body>
 </html>
