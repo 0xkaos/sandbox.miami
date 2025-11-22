@@ -155,6 +155,8 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/gh/timothygebhard/js-colormaps@master/js-colormaps.js"></script>
+
     <script type="importmap">
     {
         "imports": {
@@ -289,9 +291,14 @@
                 const x = Math.cos(angle) * HELIX_RADIUS;
                 const z = Math.sin(angle) * HELIX_RADIUS;
 
-                // Gradient Color (Rainbow along the helix)
-                const hue = index / totalRoots; 
-                const color = new THREE.Color().setHSL(hue, 1.0, 0.6);
+                // Gradient Color (Viridis)
+                let color = new THREE.Color();
+                if (typeof evaluate_cmap === 'function') {
+                    const rgb = evaluate_cmap('viridis', index / totalRoots, false);
+                    color.setRGB(rgb[0], rgb[1], rgb[2]);
+                } else {
+                    color.setHSL(index / totalRoots, 1.0, 0.6);
+                }
 
                 // 3D Object (Glowing Sphere)
                 const geometry = new THREE.SphereGeometry(0.8, 16, 16);
@@ -388,10 +395,12 @@
                 .start();
 
             // Expand Satellites
-            spawnSatellites(rootStr, position);
+            const rootObj = state.objects.roots.find(o => o.root === rootStr);
+            const rootColor = rootObj ? rootObj.mesh.userData.color : new THREE.Color(0x4db8ff);
+            spawnSatellites(rootStr, position, rootColor);
         }
 
-        function spawnSatellites(rootStr, centerPos) {
+        function spawnSatellites(rootStr, centerPos, rootColor) {
             // Clear existing satellites
             while(satelliteGroup.children.length > 0){ 
                 satelliteGroup.remove(satelliteGroup.children[0]); 
@@ -401,27 +410,43 @@
             const verbs = state.roots[rootStr];
             const count = verbs.length;
 
+            // Helical arrangement parameters
+            const turns = 2; 
+            const heightSpread = 20;
+            
             verbs.forEach((verb, i) => {
-                // Arrange in a circle around the root
-                const angle = (i / count) * Math.PI * 2;
+                // Helical path around the root
+                const progress = i / count;
+                const angle = progress * Math.PI * 2 * turns;
+                const yOffset = (progress - 0.5) * heightSpread;
+                
                 const x = centerPos.x + Math.cos(angle) * SATELLITE_RADIUS;
-                const y = centerPos.y + Math.sin(angle) * SATELLITE_RADIUS;
-                const z = centerPos.z; // Flat disc relative to camera usually better, but let's try 3D
+                const y = centerPos.y + yOffset;
+                const z = centerPos.z + Math.sin(angle) * SATELLITE_RADIUS;
+
+                const pos = new THREE.Vector3(x, y, z);
 
                 // Line to center
-                const points = [centerPos, new THREE.Vector3(x, y, z)];
+                const points = [centerPos, pos];
                 const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-                const lineMat = new THREE.LineBasicMaterial({ color: 0x4db8ff, transparent: true, opacity: 0.3 });
+                const lineMat = new THREE.LineBasicMaterial({ 
+                    color: rootColor, 
+                    transparent: true, 
+                    opacity: 0.4 
+                });
                 const line = new THREE.Line(lineGeo, lineMat);
                 satelliteGroup.add(line);
 
                 // Verb Node
                 const div = document.createElement('div');
                 div.className = 'verb-label';
+                div.style.borderColor = '#' + rootColor.getHexString();
+                div.style.boxShadow = `0 0 10px #${rootColor.getHexString()}`;
+                
                 div.onclick = () => showVerbInfo(verb);
                 
                 const labelObj = new CSS2DObject(div);
-                labelObj.position.set(x, y, z);
+                labelObj.position.copy(pos);
                 satelliteGroup.add(labelObj);
 
                 state.objects.satellites.push({ labelObj, verb });
