@@ -437,7 +437,7 @@
                                 <span style="font-size: 1.1em; direction: rtl;">${ex.hebrew}</span>
                                 ${exAudio ? `<button onclick="playAudio('${exAudio}')" style="background:none; border:none; cursor:pointer;">🔊</button>` : ''}
                             </div>
-                            <div style="color: #888; font-size: 0.9em;">${ex.transliteration}</div>
+                            ${ex.transliteration ? `<div style="color: #888; font-size: 0.9em;">${ex.transliteration}</div>` : ''}
                             <div style="font-style: italic;">${ex.translation}</div>
                         </div>
                     `;
