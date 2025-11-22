@@ -279,8 +279,17 @@
             const panel = document.getElementById('info-panel');
             const content = document.getElementById('panel-content');
             
+            // Main Verb Audio
+            let mainAudioPath = verb.audio ? '../../' + verb.audio : null;
+
             let html = `
-                <div class="verb-title">${verb.inf}</div>
+                <div class="verb-title">
+                    ${verb.inf}
+                    ${mainAudioPath ? `
+                    <button class="play-btn" style="display:inline-flex; vertical-align: middle;" onclick="playAudio(this, '${mainAudioPath}')">
+                        ▶
+                    </button>` : ''}
+                </div>
                 <div class="verb-meta">
                     <strong>Root:</strong> ${verb.rt.join('.')}<br>
                     <strong>Binyan:</strong> ${verb.bn} (${verb.bnE})<br>
@@ -288,14 +297,33 @@
                 </div>
             `;
 
+            // Examples Section
+            if (verb.examples && verb.examples.length > 0) {
+                html += `<div class="conjugation-group"><h3>Examples</h3>`;
+                verb.examples.forEach(ex => {
+                    let exAudioPath = ex.audio ? '../../' + ex.audio : null;
+                    html += `
+                        <div class="conjugation-item" style="flex-direction: column; align-items: flex-start;">
+                            <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                                <span style="font-size: 1.1em; direction: rtl;">${ex.hebrew}</span>
+                                ${exAudioPath ? `
+                                <button class="play-btn" onclick="playAudio(this, '${exAudioPath}')">
+                                    ▶
+                                </button>` : ''}
+                            </div>
+                            <div style="color: #aaa; font-size: 0.9em; margin-top: 4px;">${ex.transliteration}</div>
+                            <div style="font-style: italic; font-size: 0.9em;">${ex.translation}</div>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            }
+
             if (verb.conjugations) {
                 for (const [tense, forms] of Object.entries(verb.conjugations)) {
                     html += `<div class="conjugation-group"><h3>${tense}</h3>`;
                     forms.forEach(form => {
                         // Fix audio path: json has "audio/xxxx.wav", we need "../../audio/xxxx.mp4"
-                        // Actually, since we are in /threejs/hebrew_verbs/, and audio is in /audio/
-                        // The relative path from index.html is ../../audio/
-                        // And we need to replace .wav with .mp4
                         let audioPath = form.aud;
                         if (audioPath) {
                             audioPath = audioPath.replace('audio/', '../../audio/').replace('.wav', '.mp4');
