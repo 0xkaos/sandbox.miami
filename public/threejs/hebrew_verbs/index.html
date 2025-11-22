@@ -220,7 +220,8 @@
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
-            controls.maxDistance = 200;
+            controls.maxDistance = 800; // Increased to allow seeing more of the helix
+            controls.zoomSpeed = 2.0;   // Faster zooming
             controls.enablePan = true;
             controls.screenSpacePanning = true; // Pan moves in screen space (Up/Down moves list Up/Down)
             controls.mouseButtons = {
@@ -399,7 +400,7 @@
 
             // Move Camera to focus (smooth tween)
             const targetPos = position.clone();
-            const camOffset = new THREE.Vector3(0, 0, 40); // Distance from root
+            const camOffset = new THREE.Vector3(0, 0, 70); // Distance from root (increased from 40)
             const endCamPos = targetPos.clone().add(camOffset);
 
             new TWEEN.Tween(camera.position)
