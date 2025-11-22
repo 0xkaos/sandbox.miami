@@ -13,39 +13,40 @@
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none;
             display: flex; flex-direction: column;
+            justify-content: flex-end; /* Align to bottom */
             z-index: 1000;
         }
 
-        /* Top Bar */
-        #top-bar {
-            padding: 20px;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
-            display: flex; justify-content: space-between; align-items: flex-start;
-            pointer-events: auto;
-        }
-
-        /* Controls Panel */
+        /* Controls Panel (Footer) */
         #controls-panel {
-            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-            background: rgba(20, 20, 30, 0.9);
-            border: 1px solid #444;
-            border-radius: 15px;
-            padding: 15px 25px;
-            display: flex; gap: 20px;
+            width: 100%;
+            background: rgba(10, 10, 15, 0.95);
+            border-top: 1px solid #333;
+            padding: 15px 20px;
+            display: flex; align-items: center; justify-content: center; gap: 30px;
             pointer-events: auto;
-            box-shadow: 0 0 20px rgba(77, 184, 255, 0.2);
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
             backdrop-filter: blur(10px);
+            box-sizing: border-box;
         }
 
         .control-group { display: flex; flex-direction: column; gap: 5px; }
-        .control-label { font-size: 0.8em; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+        .control-label { font-size: 0.7em; color: #666; text-transform: uppercase; letter-spacing: 1px; }
         
         select {
-            background: #111; color: #fff; border: 1px solid #444;
-            padding: 8px 12px; border-radius: 5px; font-size: 1em;
-            outline: none; cursor: pointer; min-width: 120px;
+            background: #111; color: #fff; border: 1px solid #333;
+            padding: 6px 10px; border-radius: 4px; font-size: 0.9em;
+            outline: none; cursor: pointer; min-width: 100px;
         }
         select:hover { border-color: #4db8ff; }
+
+        /* Search in Footer */
+        #search-box {
+            background: rgba(255,255,255,0.1); border: 1px solid #333; color: white;
+            padding: 8px 12px; border-radius: 20px; width: 250px;
+            font-size: 0.9em; outline: none; transition: all 0.2s;
+        }
+        #search-box:focus { border-color: #4db8ff; background: rgba(255,255,255,0.15); }
 
         /* 3D Labels */
         .root-label {
@@ -130,15 +131,11 @@
     <div id="canvas-container"></div>
 
     <div id="ui-layer">
-        <div id="top-bar">
-            <div>
-                <h1>🌌 Hebrew Roots Helix</h1>
-                <div style="font-size: 0.9em; color: #aaa; margin-top: 5px;">Select a Root to explore its Verbs</div>
-            </div>
-            <input type="text" id="search-box" placeholder="Search roots or verbs...">
-        </div>
+        <!-- Top Bar Removed -->
 
         <div id="controls-panel">
+            <input type="text" id="search-box" placeholder="Search roots or verbs...">
+            
             <div class="control-group">
                 <span class="control-label">Tense</span>
                 <select id="tense-select">
@@ -184,7 +181,7 @@
 
     <script type="module">
         import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        // OrbitControls removed
         import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
         import TWEEN from 'three/addons/libs/tween.module.js';
 
@@ -197,17 +194,26 @@
             objects: {
                 roots: [],
                 satellites: []
-            }
+            },
+            // View State
+            scrollY: 0,
+            targetScrollY: 0,
+            helixRotation: 0,
+            targetHelixRotation: 0,
+            isDragging: false,
+            lastMouseY: 0,
+            lastMouseX: 0
         };
 
         // --- Constants ---
         const HELIX_RADIUS = 30;
         const HELIX_HEIGHT_STEP = 8;
-        const SATELLITE_RADIUS = 35; // Increased from 25
-        const FOCUS_GAP = 80; // Vertical gap to create around active root
+        const SATELLITE_RADIUS = 35; 
+        const BUBBLE_RADIUS = 150; // Range of inflation
+        const BUBBLE_STRENGTH = 2.5; // Multiplier for spacing in center
 
         // --- Three.js Globals ---
-        let scene, camera, renderer, labelRenderer, controls, raycaster, mouse;
+        let scene, camera, renderer, labelRenderer, raycaster, mouse;
         let rootGroup, satelliteGroup;
 
         init();
@@ -219,7 +225,7 @@
             scene.fog = new THREE.FogExp2(0x050510, 0.008);
 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 0, 80);
+            camera.position.set(0, 0, 120); // Fixed Z distance
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -230,22 +236,16 @@
             labelRenderer.setSize(window.innerWidth, window.innerHeight);
             labelRenderer.domElement.style.position = 'absolute';
             labelRenderer.domElement.style.top = '0px';
-            labelRenderer.domElement.style.zIndex = '1'; // Ensure it's above WebGL but below UI
-            labelRenderer.domElement.style.pointerEvents = 'none'; // Allow clicks to pass through to WebGL
+            labelRenderer.domElement.style.zIndex = '1'; 
+            labelRenderer.domElement.style.pointerEvents = 'none'; 
             document.getElementById('canvas-container').appendChild(labelRenderer.domElement);
 
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.maxDistance = 800; // Increased to allow seeing more of the helix
-            controls.zoomSpeed = 2.0;   // Faster zooming
-            controls.enablePan = true;
-            controls.screenSpacePanning = true; // Pan moves in screen space (Up/Down moves list Up/Down)
-            controls.mouseButtons = {
-                LEFT: THREE.MOUSE.ROTATE,
-                MIDDLE: THREE.MOUSE.PAN,
-                RIGHT: THREE.MOUSE.PAN
-            };
+            // Custom Controls (No OrbitControls)
+            const canvas = document.getElementById('canvas-container');
+            canvas.addEventListener('pointerdown', onPointerDown);
+            canvas.addEventListener('pointermove', onPointerMove);
+            canvas.addEventListener('pointerup', onPointerUp);
+            canvas.addEventListener('wheel', onWheel);
 
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
@@ -375,82 +375,105 @@
         function updateHelixInfinite() {
             if (state.objects.roots.length === 0) return;
 
+            // Smooth scroll and rotation
+            state.scrollY += (state.targetScrollY - state.scrollY) * 0.1;
+            state.helixRotation += (state.targetHelixRotation - state.helixRotation) * 0.1;
+            
+            rootGroup.rotation.y = state.helixRotation;
+
             const totalRoots = state.objects.roots.length;
             const totalHeight = totalRoots * HELIX_HEIGHT_STEP;
-            const halfHeight = totalHeight / 2;
-            const centerY = controls.target.y; // Center wrapping around look target
-
-            // Find active root index if any
-            let activeIndex = -1;
-            if (state.activeRoot) {
-                const activeObj = state.objects.roots.find(o => o.root === state.activeRoot);
-                if (activeObj) activeIndex = activeObj.mesh.userData.baseIndex;
-            }
-
+            
             state.objects.roots.forEach(obj => {
-                // 1. Calculate Base Position (Infinite Scroll)
-                let y = obj.mesh.position.y;
+                // 1. Calculate Linear Position relative to Center (0)
+                // originalY is the absolute position in the helix
                 const originalY = (obj.mesh.userData.baseIndex - totalRoots / 2) * HELIX_HEIGHT_STEP;
                 
-                // The ideal Y is originalY + k * totalHeight
-                const k = Math.round((centerY - originalY) / totalHeight);
-                let newY = originalY + k * totalHeight;
+                // relativeY is distance from the current scroll center
+                let relativeY = originalY - state.scrollY;
 
-                // 2. Apply Focus Distortion (Gap)
-                // We want to push items away from the active root to make space
-                if (activeIndex !== -1) {
-                    // We need to know the "virtual index" of this item relative to the active one
-                    // taking wrapping into account.
-                    // The active item is at activeIndex.
-                    // This item is at obj.mesh.userData.baseIndex.
-                    // But they might be wrapped.
-                    
-                    // Let's use Y distance to determine relative position
-                    const activeObj = state.objects.roots.find(o => o.root === state.activeRoot);
-                    // We can't rely on activeObj.mesh.position.y because it's being animated/updated
-                    // Instead, calculate the "undistorted" Y of the active object closest to centerY
-                    const activeOriginalY = (activeIndex - totalRoots / 2) * HELIX_HEIGHT_STEP;
-                    const activeK = Math.round((centerY - activeOriginalY) / totalHeight);
-                    const activeY = activeOriginalY + activeK * totalHeight;
+                // Wrap around for infinite scroll
+                while (relativeY > totalHeight / 2) relativeY -= totalHeight;
+                while (relativeY < -totalHeight / 2) relativeY += totalHeight;
 
-                    const distY = newY - activeY;
+                // 2. Apply Bubble Distortion (Fisheye on Y)
+                // Expand space near 0
+                const dist = Math.abs(relativeY);
+                const sign = Math.sign(relativeY);
+                
+                // Distortion function: pushes items away from center
+                // y_new = y + sign * strength * (1 - exp(-dist/radius)) * radius? 
+                // No, simpler: y_new = y + sign * strength * smoothstep?
+                // Let's use the exponential decay integral logic
+                // We want density to be lower at 0.
+                // y_distorted = y + sign * BUBBLE_STRENGTH * (1 - Math.exp(-dist / (BUBBLE_RADIUS/2))) * (BUBBLE_RADIUS/2);
+                // Actually, let's just use a simple expansion factor that decays.
+                
+                let distortion = 0;
+                if (dist < BUBBLE_RADIUS) {
+                    // Calculate expansion
+                    // We want to shift this item away from center
+                    // The shift amount increases as we get further from center, then levels off?
+                    // No, the shift amount is the integral of the expansion factor.
+                    // Let's just use a direct mapping function.
+                    // y' = y * (1 + factor * exp(-y^2)) is hard to invert/wrap?
+                    // We don't need to invert. We just map relativeY -> screenY.
                     
-                    // Apply gap
-                    if (Math.abs(distY) < 0.1) {
-                        // This is the active root, no offset
-                    } else if (distY > 0) {
-                        newY += FOCUS_GAP / 2;
-                    } else {
-                        newY -= FOCUS_GAP / 2;
-                    }
+                    // Simple "push away" logic
+                    // Max push is at the edge of the bubble?
+                    // Items at 0 stay at 0.
+                    // Items at 10 move to 15.
+                    // Items at 100 move to 130.
+                    // Items at 1000 move to 1030 (constant offset).
+                    
+                    const maxShift = 60; // Max pixels to push away
+                    const decay = 100;
+                    distortion = sign * maxShift * (1 - Math.exp(-dist / decay));
+                } else {
+                    const maxShift = 60;
+                    distortion = sign * maxShift * (1 - Math.exp(-BUBBLE_RADIUS / 100)); // Constant shift for items outside
+                    // Actually, just use the formula for all items
+                    distortion = sign * 60 * (1 - Math.exp(-dist / 100));
                 }
 
-                // Smoothly interpolate to newY? 
-                // For infinite scroll, we usually snap. But for focus gap, we want smooth.
-                // However, updateHelixInfinite runs every frame. If we just set it, it snaps.
-                // We can use a simple lerp factor.
+                const finalY = relativeY + distortion;
+
+                obj.mesh.position.y = finalY;
+
+                // Update X/Z to maintain spiral based on VISUAL Y?
+                // Or based on original index?
+                // If we base it on finalY, the spiral stretches visually.
+                // If we base it on original index, the spiral structure is rigid but items slide along it.
+                // Sliding along rigid spiral is better for "beads on a string".
+                // But we want the whole helix to inflate?
+                // Let's try keeping X/Z fixed to the "slot" but the slot moves?
+                // Actually, let's calculate angle based on the *undistorted* wrapped Y
+                // so the spiral rotates naturally.
                 
-                const diff = newY - obj.mesh.position.y;
-                if (Math.abs(diff) > 0.1) {
-                    // If the difference is huge (wrapping), snap.
-                    if (Math.abs(diff) > totalHeight / 2) {
-                        obj.mesh.position.y = newY;
-                    } else {
-                        // Lerp for smooth gap opening
-                        obj.mesh.position.y += diff * 0.1;
-                    }
-                    
-                    // Update X/Z to maintain spiral
-                    // The angle depends on the continuous index
-                    // continuousIndex = newY / HELIX_HEIGHT_STEP + totalRoots/2
-                    // Note: We use the *undistorted* Y for X/Z to keep the spiral shape consistent?
-                    // Or do we want the spiral to stretch? 
-                    // If we stretch X/Z, it looks like the spring is being pulled apart. That's good.
-                    const continuousIndex = obj.mesh.position.y / HELIX_HEIGHT_STEP + totalRoots / 2;
-                    const angle = continuousIndex * 0.5;
-                    
-                    obj.mesh.position.x = Math.cos(angle) * HELIX_RADIUS;
-                    obj.mesh.position.z = Math.sin(angle) * HELIX_RADIUS;
+                // We need the continuous index that corresponds to relativeY
+                // relativeY = (index - centerIndex) * STEP
+                const continuousIndex = (relativeY + state.scrollY) / HELIX_HEIGHT_STEP + totalRoots/2;
+                const angle = continuousIndex * 0.5;
+                
+                obj.mesh.position.x = Math.cos(angle) * HELIX_RADIUS;
+                obj.mesh.position.z = Math.sin(angle) * HELIX_RADIUS;
+                
+                // Scale up items in the bubble
+                const scale = 1 + 0.5 * Math.exp(-dist / 100);
+                obj.mesh.scale.setScalar(scale);
+                
+                // Fade out items far away?
+                const opacity = 1 - Math.min(1, (Math.abs(finalY) - 200) / 300);
+                obj.mesh.material.opacity = Math.max(0.1, opacity);
+                obj.mesh.material.transparent = true;
+                
+                // Hide label if too far
+                if (Math.abs(finalY) > 300) {
+                    obj.label.element.style.opacity = '0';
+                    obj.label.element.style.pointerEvents = 'none';
+                } else {
+                    obj.label.element.style.opacity = '1';
+                    obj.label.element.style.pointerEvents = 'auto';
                 }
             });
         }
@@ -465,25 +488,43 @@
                 else obj.label.element.classList.remove('active');
             });
 
-            // Move Camera to focus (smooth tween)
-            const targetPos = position.clone();
-            const camOffset = new THREE.Vector3(0, 0, 150); // Distance from root (increased from 100)
-            const endCamPos = targetPos.clone().add(camOffset);
+            // Find the target root's base index
+            const rootObj = state.objects.roots.find(o => o.root === rootStr);
+            if (!rootObj) return;
 
-            new TWEEN.Tween(camera.position)
-                .to(endCamPos, 1000)
-                .easing(TWEEN.Easing.Cubic.Out)
-                .start();
+            const totalRoots = state.objects.roots.length;
+            const targetIndex = rootObj.mesh.userData.baseIndex;
+            const currentCenterIndex = (state.targetScrollY / HELIX_HEIGHT_STEP) + totalRoots/2;
             
-            new TWEEN.Tween(controls.target)
-                .to(targetPos, 1000)
-                .easing(TWEEN.Easing.Cubic.Out)
-                .start();
+            // Calculate shortest path to target index (handling wrap)
+            let diff = targetIndex - (currentCenterIndex % totalRoots);
+            // Adjust for wrap
+            if (diff > totalRoots / 2) diff -= totalRoots;
+            if (diff < -totalRoots / 2) diff += totalRoots;
+            
+            // We want to scroll so that targetIndex is at the center (relativeY = 0)
+            // state.scrollY corresponds to the Y value of the center.
+            // The Y value of targetIndex is (targetIndex - totalRoots/2) * STEP.
+            
+            // But since we have infinite scroll, we just add the difference to current scrollY
+            // Actually, let's just set targetScrollY.
+            // We need to calculate the Y position of the target *relative to current scroll*
+            // and add that to current scroll.
+            
+            // Simpler:
+            // The target Y is (targetIndex - totalRoots/2) * STEP.
+            // But we can add multiples of totalHeight to minimize travel.
+            const totalHeight = totalRoots * HELIX_HEIGHT_STEP;
+            const targetBaseY = (targetIndex - totalRoots / 2) * HELIX_HEIGHT_STEP;
+            
+            // Find k such that targetBaseY + k*totalHeight is closest to state.scrollY
+            const k = Math.round((state.scrollY - targetBaseY) / totalHeight);
+            const targetY = targetBaseY + k * totalHeight;
+            
+            state.targetScrollY = targetY;
 
             // Expand Satellites
-            const rootObj = state.objects.roots.find(o => o.root === rootStr);
-            const rootColor = rootObj ? rootObj.mesh.userData.color : new THREE.Color(0x4db8ff);
-            // Pass the mesh itself so satellites can be parented
+            const rootColor = rootObj.mesh.userData.color;
             spawnSatellites(rootStr, rootObj.mesh, rootColor);
         }
 
@@ -731,30 +772,65 @@
         function animate() {
             requestAnimationFrame(animate);
             TWEEN.update();
-            controls.update();
+            // controls.update(); // Removed
             updateHelixInfinite();
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
         }
 
-        function onPointerDown(event) {
-            // Only handle clicks on the canvas/renderer, not UI
-            if (event.target.closest('#ui-layer')) return;
+        // --- Input Handling ---
 
+        function onPointerDown(event) {
+            if (event.target.closest('#ui-layer')) return;
+            
+            state.isDragging = true;
+            state.lastMouseX = event.clientX;
+            state.lastMouseY = event.clientY;
+
+            // Raycast for selection (only if not dragging much? handled in up?)
+            // For now, let's keep selection on down, but maybe check if it was a drag later.
+            // Actually, standard behavior is select on up if no drag.
+            // But let's keep it simple: Raycast on down.
+            
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
             raycaster.setFromCamera(mouse, camera);
-
-            // Check intersections with Root Spheres
             const intersects = raycaster.intersectObjects(rootGroup.children);
-
             if (intersects.length > 0) {
                 const object = intersects[0].object;
                 if (object.userData.type === 'root') {
                     selectRoot(object.userData.root, object.position);
                 }
             }
+        }
+
+        function onPointerMove(event) {
+            if (!state.isDragging) return;
+
+            const deltaX = event.clientX - state.lastMouseX;
+            const deltaY = event.clientY - state.lastMouseY;
+
+            state.lastMouseX = event.clientX;
+            state.lastMouseY = event.clientY;
+
+            // Horizontal Drag -> Rotate Helix
+            state.targetHelixRotation += deltaX * 0.005;
+
+            // Vertical Drag -> Scroll
+            // Dragging DOWN (positive deltaY) should move content DOWN (decrease scrollY? No, increase scrollY moves camera up relative to content? No.)
+            // If I drag down, I want to see what's above. So content moves down.
+            // Content Y = originalY - scrollY.
+            // To move content down (increase Y), we need to decrease scrollY.
+            state.targetScrollY -= deltaY * 0.5;
+        }
+
+        function onPointerUp(event) {
+            state.isDragging = false;
+        }
+
+        function onWheel(event) {
+            // Wheel -> Scroll
+            state.targetScrollY += event.deltaY * 0.1;
         }
     </script>
 </body>
