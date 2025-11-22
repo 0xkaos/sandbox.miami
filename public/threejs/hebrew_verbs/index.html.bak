@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hebrew Verbs Galaxy</title>
+    <meta name="description" content="Interactive 3D visualization of Hebrew verbs, their roots, and conjugations with audio.">
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 24px; pointer-events: none;
+        }
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex; flex-direction: column; justify-content: space-between;
+            padding: 20px; box-sizing: border-box;
+        }
+        #info-panel {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #444;
+            border-radius: 10px;
+            padding: 20px;
+            max-width: 400px;
+            pointer-events: auto;
+            display: none;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .verb-title { font-size: 2em; margin-bottom: 0.5em; color: #4db8ff; }
+        .verb-meta { color: #aaa; margin-bottom: 1em; }
+        .conjugation-group { margin-bottom: 1em; }
+        .conjugation-group h3 { border-bottom: 1px solid #444; padding-bottom: 5px; }
+        .conjugation-item { 
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 5px 0; border-bottom: 1px solid #222;
+        }
+        .play-btn {
+            background: #4db8ff; border: none; border-radius: 50%;
+            width: 24px; height: 24px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            margin-left: 10px;
+        }
+        .play-btn:hover { background: #7dcaff; }
+        .legend {
+            position: absolute; bottom: 20px; right: 20px;
+            background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px;
+            pointer-events: auto;
+        }
+        .legend-item { display: flex; align-items: center; margin: 5px 0; }
+        .color-box { width: 15px; height: 15px; margin-right: 10px; border-radius: 3px; }
+        
+        /* Scrollbar for info panel */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #111; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #666; }
+
+        /* Search Box */
+        #search-container {
+            position: absolute; top: 20px; right: 20px;
+            pointer-events: auto;
+            width: 300px;
+        }
+        #search-input {
+            width: 100%; padding: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #444;
+            color: white; border-radius: 5px;
+            font-size: 16px;
+        }
+        #search-results {
+            position: absolute; top: 100%; left: 0; width: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #444; border-top: none;
+            border-radius: 0 0 5px 5px;
+            max-height: 300px; overflow-y: auto;
+            display: none;
+        }
+        .search-result-item {
+            padding: 10px; border-bottom: 1px solid #222;
+            cursor: pointer;
+        }
+        .search-result-item:hover { background: #222; }
+        .search-match-type { font-size: 0.8em; color: #888; display: block; margin-bottom: 2px; }
+        .search-match-text { color: #4db8ff; }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading Verbs Data...</div>
+    <div id="canvas-container"></div>
+    
+    <div id="ui-layer">
+        <div style="pointer-events: auto;">
+            <h1>🌌 Hebrew Verbs Galaxy</h1>
+            <p style="opacity: 0.7;">Click on a star to explore conjugations</p>
+        </div>
+
+        <div id="search-container">
+            <input type="text" id="search-input" placeholder="Search verbs, roots, or sentences...">
+            <div id="search-results"></div>
+        </div>
+        
+        <div id="info-panel">
+            <button id="close-panel" style="float: right; background: none; border: none; color: white; cursor: pointer; font-size: 1.5em;">&times;</button>
+            <div id="panel-content"></div>
+        </div>
+
+        <div class="legend" id="legend">
+            <!-- Legend items will be added here -->
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        // Configuration
+        const BINYAN_COLORS = {
+            'Paal': 0x4db8ff,    // Blue
+            'Piel': 0xff4d4d,    // Red
+            'Hifil': 0x4dff88,   // Green
+            'Hitpael': 0xffb84d, // Orange
+            'Nifal': 0xb84dff,   // Purple
+            'Pual': 0xff4db8,    // Pink
+            'Hufal': 0xffff4d,   // Yellow
+            'default': 0xffffff
+        };
+
+        let scene, camera, renderer, labelRenderer, controls;
+        let raycaster, mouse;
+        let verbsData = {};
+        let particles;
+        let hoveredIndex = -1;
+
+        init();
+
+        async function init() {
+            // Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050510);
+            scene.fog = new THREE.FogExp2(0x050510, 0.002);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 100;
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // Label Renderer (for HTML labels if needed, or just UI)
+            labelRenderer = new CSS2DRenderer();
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.domElement.style.position = 'absolute';
+            labelRenderer.domElement.style.top = '0px';
+            labelRenderer.domElement.style.pointerEvents = 'none';
+            document.getElementById('canvas-container').appendChild(labelRenderer.domElement);
+
+            // Controls
+            controls = new OrbitControls(camera, labelRenderer.domElement); // Attach to labelRenderer to allow clicking through
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 0.5;
+
+            // Interaction
+            raycaster = new THREE.Raycaster();
+            raycaster.params.Points.threshold = 2; // Hit radius
+            mouse = new THREE.Vector2();
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('click', onClick);
+            document.getElementById('close-panel').addEventListener('click', () => {
+                document.getElementById('info-panel').style.display = 'none';
+                controls.autoRotate = true;
+            });
+
+            // Search Listener
+            document.getElementById('search-input').addEventListener('input', onSearchInput);
+
+            // Load Data
+            try {
+                const response = await fetch('verbs.json');
+                verbsData = await response.json();
+                createVisualization(verbsData);
+                createLegend();
+                document.getElementById('loading').style.display = 'none';
+                animate();
+            } catch (error) {
+                console.error('Failed to load verbs data:', error);
+                document.getElementById('loading').textContent = 'Error loading data.';
+            }
+        }
+
+        function createVisualization(data) {
+            const verbs = Object.values(data);
+            const count = verbs.length;
+            
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(count * 3);
+            const colors = new Float32Array(count * 3);
+            const sizes = new Float32Array(count);
+
+            const colorObj = new THREE.Color();
+
+            verbs.forEach((verb, i) => {
+                // Random distribution in a sphere
+                const r = 50 * Math.cbrt(Math.random()); // Uniform distribution in sphere
+                const theta = Math.random() * 2 * Math.PI;
+                const phi = Math.acos(2 * Math.random() - 1);
+
+                const x = r * Math.sin(phi) * Math.cos(theta);
+                const y = r * Math.sin(phi) * Math.sin(theta);
+                const z = r * Math.cos(phi);
+
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+
+                // Color by Binyan
+                const binyan = verb.bnE || 'default';
+                const hex = BINYAN_COLORS[binyan] || BINYAN_COLORS['default'];
+                colorObj.setHex(hex);
+
+                colors[i * 3] = colorObj.r;
+                colors[i * 3 + 1] = colorObj.g;
+                colors[i * 3 + 2] = colorObj.b;
+
+                sizes[i] = 1.0;
+            });
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+            // Shader Material for glowing dots
+            const material = new THREE.PointsMaterial({
+                size: 2,
+                vertexColors: true,
+                map: createCircleTexture(),
+                transparent: true,
+                alphaTest: 0.5,
+                sizeAttenuation: true
+            });
+
+            particles = new THREE.Points(geometry, material);
+            particles.userData = { verbs: verbs }; // Store data reference
+            scene.add(particles);
+        }
+
+        function createCircleTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 32;
+            canvas.height = 32;
+            const context = canvas.getContext('2d');
+            context.beginPath();
+            context.arc(16, 16, 14, 0, 2 * Math.PI);
+            context.fillStyle = 'white';
+            context.fill();
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+
+        function createLegend() {
+            const container = document.getElementById('legend');
+            for (const [binyan, color] of Object.entries(BINYAN_COLORS)) {
+                if (binyan === 'default') continue;
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `
+                    <div class="color-box" style="background-color: #${color.toString(16).padStart(6, '0')}"></div>
+                    <span>${binyan}</span>
+                `;
+                container.appendChild(item);
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onClick(event) {
+            if (hoveredIndex !== -1) {
+                const verbs = particles.userData.verbs;
+                const verb = verbs[hoveredIndex];
+                showVerbDetails(verb);
+                controls.autoRotate = false;
+            }
+        }
+
+        function showVerbDetails(verb) {
+            const panel = document.getElementById('info-panel');
+            const content = document.getElementById('panel-content');
+            
+            // Main Verb Audio
+            let mainAudioPath = verb.audio ? '../../' + verb.audio : null;
+
+            let html = `
+                <div class="verb-title">
+                    ${verb.inf}
+                    ${mainAudioPath ? `
+                    <button class="play-btn" style="display:inline-flex; vertical-align: middle;" onclick="playAudio(this, '${mainAudioPath}')">
+                        ▶
+                    </button>` : ''}
+                </div>
+                <div class="verb-meta">
+                    <strong>Root:</strong> ${verb.rt.join('.')}<br>
+                    <strong>Binyan:</strong> ${verb.bn} (${verb.bnE})<br>
+                    <strong>Meaning:</strong> ${verb.mng.join(', ')}
+                </div>
+            `;
+
+            // Examples Section
+            if (verb.examples && verb.examples.length > 0) {
+                html += `<div class="conjugation-group"><h3>Examples</h3>`;
+                verb.examples.forEach(ex => {
+                    let exAudioPath = ex.audio ? '../../' + ex.audio : null;
+                    html += `
+                        <div class="conjugation-item" style="flex-direction: column; align-items: flex-start;">
+                            <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                                <span style="font-size: 1.1em; direction: rtl;">${ex.hebrew}</span>
+                                ${exAudioPath ? `
+                                <button class="play-btn" onclick="playAudio(this, '${exAudioPath}')">
+                                    ▶
+                                </button>` : ''}
+                            </div>
+                            <div style="color: #aaa; font-size: 0.9em; margin-top: 4px;">${ex.transliteration}</div>
+                            <div style="font-style: italic; font-size: 0.9em;">${ex.translation}</div>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            }
+
+            if (verb.conjugations) {
+                for (const [tense, forms] of Object.entries(verb.conjugations)) {
+                    html += `<div class="conjugation-group"><h3>${tense}</h3>`;
+                    forms.forEach(form => {
+                        // Fix audio path: json has "audio/xxxx.wav", we need "../../audio/xxxx.mp4"
+                        let audioPath = form.aud;
+                        if (audioPath) {
+                            audioPath = audioPath.replace('audio/', '../../audio/').replace('.wav', '.mp4');
+                        }
+
+                        html += `
+                            <div class="conjugation-item">
+                                <div>
+                                    <span style="color: #4db8ff;">${form.prn}</span>
+                                    <span style="font-size: 1.2em; margin: 0 10px;">${form.frm}</span>
+                                    <span style="color: #aaa; font-size: 0.9em;">${form.trl}</span>
+                                </div>
+                                ${audioPath ? `
+                                <button class="play-btn" onclick="playAudio(this, '${audioPath}')">
+                                    ▶
+                                </button>` : ''}
+                            </div>
+                        `;
+                    });
+                    html += `</div>`;
+                }
+            }
+
+            content.innerHTML = html;
+            panel.style.display = 'block';
+        }
+
+        window.playAudio = async function(btn, path) {
+            try {
+                const audio = new Audio(path);
+                // Handle 404s or other loading errors
+                audio.addEventListener('error', (e) => {
+                    console.warn('Audio load failed:', path);
+                    btn.style.background = '#ff4d4d';
+                    btn.title = 'Audio unavailable';
+                    btn.innerHTML = '✖';
+                });
+                await audio.play();
+            } catch (e) {
+                console.warn('Audio playback failed:', e);
+                btn.style.background = '#ff4d4d';
+                btn.title = 'Audio unavailable';
+                btn.innerHTML = '✖';
+            }
+        };
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            // Raycasting
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(particles);
+
+            if (intersects.length > 0) {
+                if (hoveredIndex !== intersects[0].index) {
+                    hoveredIndex = intersects[0].index;
+                    document.body.style.cursor = 'pointer';
+                    
+                    // Highlight effect could go here (e.g. change color or size)
+                    // For now just cursor change
+                }
+            } else {
+                hoveredIndex = -1;
+                document.body.style.cursor = 'default';
+            }
+
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+
+        function onSearchInput(e) {
+            const query = e.target.value.toLowerCase();
+            const resultsContainer = document.getElementById('search-results');
+            resultsContainer.innerHTML = '';
+
+            if (query.length < 2) {
+                resultsContainer.style.display = 'none';
+                return;
+            }
+
+            const verbs = Object.values(verbsData);
+            const matches = [];
+
+            verbs.forEach((verb, index) => {
+                // Search in Infinitive
+                if (verb.inf.includes(query)) {
+                    matches.push({ verb, index, type: 'Infinitive', text: verb.inf });
+                    return;
+                }
+                // Search in Root
+                if (verb.rt.join('').includes(query)) {
+                    matches.push({ verb, index, type: 'Root', text: verb.rt.join('.') });
+                    return;
+                }
+                // Search in Meaning
+                const meaningMatch = verb.mng.find(m => m.toLowerCase().includes(query));
+                if (meaningMatch) {
+                    matches.push({ verb, index, type: 'Meaning', text: meaningMatch });
+                    return;
+                }
+                // Search in Examples
+                if (verb.examples) {
+                    const exMatch = verb.examples.find(ex => 
+                        ex.hebrew.includes(query) || 
+                        ex.transliteration.toLowerCase().includes(query) || 
+                        ex.translation.toLowerCase().includes(query)
+                    );
+                    if (exMatch) {
+                        matches.push({ verb, index, type: 'Example', text: exMatch.translation }); // Show translation as preview
+                        return;
+                    }
+                }
+            });
+
+            if (matches.length > 0) {
+                matches.slice(0, 10).forEach(match => {
+                    const div = document.createElement('div');
+                    div.className = 'search-result-item';
+                    div.innerHTML = `
+                        <span class="search-match-type">${match.type}</span>
+                        <span class="search-match-text">${match.text}</span>
+                        <div style="font-size: 0.8em; color: #aaa;">${match.verb.inf} (${match.verb.bnE})</div>
+                    `;
+                    div.addEventListener('click', () => selectVerb(match.index));
+                    resultsContainer.appendChild(div);
+                });
+                resultsContainer.style.display = 'block';
+            } else {
+                resultsContainer.style.display = 'none';
+            }
+        }
+
+        function selectVerb(index) {
+            const verbs = particles.userData.verbs;
+            const verb = verbs[index];
+            
+            // Fly to verb
+            const positions = particles.geometry.attributes.position.array;
+            const x = positions[index * 3];
+            const y = positions[index * 3 + 1];
+            const z = positions[index * 3 + 2];
+
+            const targetPos = new THREE.Vector3(x, y, z);
+            
+            // Animate camera
+            const startPos = camera.position.clone();
+            const endPos = targetPos.clone().add(new THREE.Vector3(0, 0, 20)); // Offset
+            
+            // Simple tween (could be improved)
+            let t = 0;
+            const duration = 1000;
+            const startTime = performance.now();
+
+            function animateFly(time) {
+                const elapsed = time - startTime;
+                t = Math.min(elapsed / duration, 1);
+                
+                // Ease out cubic
+                const ease = 1 - Math.pow(1 - t, 3);
+                
+                camera.position.lerpVectors(startPos, endPos, ease);
+                controls.target.lerpVectors(controls.target, targetPos, ease);
+                
+                if (t < 1) {
+                    requestAnimationFrame(animateFly);
+                } else {
+                    controls.update();
+                    showVerbDetails(verb);
+                    controls.autoRotate = false;
+                }
+            }
+            
+            requestAnimationFrame(animateFly);
+            
+            document.getElementById('search-results').style.display = 'none';
+            document.getElementById('search-input').value = '';
+        }
+    </script>
+</body>
+</html>

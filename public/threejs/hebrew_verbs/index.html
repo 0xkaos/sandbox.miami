@@ -3,113 +3,143 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hebrew Verbs Galaxy</title>
-    <meta name="description" content="Interactive 3D visualization of Hebrew verbs, their roots, and conjugations with audio.">
+    <title>Hebrew Verbs Galaxy - Roots Edition</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background-color: #050510; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         #canvas-container { width: 100vw; height: 100vh; }
-        #loading {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            font-size: 24px; pointer-events: none;
-        }
+        
+        /* UI Overlay */
         #ui-layer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none;
-            display: flex; flex-direction: column; justify-content: space-between;
-            padding: 20px; box-sizing: border-box;
+            display: flex; flex-direction: column;
         }
-        #info-panel {
-            background: rgba(0, 0, 0, 0.8);
-            border: 1px solid #444;
-            border-radius: 10px;
-            padding: 20px;
-            max-width: 400px;
-            pointer-events: auto;
-            display: none;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-        .verb-title { font-size: 2em; margin-bottom: 0.5em; color: #4db8ff; }
-        .verb-meta { color: #aaa; margin-bottom: 1em; }
-        .conjugation-group { margin-bottom: 1em; }
-        .conjugation-group h3 { border-bottom: 1px solid #444; padding-bottom: 5px; }
-        .conjugation-item { 
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 5px 0; border-bottom: 1px solid #222;
-        }
-        .play-btn {
-            background: #4db8ff; border: none; border-radius: 50%;
-            width: 24px; height: 24px; cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            margin-left: 10px;
-        }
-        .play-btn:hover { background: #7dcaff; }
-        .legend {
-            position: absolute; bottom: 20px; right: 20px;
-            background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px;
-            pointer-events: auto;
-        }
-        .legend-item { display: flex; align-items: center; margin: 5px 0; }
-        .color-box { width: 15px; height: 15px; margin-right: 10px; border-radius: 3px; }
-        
-        /* Scrollbar for info panel */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #111; }
-        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #666; }
 
-        /* Search Box */
-        #search-container {
-            position: absolute; top: 20px; right: 20px;
+        /* Top Bar */
+        #top-bar {
+            padding: 20px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+            display: flex; justify-content: space-between; align-items: flex-start;
             pointer-events: auto;
-            width: 300px;
         }
-        #search-input {
-            width: 100%; padding: 10px;
-            background: rgba(0, 0, 0, 0.8);
+
+        /* Controls Panel */
+        #controls-panel {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background: rgba(20, 20, 30, 0.9);
             border: 1px solid #444;
-            color: white; border-radius: 5px;
-            font-size: 16px;
+            border-radius: 15px;
+            padding: 15px 25px;
+            display: flex; gap: 20px;
+            pointer-events: auto;
+            box-shadow: 0 0 20px rgba(77, 184, 255, 0.2);
+            backdrop-filter: blur(10px);
         }
-        #search-results {
-            position: absolute; top: 100%; left: 0; width: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            border: 1px solid #444; border-top: none;
-            border-radius: 0 0 5px 5px;
-            max-height: 300px; overflow-y: auto;
-            display: none;
+
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        .control-label { font-size: 0.8em; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+        
+        select {
+            background: #111; color: #fff; border: 1px solid #444;
+            padding: 8px 12px; border-radius: 5px; font-size: 1em;
+            outline: none; cursor: pointer; min-width: 120px;
         }
-        .search-result-item {
-            padding: 10px; border-bottom: 1px solid #222;
-            cursor: pointer;
+        select:hover { border-color: #4db8ff; }
+
+        /* 3D Labels */
+        .root-label {
+            font-size: 24px; font-weight: bold; color: #4db8ff;
+            text-shadow: 0 0 10px rgba(77, 184, 255, 0.5);
+            cursor: pointer; pointer-events: auto;
+            transition: all 0.3s;
+            user-select: none;
         }
-        .search-result-item:hover { background: #222; }
-        .search-match-type { font-size: 0.8em; color: #888; display: block; margin-bottom: 2px; }
-        .search-match-text { color: #4db8ff; }
+        .root-label:hover { color: #fff; transform: scale(1.2); }
+        .root-label.active { color: #fff; text-shadow: 0 0 20px #4db8ff; font-size: 32px; }
+
+        .verb-label {
+            font-size: 16px; color: #aaa;
+            background: rgba(0,0,0,0.7);
+            padding: 5px 10px; border-radius: 5px;
+            border: 1px solid #333;
+            cursor: pointer; pointer-events: auto;
+            transition: all 0.2s;
+            white-space: nowrap;
+            text-align: center;
+        }
+        .verb-label:hover { 
+            background: rgba(77, 184, 255, 0.2); 
+            border-color: #4db8ff; color: white;
+        }
+        .verb-sub { font-size: 0.8em; color: #888; display: block; margin-top: 2px; }
+
+        /* Info Panel (Right Side) */
+        #info-panel {
+            position: absolute; top: 80px; right: 20px; bottom: 100px;
+            width: 350px;
+            background: rgba(10, 10, 15, 0.95);
+            border-left: 1px solid #333;
+            padding: 20px;
+            transform: translateX(110%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: auto;
+            overflow-y: auto;
+            border-radius: 10px;
+        }
+        #info-panel.visible { transform: translateX(0); }
+
+        h1 { margin: 0; font-size: 1.5em; background: linear-gradient(45deg, #4db8ff, #b84dff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        /* Search */
+        #search-box {
+            background: rgba(0,0,0,0.5); border: 1px solid #444; color: white;
+            padding: 8px; border-radius: 5px; width: 200px;
+        }
     </style>
 </head>
 <body>
-    <div id="loading">Loading Verbs Data...</div>
     <div id="canvas-container"></div>
-    
+
     <div id="ui-layer">
-        <div style="pointer-events: auto;">
-            <h1>🌌 Hebrew Verbs Galaxy</h1>
-            <p style="opacity: 0.7;">Click on a star to explore conjugations</p>
+        <div id="top-bar">
+            <div>
+                <h1>🌌 Hebrew Roots Helix</h1>
+                <div style="font-size: 0.9em; color: #aaa; margin-top: 5px;">Select a Root to explore its Verbs</div>
+            </div>
+            <input type="text" id="search-box" placeholder="Search roots or verbs...">
         </div>
 
-        <div id="search-container">
-            <input type="text" id="search-input" placeholder="Search verbs, roots, or sentences...">
-            <div id="search-results"></div>
+        <div id="controls-panel">
+            <div class="control-group">
+                <span class="control-label">Tense</span>
+                <select id="tense-select">
+                    <option value="inf">Infinitive (לִפְעוֹל)</option>
+                    <option value="past">Past (עָבַר)</option>
+                    <option value="present">Present (הוֹוֶה)</option>
+                    <option value="future">Future (עָתִיד)</option>
+                    <option value="imperative">Imperative (צִוּוּי)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <span class="control-label">Pronoun</span>
+                <select id="pronoun-select" disabled>
+                    <option value="any">--</option>
+                    <option value="אני">I (אֲנִי)</option>
+                    <option value="אתה">You m.s. (אַתָּה)</option>
+                    <option value="את">You f.s. (אַתְּ)</option>
+                    <option value="הוא">He (הוּא)</option>
+                    <option value="היא">She (הִיא)</option>
+                    <option value="אנחנו">We (אֲנַחְנוּ)</option>
+                    <option value="אתם">You m.pl. (אַתֶּם)</option>
+                    <option value="אתן">You f.pl. (אַתֶּן)</option>
+                    <option value="הם">They m. (הֵם)</option>
+                    <option value="הן">They f. (הֵן)</option>
+                </select>
+            </div>
         </div>
-        
+
         <div id="info-panel">
-            <button id="close-panel" style="float: right; background: none; border: none; color: white; cursor: pointer; font-size: 1.5em;">&times;</button>
             <div id="panel-content"></div>
-        </div>
-
-        <div class="legend" id="legend">
-            <!-- Legend items will be added here -->
         </div>
     </div>
 
@@ -126,169 +156,325 @@
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+        import TWEEN from 'three/addons/libs/tween.module.js';
 
-        // Configuration
-        const BINYAN_COLORS = {
-            'Paal': 0x4db8ff,    // Blue
-            'Piel': 0xff4d4d,    // Red
-            'Hifil': 0x4dff88,   // Green
-            'Hitpael': 0xffb84d, // Orange
-            'Nifal': 0xb84dff,   // Purple
-            'Pual': 0xff4db8,    // Pink
-            'Hufal': 0xffff4d,   // Yellow
-            'default': 0xffffff
+        // --- State ---
+        const state = {
+            tense: 'inf',
+            pronoun: 'אני', // Default to 'I' for conjugations
+            activeRoot: null,
+            roots: {}, // Grouped data
+            objects: {
+                roots: [],
+                satellites: []
+            }
         };
 
+        // --- Constants ---
+        const HELIX_RADIUS = 30;
+        const HELIX_HEIGHT_STEP = 8;
+        const SATELLITE_RADIUS = 15;
+
+        // --- Three.js Globals ---
         let scene, camera, renderer, labelRenderer, controls;
-        let raycaster, mouse;
-        let verbsData = {};
-        let particles;
-        let hoveredIndex = -1;
+        let rootGroup, satelliteGroup;
 
         init();
 
         async function init() {
-            // Scene Setup
+            // 1. Setup Scene
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x050510);
-            scene.fog = new THREE.FogExp2(0x050510, 0.002);
+            scene.fog = new THREE.FogExp2(0x050510, 0.008);
 
-            // Camera
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 100;
+            camera.position.set(0, 0, 80);
 
-            // Renderer
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
             document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-            // Label Renderer (for HTML labels if needed, or just UI)
             labelRenderer = new CSS2DRenderer();
             labelRenderer.setSize(window.innerWidth, window.innerHeight);
             labelRenderer.domElement.style.position = 'absolute';
             labelRenderer.domElement.style.top = '0px';
-            labelRenderer.domElement.style.pointerEvents = 'none';
             document.getElementById('canvas-container').appendChild(labelRenderer.domElement);
 
-            // Controls
-            controls = new OrbitControls(camera, labelRenderer.domElement); // Attach to labelRenderer to allow clicking through
+            controls = new OrbitControls(camera, labelRenderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
-            controls.autoRotate = true;
-            controls.autoRotateSpeed = 0.5;
+            controls.maxDistance = 200;
 
-            // Interaction
-            raycaster = new THREE.Raycaster();
-            raycaster.params.Points.threshold = 2; // Hit radius
-            mouse = new THREE.Vector2();
+            // Groups
+            rootGroup = new THREE.Group();
+            satelliteGroup = new THREE.Group();
+            scene.add(rootGroup);
+            scene.add(satelliteGroup);
 
-            window.addEventListener('resize', onWindowResize);
-            window.addEventListener('mousemove', onMouseMove);
-            window.addEventListener('click', onClick);
-            document.getElementById('close-panel').addEventListener('click', () => {
-                document.getElementById('info-panel').style.display = 'none';
-                controls.autoRotate = true;
-            });
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+            const pointLight = new THREE.PointLight(0x4db8ff, 1, 100);
+            pointLight.position.set(0, 0, 0);
+            scene.add(pointLight);
 
-            // Search Listener
-            document.getElementById('search-input').addEventListener('input', onSearchInput);
-
-            // Load Data
+            // 2. Load & Process Data
             try {
                 const response = await fetch('verbs.json');
-                verbsData = await response.json();
-                createVisualization(verbsData);
-                createLegend();
-                document.getElementById('loading').style.display = 'none';
+                const rawData = await response.json();
+                processData(rawData);
+                buildHelix();
+                setupUI();
                 animate();
-            } catch (error) {
-                console.error('Failed to load verbs data:', error);
-                document.getElementById('loading').textContent = 'Error loading data.';
+            } catch (e) {
+                console.error("Failed to load data", e);
+            }
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function processData(data) {
+            // Group by Root
+            for (const key in data) {
+                const verb = data[key];
+                const rootStr = verb.rt.join('.');
+                if (!state.roots[rootStr]) {
+                    state.roots[rootStr] = [];
+                }
+                // Add key to verb object for reference
+                verb._key = key;
+                state.roots[rootStr].push(verb);
             }
         }
 
-        function createVisualization(data) {
-            const verbs = Object.values(data);
-            const count = verbs.length;
+        function buildHelix() {
+            const roots = Object.keys(state.roots).sort(); // Alphabetical sort
             
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(count * 3);
-            const colors = new Float32Array(count * 3);
-            const sizes = new Float32Array(count);
+            roots.forEach((rootStr, index) => {
+                const angle = index * 0.5; // Spiral angle step
+                const y = (index - roots.length / 2) * HELIX_HEIGHT_STEP;
+                const x = Math.cos(angle) * HELIX_RADIUS;
+                const z = Math.sin(angle) * HELIX_RADIUS;
 
-            const colorObj = new THREE.Color();
+                // 3D Object (Glowing Sphere)
+                const geometry = new THREE.SphereGeometry(0.5, 16, 16);
+                const material = new THREE.MeshBasicMaterial({ color: 0x4db8ff });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(x, y, z);
+                
+                // Store data in mesh
+                mesh.userData = { type: 'root', root: rootStr };
+                rootGroup.add(mesh);
+
+                // Label
+                const div = document.createElement('div');
+                div.className = 'root-label';
+                div.textContent = rootStr;
+                div.onclick = () => selectRoot(rootStr, mesh.position);
+                
+                const label = new CSS2DObject(div);
+                label.position.set(0, 1, 0);
+                mesh.add(label);
+
+                state.objects.roots.push({ mesh, label, root: rootStr });
+            });
+        }
+
+        function selectRoot(rootStr, position) {
+            if (state.activeRoot === rootStr) return;
+            state.activeRoot = rootStr;
+
+            // Highlight Label
+            state.objects.roots.forEach(obj => {
+                if (obj.root === rootStr) obj.label.element.classList.add('active');
+                else obj.label.element.classList.remove('active');
+            });
+
+            // Move Camera to focus (smooth tween)
+            const targetPos = position.clone();
+            const camOffset = new THREE.Vector3(0, 0, 40); // Distance from root
+            const endCamPos = targetPos.clone().add(camOffset);
+
+            new TWEEN.Tween(camera.position)
+                .to(endCamPos, 1000)
+                .easing(TWEEN.Easing.Cubic.Out)
+                .start();
+            
+            new TWEEN.Tween(controls.target)
+                .to(targetPos, 1000)
+                .easing(TWEEN.Easing.Cubic.Out)
+                .start();
+
+            // Expand Satellites
+            spawnSatellites(rootStr, position);
+        }
+
+        function spawnSatellites(rootStr, centerPos) {
+            // Clear existing satellites
+            while(satelliteGroup.children.length > 0){ 
+                satelliteGroup.remove(satelliteGroup.children[0]); 
+            }
+            state.objects.satellites = [];
+
+            const verbs = state.roots[rootStr];
+            const count = verbs.length;
 
             verbs.forEach((verb, i) => {
-                // Random distribution in a sphere
-                const r = 50 * Math.cbrt(Math.random()); // Uniform distribution in sphere
-                const theta = Math.random() * 2 * Math.PI;
-                const phi = Math.acos(2 * Math.random() - 1);
+                // Arrange in a circle around the root
+                const angle = (i / count) * Math.PI * 2;
+                const x = centerPos.x + Math.cos(angle) * SATELLITE_RADIUS;
+                const y = centerPos.y + Math.sin(angle) * SATELLITE_RADIUS;
+                const z = centerPos.z; // Flat disc relative to camera usually better, but let's try 3D
 
-                const x = r * Math.sin(phi) * Math.cos(theta);
-                const y = r * Math.sin(phi) * Math.sin(theta);
-                const z = r * Math.cos(phi);
+                // Line to center
+                const points = [centerPos, new THREE.Vector3(x, y, z)];
+                const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+                const lineMat = new THREE.LineBasicMaterial({ color: 0x4db8ff, transparent: true, opacity: 0.3 });
+                const line = new THREE.Line(lineGeo, lineMat);
+                satelliteGroup.add(line);
 
-                positions[i * 3] = x;
-                positions[i * 3 + 1] = y;
-                positions[i * 3 + 2] = z;
+                // Verb Node
+                const div = document.createElement('div');
+                div.className = 'verb-label';
+                div.onclick = () => showVerbInfo(verb);
+                
+                const labelObj = new CSS2DObject(div);
+                labelObj.position.set(x, y, z);
+                satelliteGroup.add(labelObj);
 
-                // Color by Binyan
-                const binyan = verb.bnE || 'default';
-                const hex = BINYAN_COLORS[binyan] || BINYAN_COLORS['default'];
-                colorObj.setHex(hex);
-
-                colors[i * 3] = colorObj.r;
-                colors[i * 3 + 1] = colorObj.g;
-                colors[i * 3 + 2] = colorObj.b;
-
-                sizes[i] = 1.0;
+                state.objects.satellites.push({ labelObj, verb });
             });
 
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-
-            // Shader Material for glowing dots
-            const material = new THREE.PointsMaterial({
-                size: 2,
-                vertexColors: true,
-                map: createCircleTexture(),
-                transparent: true,
-                alphaTest: 0.5,
-                sizeAttenuation: true
-            });
-
-            particles = new THREE.Points(geometry, material);
-            particles.userData = { verbs: verbs }; // Store data reference
-            scene.add(particles);
+            updateSatelliteLabels();
         }
 
-        function createCircleTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 32;
-            canvas.height = 32;
-            const context = canvas.getContext('2d');
-            context.beginPath();
-            context.arc(16, 16, 14, 0, 2 * Math.PI);
-            context.fillStyle = 'white';
-            context.fill();
-            const texture = new THREE.CanvasTexture(canvas);
-            return texture;
-        }
+        function updateSatelliteLabels() {
+            state.objects.satellites.forEach(obj => {
+                const verb = obj.verb;
+                const div = obj.labelObj.element;
+                
+                let text = '';
+                let sub = verb.bnE; // Binyan as subtitle
+                let audioPath = null;
 
-        function createLegend() {
-            const container = document.getElementById('legend');
-            for (const [binyan, color] of Object.entries(BINYAN_COLORS)) {
-                if (binyan === 'default') continue;
-                const item = document.createElement('div');
-                item.className = 'legend-item';
-                item.innerHTML = `
-                    <div class="color-box" style="background-color: #${color.toString(16).padStart(6, '0')}"></div>
-                    <span>${binyan}</span>
+                if (state.tense === 'inf') {
+                    text = verb.inf;
+                    // Find audio for infinitive
+                    if (verb.conjugations && verb.conjugations.inf && verb.conjugations.inf[0]) {
+                        audioPath = verb.conjugations.inf[0].aud;
+                    }
+                } else {
+                    // Look up conjugation
+                    const forms = verb.conjugations ? verb.conjugations[state.tense] : null;
+                    if (forms) {
+                        // Find form matching current pronoun
+                        // Note: Imperative doesn't have all pronouns, Future/Past do.
+                        // We need to map UI pronoun to Data pronoun.
+                        const match = forms.find(f => f.prn === state.pronoun);
+                        if (match) {
+                            text = match.frm; // The Hebrew word
+                            sub = match.trl;  // Transliteration
+                            audioPath = match.aud;
+                        } else {
+                            text = '-';
+                            sub = 'N/A';
+                        }
+                    } else {
+                        text = '-';
+                        sub = 'No Data';
+                    }
+                }
+
+                div.innerHTML = `
+                    <div style="font-size: 1.2em; font-weight: bold;">${text}</div>
+                    <div class="verb-sub">${sub}</div>
                 `;
-                container.appendChild(item);
+                
+                // Attach audio player to the div click (override showInfo for a moment? No, let's play on hover or add a button? 
+                // The user said "persistent when opening another node".
+                // Let's make clicking the node play audio AND show info.
+                div.onclick = (e) => {
+                    e.stopPropagation();
+                    if (audioPath) playAudio(audioPath);
+                    showVerbInfo(verb);
+                };
+            });
+        }
+
+        function showVerbInfo(verb) {
+            const panel = document.getElementById('info-panel');
+            const content = document.getElementById('panel-content');
+            
+            let html = `
+                <h2>${verb.inf}</h2>
+                <p style="color: #aaa;">${verb.mng.join(', ')}</p>
+                <hr style="border-color: #333;">
+                <div style="margin-bottom: 10px;">
+                    <strong>Root:</strong> ${verb.rt.join('.')}<br>
+                    <strong>Binyan:</strong> ${verb.bn} (${verb.bnE})
+                </div>
+            `;
+
+            // Examples
+            if (verb.examples && verb.examples.length > 0) {
+                html += `<h3>Examples</h3>`;
+                verb.examples.forEach(ex => {
+                    let exAudio = ex.audio ? '../../' + ex.audio : null;
+                    html += `
+                        <div style="margin-bottom: 15px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 5px;">
+                            <div style="display:flex; justify-content:space-between;">
+                                <span style="font-size: 1.1em; direction: rtl;">${ex.hebrew}</span>
+                                ${exAudio ? `<button onclick="playAudio('${exAudio}')" style="background:none; border:none; cursor:pointer;">🔊</button>` : ''}
+                            </div>
+                            <div style="color: #888; font-size: 0.9em;">${ex.transliteration}</div>
+                            <div style="font-style: italic;">${ex.translation}</div>
+                        </div>
+                    `;
+                });
             }
+
+            content.innerHTML = html;
+            panel.classList.add('visible');
+        }
+
+        window.playAudio = function(path) {
+            // Fix path if needed
+            if (path.startsWith('audio/')) path = '../../' + path.replace('.wav', '.mp4');
+            
+            const audio = new Audio(path);
+            audio.play().catch(e => console.warn("Audio play failed", e));
+        }
+
+        function setupUI() {
+            const tenseSelect = document.getElementById('tense-select');
+            const pronounSelect = document.getElementById('pronoun-select');
+
+            tenseSelect.addEventListener('change', (e) => {
+                state.tense = e.target.value;
+                // Enable/Disable pronoun select based on tense
+                if (state.tense === 'inf') {
+                    pronounSelect.disabled = true;
+                } else {
+                    pronounSelect.disabled = false;
+                }
+                updateSatelliteLabels();
+            });
+
+            pronounSelect.addEventListener('change', (e) => {
+                state.pronoun = e.target.value;
+                updateSatelliteLabels();
+            });
+
+            // Search
+            document.getElementById('search-box').addEventListener('input', (e) => {
+                const q = e.target.value.toLowerCase();
+                // Simple root search
+                const rootMatch = Object.keys(state.roots).find(r => r.includes(q) || r.replace(/\./g, '').includes(q));
+                if (rootMatch) {
+                    const mesh = state.objects.roots.find(o => o.root === rootMatch).mesh;
+                    selectRoot(rootMatch, mesh.position);
+                }
+            });
         }
 
         function onWindowResize() {
@@ -298,246 +484,12 @@
             labelRenderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        function onMouseMove(event) {
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-        }
-
-        function onClick(event) {
-            if (hoveredIndex !== -1) {
-                const verbs = particles.userData.verbs;
-                const verb = verbs[hoveredIndex];
-                showVerbDetails(verb);
-                controls.autoRotate = false;
-            }
-        }
-
-        function showVerbDetails(verb) {
-            const panel = document.getElementById('info-panel');
-            const content = document.getElementById('panel-content');
-            
-            // Main Verb Audio
-            let mainAudioPath = verb.audio ? '../../' + verb.audio : null;
-
-            let html = `
-                <div class="verb-title">
-                    ${verb.inf}
-                    ${mainAudioPath ? `
-                    <button class="play-btn" style="display:inline-flex; vertical-align: middle;" onclick="playAudio(this, '${mainAudioPath}')">
-                        ▶
-                    </button>` : ''}
-                </div>
-                <div class="verb-meta">
-                    <strong>Root:</strong> ${verb.rt.join('.')}<br>
-                    <strong>Binyan:</strong> ${verb.bn} (${verb.bnE})<br>
-                    <strong>Meaning:</strong> ${verb.mng.join(', ')}
-                </div>
-            `;
-
-            // Examples Section
-            if (verb.examples && verb.examples.length > 0) {
-                html += `<div class="conjugation-group"><h3>Examples</h3>`;
-                verb.examples.forEach(ex => {
-                    let exAudioPath = ex.audio ? '../../' + ex.audio : null;
-                    html += `
-                        <div class="conjugation-item" style="flex-direction: column; align-items: flex-start;">
-                            <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-                                <span style="font-size: 1.1em; direction: rtl;">${ex.hebrew}</span>
-                                ${exAudioPath ? `
-                                <button class="play-btn" onclick="playAudio(this, '${exAudioPath}')">
-                                    ▶
-                                </button>` : ''}
-                            </div>
-                            <div style="color: #aaa; font-size: 0.9em; margin-top: 4px;">${ex.transliteration}</div>
-                            <div style="font-style: italic; font-size: 0.9em;">${ex.translation}</div>
-                        </div>
-                    `;
-                });
-                html += `</div>`;
-            }
-
-            if (verb.conjugations) {
-                for (const [tense, forms] of Object.entries(verb.conjugations)) {
-                    html += `<div class="conjugation-group"><h3>${tense}</h3>`;
-                    forms.forEach(form => {
-                        // Fix audio path: json has "audio/xxxx.wav", we need "../../audio/xxxx.mp4"
-                        let audioPath = form.aud;
-                        if (audioPath) {
-                            audioPath = audioPath.replace('audio/', '../../audio/').replace('.wav', '.mp4');
-                        }
-
-                        html += `
-                            <div class="conjugation-item">
-                                <div>
-                                    <span style="color: #4db8ff;">${form.prn}</span>
-                                    <span style="font-size: 1.2em; margin: 0 10px;">${form.frm}</span>
-                                    <span style="color: #aaa; font-size: 0.9em;">${form.trl}</span>
-                                </div>
-                                ${audioPath ? `
-                                <button class="play-btn" onclick="playAudio(this, '${audioPath}')">
-                                    ▶
-                                </button>` : ''}
-                            </div>
-                        `;
-                    });
-                    html += `</div>`;
-                }
-            }
-
-            content.innerHTML = html;
-            panel.style.display = 'block';
-        }
-
-        window.playAudio = async function(btn, path) {
-            try {
-                const audio = new Audio(path);
-                // Handle 404s or other loading errors
-                audio.addEventListener('error', (e) => {
-                    console.warn('Audio load failed:', path);
-                    btn.style.background = '#ff4d4d';
-                    btn.title = 'Audio unavailable';
-                    btn.innerHTML = '✖';
-                });
-                await audio.play();
-            } catch (e) {
-                console.warn('Audio playback failed:', e);
-                btn.style.background = '#ff4d4d';
-                btn.title = 'Audio unavailable';
-                btn.innerHTML = '✖';
-            }
-        };
-
         function animate() {
             requestAnimationFrame(animate);
+            TWEEN.update();
             controls.update();
-
-            // Raycasting
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObject(particles);
-
-            if (intersects.length > 0) {
-                if (hoveredIndex !== intersects[0].index) {
-                    hoveredIndex = intersects[0].index;
-                    document.body.style.cursor = 'pointer';
-                    
-                    // Highlight effect could go here (e.g. change color or size)
-                    // For now just cursor change
-                }
-            } else {
-                hoveredIndex = -1;
-                document.body.style.cursor = 'default';
-            }
-
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
-        }
-
-        function onSearchInput(e) {
-            const query = e.target.value.toLowerCase();
-            const resultsContainer = document.getElementById('search-results');
-            resultsContainer.innerHTML = '';
-
-            if (query.length < 2) {
-                resultsContainer.style.display = 'none';
-                return;
-            }
-
-            const verbs = Object.values(verbsData);
-            const matches = [];
-
-            verbs.forEach((verb, index) => {
-                // Search in Infinitive
-                if (verb.inf.includes(query)) {
-                    matches.push({ verb, index, type: 'Infinitive', text: verb.inf });
-                    return;
-                }
-                // Search in Root
-                if (verb.rt.join('').includes(query)) {
-                    matches.push({ verb, index, type: 'Root', text: verb.rt.join('.') });
-                    return;
-                }
-                // Search in Meaning
-                const meaningMatch = verb.mng.find(m => m.toLowerCase().includes(query));
-                if (meaningMatch) {
-                    matches.push({ verb, index, type: 'Meaning', text: meaningMatch });
-                    return;
-                }
-                // Search in Examples
-                if (verb.examples) {
-                    const exMatch = verb.examples.find(ex => 
-                        ex.hebrew.includes(query) || 
-                        ex.transliteration.toLowerCase().includes(query) || 
-                        ex.translation.toLowerCase().includes(query)
-                    );
-                    if (exMatch) {
-                        matches.push({ verb, index, type: 'Example', text: exMatch.translation }); // Show translation as preview
-                        return;
-                    }
-                }
-            });
-
-            if (matches.length > 0) {
-                matches.slice(0, 10).forEach(match => {
-                    const div = document.createElement('div');
-                    div.className = 'search-result-item';
-                    div.innerHTML = `
-                        <span class="search-match-type">${match.type}</span>
-                        <span class="search-match-text">${match.text}</span>
-                        <div style="font-size: 0.8em; color: #aaa;">${match.verb.inf} (${match.verb.bnE})</div>
-                    `;
-                    div.addEventListener('click', () => selectVerb(match.index));
-                    resultsContainer.appendChild(div);
-                });
-                resultsContainer.style.display = 'block';
-            } else {
-                resultsContainer.style.display = 'none';
-            }
-        }
-
-        function selectVerb(index) {
-            const verbs = particles.userData.verbs;
-            const verb = verbs[index];
-            
-            // Fly to verb
-            const positions = particles.geometry.attributes.position.array;
-            const x = positions[index * 3];
-            const y = positions[index * 3 + 1];
-            const z = positions[index * 3 + 2];
-
-            const targetPos = new THREE.Vector3(x, y, z);
-            
-            // Animate camera
-            const startPos = camera.position.clone();
-            const endPos = targetPos.clone().add(new THREE.Vector3(0, 0, 20)); // Offset
-            
-            // Simple tween (could be improved)
-            let t = 0;
-            const duration = 1000;
-            const startTime = performance.now();
-
-            function animateFly(time) {
-                const elapsed = time - startTime;
-                t = Math.min(elapsed / duration, 1);
-                
-                // Ease out cubic
-                const ease = 1 - Math.pow(1 - t, 3);
-                
-                camera.position.lerpVectors(startPos, endPos, ease);
-                controls.target.lerpVectors(controls.target, targetPos, ease);
-                
-                if (t < 1) {
-                    requestAnimationFrame(animateFly);
-                } else {
-                    controls.update();
-                    showVerbDetails(verb);
-                    controls.autoRotate = false;
-                }
-            }
-            
-            requestAnimationFrame(animateFly);
-            
-            document.getElementById('search-results').style.display = 'none';
-            document.getElementById('search-input').value = '';
         }
     </script>
 </body>
