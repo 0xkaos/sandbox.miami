@@ -155,8 +155,6 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/gh/timothygebhard/js-colormaps@master/js-colormaps.js"></script>
-
     <script type="importmap">
     {
         "imports": {
@@ -282,6 +280,32 @@
             }
         }
 
+        function getViridisColor(t) {
+            t = Math.max(0, Math.min(1, t));
+            const stops = [
+                { t: 0.0, c: [68, 1, 84] },     // #440154
+                { t: 0.25, c: [59, 82, 139] },  // #3b528b
+                { t: 0.5, c: [33, 145, 140] },  // #21918c
+                { t: 0.75, c: [94, 201, 98] },  // #5ec962
+                { t: 1.0, c: [253, 231, 37] }   // #fde725
+            ];
+            
+            for (let i = 0; i < stops.length - 1; i++) {
+                if (t >= stops[i].t && t <= stops[i+1].t) {
+                    const t0 = stops[i].t;
+                    const t1 = stops[i+1].t;
+                    const f = (t - t0) / (t1 - t0);
+                    const c0 = stops[i].c;
+                    const c1 = stops[i+1].c;
+                    const r = c0[0] + (c1[0] - c0[0]) * f;
+                    const g = c0[1] + (c1[1] - c0[1]) * f;
+                    const b = c0[2] + (c1[2] - c0[2]) * f;
+                    return new THREE.Color(r/255, g/255, b/255);
+                }
+            }
+            return new THREE.Color(stops[stops.length-1].c[0]/255, stops[stops.length-1].c[1]/255, stops[stops.length-1].c[2]/255);
+        }
+
         function buildHelix() {
             const roots = Object.keys(state.roots).sort(); // Alphabetical sort
             const totalRoots = roots.length;
@@ -292,32 +316,9 @@
                 const x = Math.cos(angle) * HELIX_RADIUS;
                 const z = Math.sin(angle) * HELIX_RADIUS;
 
-                // Gradient Color (Viridis with fallback)
-                let color = new THREE.Color();
-                if (typeof evaluate_cmap === 'function') {
-                    let val = index / totalRoots;
-                    // Clamp to [0, 1] to prevent "Illegal value for x" error
-                    val = Math.max(0, Math.min(1, val));
-
-                    try {
-                        // Try 'viridis' (standard python), fallback to 'jet' (classic python)
-                        let rgb;
-                        try {
-                            // evaluate_cmap(value, name, reverse)
-                            // Returns [r, g, b] in 0-255 range
-                            rgb = evaluate_cmap(val, 'viridis', false);
-                        } catch (e) {
-                            // If viridis fails, try jet
-                            rgb = evaluate_cmap(val, 'jet', false);
-                        }
-                        color.setRGB(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255);
-                    } catch (e) {
-                        console.warn("Colormap evaluation failed, falling back to HSL", e);
-                        color.setHSL(val, 1.0, 0.6);
-                    }
-                } else {
-                    color.setHSL(index / totalRoots, 1.0, 0.6);
-                }
+                // Gradient Color (Viridis)
+                let val = index / totalRoots;
+                let color = getViridisColor(val);
 
                 // 3D Object (Glowing Sphere)
                 const geometry = new THREE.SphereGeometry(0.8, 16, 16);
@@ -333,6 +334,7 @@
                 const div = document.createElement('div');
                 div.className = 'root-label';
                 div.textContent = rootStr;
+                div.style.color = '#' + color.getHexString();
                 div.onclick = () => selectRoot(rootStr, mesh.position);
                 
                 const label = new CSS2DObject(div);
