@@ -72,7 +72,9 @@ wrangler pages deploy . --project-name=sandbox-miami
 ```
 sandbox.miami/
 ├── index.html          # Main HTML file with Three.js scene
+├── package.json        # Project metadata and scripts
 ├── wrangler.toml       # Cloudflare configuration
+├── _headers            # Security and caching headers
 ├── .gitignore          # Git ignore file
 └── README.md           # This file
 ```
