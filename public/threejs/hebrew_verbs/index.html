@@ -291,11 +291,28 @@
                 const x = Math.cos(angle) * HELIX_RADIUS;
                 const z = Math.sin(angle) * HELIX_RADIUS;
 
-                // Gradient Color (Viridis)
+                // Gradient Color (Viridis with fallback)
                 let color = new THREE.Color();
                 if (typeof evaluate_cmap === 'function') {
-                    const rgb = evaluate_cmap('viridis', index / totalRoots, false);
-                    color.setRGB(rgb[0], rgb[1], rgb[2]);
+                    let val = index / totalRoots;
+                    // Clamp to [0, 1] to prevent "Illegal value for x" error
+                    val = Math.max(0, Math.min(1, val));
+
+                    try {
+                        // Try 'viridis' (standard python), fallback to 'jet' (classic python)
+                        // Note: The library might not have 'viridis' or it might be case-sensitive
+                        let rgb;
+                        try {
+                            rgb = evaluate_cmap('viridis', val, false);
+                        } catch (e) {
+                            // If viridis fails, try jet
+                            rgb = evaluate_cmap('jet', val, false);
+                        }
+                        color.setRGB(rgb[0], rgb[1], rgb[2]);
+                    } catch (e) {
+                        console.warn("Colormap evaluation failed, falling back to HSL", e);
+                        color.setHSL(val, 1.0, 0.6);
+                    }
                 } else {
                     color.setHSL(index / totalRoots, 1.0, 0.6);
                 }
