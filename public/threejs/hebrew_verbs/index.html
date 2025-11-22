@@ -60,19 +60,37 @@
 
         .verb-label {
             font-size: 16px; color: #aaa;
-            background: rgba(0,0,0,0.7);
-            padding: 5px 10px; border-radius: 5px;
+            background: rgba(0,0,0,0.85);
+            padding: 8px 12px; border-radius: 8px;
             border: 1px solid #333;
-            cursor: pointer; pointer-events: auto;
+            cursor: default; pointer-events: auto;
             transition: all 0.2s;
             white-space: nowrap;
             text-align: center;
+            display: flex; flex-direction: column; align-items: center; gap: 5px;
         }
         .verb-label:hover { 
-            background: rgba(77, 184, 255, 0.2); 
+            background: rgba(20, 20, 30, 0.95); 
             border-color: #4db8ff; color: white;
+            z-index: 100;
         }
-        .verb-sub { font-size: 0.8em; color: #888; display: block; margin-top: 2px; }
+        .verb-sub { font-size: 0.8em; color: #888; display: block; margin-bottom: 5px; }
+        
+        .verb-actions {
+            display: flex; gap: 8px; margin-top: 5px;
+            opacity: 0.6; transition: opacity 0.2s;
+        }
+        .verb-label:hover .verb-actions { opacity: 1; }
+        
+        .verb-btn {
+            background: rgba(255,255,255,0.1); border: 1px solid #555;
+            color: #ddd; border-radius: 4px; padding: 4px 8px;
+            cursor: pointer; font-size: 0.9em;
+            transition: all 0.2s;
+        }
+        .verb-btn:hover { background: #4db8ff; color: #000; border-color: #4db8ff; }
+        .verb-btn.play-btn { color: #4db8ff; border-color: #4db8ff; }
+        .verb-btn.play-btn:hover { background: #4db8ff; color: white; }
 
         /* Info Panel (Right Side) */
         #info-panel {
@@ -185,7 +203,7 @@
         // --- Constants ---
         const HELIX_RADIUS = 30;
         const HELIX_HEIGHT_STEP = 8;
-        const SATELLITE_RADIUS = 15;
+        const SATELLITE_RADIUS = 25; // Increased from 15
 
         // --- Three.js Globals ---
         let scene, camera, renderer, labelRenderer, controls, raycaster, mouse;
@@ -249,6 +267,14 @@
             window.addEventListener('pointerdown', onPointerDown);
             document.getElementById('close-panel').addEventListener('click', () => {
                 document.getElementById('info-panel').classList.remove('visible');
+            });
+
+            // Search Listener
+            const searchBox = document.getElementById('search-box');
+            searchBox.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    performSearch(searchBox.value);
+                }
             });
 
             // 2. Load & Process Data
@@ -402,7 +428,7 @@
 
             // Move Camera to focus (smooth tween)
             const targetPos = position.clone();
-            const camOffset = new THREE.Vector3(0, 0, 70); // Distance from root (increased from 40)
+            const camOffset = new THREE.Vector3(0, 0, 100); // Distance from root (increased from 70)
             const endCamPos = targetPos.clone().add(camOffset);
 
             new TWEEN.Tween(camera.position)
@@ -464,7 +490,8 @@
                 div.style.borderColor = '#' + rootColor.getHexString();
                 div.style.boxShadow = `0 0 10px #${rootColor.getHexString()}`;
                 
-                div.onclick = () => showVerbInfo(verb);
+                // Click on container does nothing (buttons handle actions)
+                div.onclick = (e) => e.stopPropagation();
                 
                 const labelObj = new CSS2DObject(div);
                 labelObj.position.copy(pos);
@@ -516,16 +543,28 @@
                 div.innerHTML = `
                     <div style="font-size: 1.2em; font-weight: bold;">${text}</div>
                     <div class="verb-sub">${sub}</div>
+                    <div class="verb-actions">
+                        ${audioPath ? `<button class="verb-btn play-btn" title="Play Audio">🔊</button>` : ''}
+                        <button class="verb-btn info-btn" title="Show Info">ℹ️</button>
+                    </div>
                 `;
                 
-                // Attach audio player to the div click (override showInfo for a moment? No, let's play on hover or add a button? 
-                // The user said "persistent when opening another node".
-                // Let's make clicking the node play audio AND show info.
-                div.onclick = (e) => {
-                    e.stopPropagation();
-                    if (audioPath) playAudio(audioPath);
-                    showVerbInfo(verb);
-                };
+                // Attach listeners
+                const playBtn = div.querySelector('.play-btn');
+                if (playBtn) {
+                    playBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        if (audioPath) playAudio(audioPath);
+                    };
+                }
+
+                const infoBtn = div.querySelector('.info-btn');
+                if (infoBtn) {
+                    infoBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        showVerbInfo(verb);
+                    };
+                }
             });
         }
 
@@ -592,17 +631,47 @@
                 state.pronoun = e.target.value;
                 updateSatelliteLabels();
             });
+        }
 
-            // Search
-            document.getElementById('search-box').addEventListener('input', (e) => {
-                const q = e.target.value.toLowerCase();
-                // Simple root search
-                const rootMatch = Object.keys(state.roots).find(r => r.includes(q) || r.replace(/\./g, '').includes(q));
-                if (rootMatch) {
-                    const mesh = state.objects.roots.find(o => o.root === rootMatch).mesh;
-                    selectRoot(rootMatch, mesh.position);
+        function performSearch(query) {
+            if (!query) return;
+            const q = query.toLowerCase().trim();
+            
+            // 1. Search Roots
+            // Try exact match first, then partial
+            let rootMatch = Object.keys(state.roots).find(r => r.toLowerCase() === q || r.replace(/\./g, '').toLowerCase() === q);
+            if (!rootMatch) {
+                rootMatch = Object.keys(state.roots).find(r => r.toLowerCase().includes(q) || r.replace(/\./g, '').toLowerCase().includes(q));
+            }
+
+            if (rootMatch) {
+                const obj = state.objects.roots.find(o => o.root === rootMatch);
+                if (obj) {
+                    selectRoot(rootMatch, obj.mesh.position);
+                    return;
                 }
-            });
+            }
+
+            // 2. Search Verbs (Infinitive or Meaning)
+            for (const root in state.roots) {
+                const verbs = state.roots[root];
+                const verbMatch = verbs.find(v => 
+                    v.inf.includes(q) || 
+                    (v.mng && v.mng.some(m => m.toLowerCase().includes(q)))
+                );
+                
+                if (verbMatch) {
+                    const obj = state.objects.roots.find(o => o.root === root);
+                    if (obj) {
+                        selectRoot(root, obj.mesh.position);
+                        // Ideally we would highlight the specific verb satellite too, 
+                        // but selectRoot respawns them. 
+                        // We could pass a target verb to selectRoot?
+                        // For now, just going to the root is a huge improvement.
+                        return;
+                    }
+                }
+            }
         }
 
         function onWindowResize() {
