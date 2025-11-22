@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Sandbox - Miami</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            text-align: center;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px 30px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+
+        #info h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        #info p {
+            font-size: 1em;
+            opacity: 0.9;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        @media (max-width: 768px) {
+            #info h1 {
+                font-size: 1.5em;
+            }
+            #info p {
+                font-size: 0.9em;
+            }
+            #info {
+                padding: 10px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h1>🌴 Three.js Sandbox</h1>
+        <p>Interactive 3D Graphics Playground</p>
+    </div>
+    <div id="canvas-container"></div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+        scene.fog = new THREE.Fog(0x000000, 1, 1000);
+
+        // Camera setup
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            1000
+        );
+        camera.position.z = 5;
+
+        // Renderer setup
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // Orbit controls
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 1.0;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 5, 5);
+        scene.add(directionalLight);
+
+        const pointLight = new THREE.PointLight(0xff00ff, 1, 100);
+        pointLight.position.set(-5, 5, 5);
+        scene.add(pointLight);
+
+        // Create a group of geometric shapes
+        const geometryGroup = new THREE.Group();
+
+        // Torus Knot
+        const torusKnotGeometry = new THREE.TorusKnotGeometry(1, 0.3, 100, 16);
+        const torusKnotMaterial = new THREE.MeshStandardMaterial({
+            color: 0x00ffff,
+            metalness: 0.7,
+            roughness: 0.2,
+            wireframe: false
+        });
+        const torusKnot = new THREE.Mesh(torusKnotGeometry, torusKnotMaterial);
+        geometryGroup.add(torusKnot);
+
+        // Add smaller orbiting spheres
+        const sphereGeometry = new THREE.SphereGeometry(0.2, 32, 32);
+        const spheres = [];
+        for (let i = 0; i < 5; i++) {
+            const material = new THREE.MeshStandardMaterial({
+                color: Math.random() * 0xffffff,
+                metalness: 0.5,
+                roughness: 0.3
+            });
+            const sphere = new THREE.Mesh(sphereGeometry, material);
+            const angle = (i / 5) * Math.PI * 2;
+            sphere.position.set(Math.cos(angle) * 3, Math.sin(angle) * 3, 0);
+            spheres.push({ mesh: sphere, angle: angle, speed: 0.5 + Math.random() * 0.5 });
+            geometryGroup.add(sphere);
+        }
+
+        scene.add(geometryGroup);
+
+        // Particle system
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlesCount = 1000;
+        const positions = new Float32Array(particlesCount * 3);
+
+        for (let i = 0; i < particlesCount * 3; i++) {
+            positions[i] = (Math.random() - 0.5) * 50;
+        }
+
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const particlesMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.05,
+            transparent: true,
+            opacity: 0.6
+        });
+        const particles = new THREE.Points(particlesGeometry, particlesMaterial);
+        scene.add(particles);
+
+        // Animation
+        let time = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.01;
+
+            // Rotate the main geometry
+            torusKnot.rotation.x += 0.01;
+            torusKnot.rotation.y += 0.01;
+
+            // Animate orbiting spheres
+            spheres.forEach((sphere, index) => {
+                sphere.angle += 0.01 * sphere.speed;
+                sphere.mesh.position.x = Math.cos(sphere.angle) * 3;
+                sphere.mesh.position.y = Math.sin(sphere.angle) * 3;
+                sphere.mesh.position.z = Math.sin(time + index) * 0.5;
+                sphere.mesh.rotation.x += 0.02;
+                sphere.mesh.rotation.y += 0.02;
+            });
+
+            // Rotate particles slowly
+            particles.rotation.y += 0.0005;
+
+            // Update controls
+            controls.update();
+
+            // Render
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start animation
+        animate();
+
+        // Log initialization
+        console.log('Three.js Sandbox initialized');
+        console.log('Three.js version:', THREE.REVISION);
+    </script>
+</body>
+</html>

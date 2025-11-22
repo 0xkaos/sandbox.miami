@@ -1,0 +1,24 @@
+{
+  "name": "sandbox-miami",
+  "version": "1.0.0",
+  "description": "Three.js sandbox hosted on Cloudflare Pages",
+  "main": "index.html",
+  "scripts": {
+    "dev": "python3 -m http.server 8000",
+    "preview": "python3 -m http.server 8000"
+  },
+  "keywords": [
+    "threejs",
+    "3d",
+    "graphics",
+    "webgl",
+    "cloudflare",
+    "sandbox"
+  ],
+  "author": "0xkaos",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/0xkaos/sandbox.miami.git"
+  }
+}
