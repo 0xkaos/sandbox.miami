@@ -4,5 +4,11 @@
     "title": "Three.js Sandbox - Miami",
     "description": "No description available.",
     "category": "threejs"
+  },
+  {
+    "path": "/threejs/hebrew_verbs/",
+    "title": "Hebrew Verbs Galaxy",
+    "description": "Interactive 3D visualization of Hebrew verbs, their roots, and conjugations with audio.",
+    "category": "threejs"
   }
 ]
