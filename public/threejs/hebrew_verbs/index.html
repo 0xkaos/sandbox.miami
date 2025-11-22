@@ -300,15 +300,16 @@
 
                     try {
                         // Try 'viridis' (standard python), fallback to 'jet' (classic python)
-                        // Note: The library might not have 'viridis' or it might be case-sensitive
                         let rgb;
                         try {
-                            rgb = evaluate_cmap('viridis', val, false);
+                            // evaluate_cmap(value, name, reverse)
+                            // Returns [r, g, b] in 0-255 range
+                            rgb = evaluate_cmap(val, 'viridis', false);
                         } catch (e) {
                             // If viridis fails, try jet
-                            rgb = evaluate_cmap('jet', val, false);
+                            rgb = evaluate_cmap(val, 'jet', false);
                         }
-                        color.setRGB(rgb[0], rgb[1], rgb[2]);
+                        color.setRGB(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255);
                     } catch (e) {
                         console.warn("Colormap evaluation failed, falling back to HSL", e);
                         color.setHSL(val, 1.0, 0.6);
