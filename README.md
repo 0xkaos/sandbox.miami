@@ -5,6 +5,8 @@ An interactive Three.js sandbox hosted on Cloudflare Pages. This project showcas
 ## Features
 
 - 🎨 Interactive 3D scene with Three.js
+- 🌌 **Hebrew Verbs Galaxy**: A data visualization of 350+ Hebrew verbs with audio pronunciation and example sentences.
+- 🔍 **Search**: Deep search capability to find verbs by root, meaning, or context.
 - 🔄 Auto-rotating torus knot with orbiting spheres
 - ✨ Particle system background
 - 🎮 Orbit controls (click and drag to rotate, scroll to zoom)
