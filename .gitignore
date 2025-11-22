@@ -29,3 +29,6 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+
+# Unused audio backup
+unused_audio/
