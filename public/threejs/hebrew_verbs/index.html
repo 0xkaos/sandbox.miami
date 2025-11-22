@@ -57,6 +57,35 @@
         ::-webkit-scrollbar-track { background: #111; }
         ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #666; }
+
+        /* Search Box */
+        #search-container {
+            position: absolute; top: 20px; right: 20px;
+            pointer-events: auto;
+            width: 300px;
+        }
+        #search-input {
+            width: 100%; padding: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #444;
+            color: white; border-radius: 5px;
+            font-size: 16px;
+        }
+        #search-results {
+            position: absolute; top: 100%; left: 0; width: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #444; border-top: none;
+            border-radius: 0 0 5px 5px;
+            max-height: 300px; overflow-y: auto;
+            display: none;
+        }
+        .search-result-item {
+            padding: 10px; border-bottom: 1px solid #222;
+            cursor: pointer;
+        }
+        .search-result-item:hover { background: #222; }
+        .search-match-type { font-size: 0.8em; color: #888; display: block; margin-bottom: 2px; }
+        .search-match-text { color: #4db8ff; }
     </style>
 </head>
 <body>
@@ -67,6 +96,11 @@
         <div style="pointer-events: auto;">
             <h1>🌌 Hebrew Verbs Galaxy</h1>
             <p style="opacity: 0.7;">Click on a star to explore conjugations</p>
+        </div>
+
+        <div id="search-container">
+            <input type="text" id="search-input" placeholder="Search verbs, roots, or sentences...">
+            <div id="search-results"></div>
         </div>
         
         <div id="info-panel">
@@ -156,6 +190,9 @@
                 document.getElementById('info-panel').style.display = 'none';
                 controls.autoRotate = true;
             });
+
+            // Search Listener
+            document.getElementById('search-input').addEventListener('input', onSearchInput);
 
             // Load Data
             try {
@@ -393,6 +430,114 @@
 
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
+        }
+
+        function onSearchInput(e) {
+            const query = e.target.value.toLowerCase();
+            const resultsContainer = document.getElementById('search-results');
+            resultsContainer.innerHTML = '';
+
+            if (query.length < 2) {
+                resultsContainer.style.display = 'none';
+                return;
+            }
+
+            const verbs = Object.values(verbsData);
+            const matches = [];
+
+            verbs.forEach((verb, index) => {
+                // Search in Infinitive
+                if (verb.inf.includes(query)) {
+                    matches.push({ verb, index, type: 'Infinitive', text: verb.inf });
+                    return;
+                }
+                // Search in Root
+                if (verb.rt.join('').includes(query)) {
+                    matches.push({ verb, index, type: 'Root', text: verb.rt.join('.') });
+                    return;
+                }
+                // Search in Meaning
+                const meaningMatch = verb.mng.find(m => m.toLowerCase().includes(query));
+                if (meaningMatch) {
+                    matches.push({ verb, index, type: 'Meaning', text: meaningMatch });
+                    return;
+                }
+                // Search in Examples
+                if (verb.examples) {
+                    const exMatch = verb.examples.find(ex => 
+                        ex.hebrew.includes(query) || 
+                        ex.transliteration.toLowerCase().includes(query) || 
+                        ex.translation.toLowerCase().includes(query)
+                    );
+                    if (exMatch) {
+                        matches.push({ verb, index, type: 'Example', text: exMatch.translation }); // Show translation as preview
+                        return;
+                    }
+                }
+            });
+
+            if (matches.length > 0) {
+                matches.slice(0, 10).forEach(match => {
+                    const div = document.createElement('div');
+                    div.className = 'search-result-item';
+                    div.innerHTML = `
+                        <span class="search-match-type">${match.type}</span>
+                        <span class="search-match-text">${match.text}</span>
+                        <div style="font-size: 0.8em; color: #aaa;">${match.verb.inf} (${match.verb.bnE})</div>
+                    `;
+                    div.addEventListener('click', () => selectVerb(match.index));
+                    resultsContainer.appendChild(div);
+                });
+                resultsContainer.style.display = 'block';
+            } else {
+                resultsContainer.style.display = 'none';
+            }
+        }
+
+        function selectVerb(index) {
+            const verbs = particles.userData.verbs;
+            const verb = verbs[index];
+            
+            // Fly to verb
+            const positions = particles.geometry.attributes.position.array;
+            const x = positions[index * 3];
+            const y = positions[index * 3 + 1];
+            const z = positions[index * 3 + 2];
+
+            const targetPos = new THREE.Vector3(x, y, z);
+            
+            // Animate camera
+            const startPos = camera.position.clone();
+            const endPos = targetPos.clone().add(new THREE.Vector3(0, 0, 20)); // Offset
+            
+            // Simple tween (could be improved)
+            let t = 0;
+            const duration = 1000;
+            const startTime = performance.now();
+
+            function animateFly(time) {
+                const elapsed = time - startTime;
+                t = Math.min(elapsed / duration, 1);
+                
+                // Ease out cubic
+                const ease = 1 - Math.pow(1 - t, 3);
+                
+                camera.position.lerpVectors(startPos, endPos, ease);
+                controls.target.lerpVectors(controls.target, targetPos, ease);
+                
+                if (t < 1) {
+                    requestAnimationFrame(animateFly);
+                } else {
+                    controls.update();
+                    showVerbDetails(verb);
+                    controls.autoRotate = false;
+                }
+            }
+            
+            requestAnimationFrame(animateFly);
+            
+            document.getElementById('search-results').style.display = 'none';
+            document.getElementById('search-input').value = '';
         }
     </script>
 </body>
