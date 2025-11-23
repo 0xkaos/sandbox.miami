@@ -2,11 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Hebrew Verbs Galaxy - Roots Edition</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #050510; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        #canvas-container { width: 100vw; height: 100vh; }
+        body { 
+            margin: 0; overflow: hidden; background-color: #050510; color: white; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none; /* Prevent browser zoom/scroll */
+            user-select: none; /* Prevent text selection */
+            -webkit-user-select: none;
+        }
+        #canvas-container { width: 100vw; height: 100vh; touch-action: none; }
         
         /* UI Overlay */
         #ui-layer {
@@ -28,6 +34,7 @@
             box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
             backdrop-filter: blur(10px);
             box-sizing: border-box;
+            touch-action: manipulation; /* Allow interaction */
         }
 
         .control-group { display: flex; flex-direction: column; gap: 5px; }
@@ -37,6 +44,7 @@
             background: #111; color: #fff; border: 1px solid #333;
             padding: 6px 10px; border-radius: 4px; font-size: 0.9em;
             outline: none; cursor: pointer; min-width: 100px;
+            touch-action: manipulation;
         }
         select:hover { border-color: #4db8ff; }
 
@@ -45,6 +53,7 @@
             background: rgba(255,255,255,0.1); border: 1px solid #333; color: white;
             padding: 8px 12px; border-radius: 20px; width: 250px;
             font-size: 0.9em; outline: none; transition: all 0.2s;
+            touch-action: manipulation;
         }
         #search-box:focus { border-color: #4db8ff; background: rgba(255,255,255,0.15); }
 
@@ -105,6 +114,7 @@
             pointer-events: auto;
             overflow-y: auto;
             border-radius: 10px;
+            touch-action: pan-y; /* Allow vertical scroll */
         }
         #info-panel.visible { transform: translateX(0); }
 
@@ -246,6 +256,7 @@
             canvas.addEventListener('pointermove', onPointerMove);
             canvas.addEventListener('pointerup', onPointerUp);
             canvas.addEventListener('wheel', onWheel);
+            canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // Prevent long-press menu
 
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
@@ -782,16 +793,13 @@
 
         function onPointerDown(event) {
             if (event.target.closest('#ui-layer')) return;
+            if (!event.isPrimary) return; // Only track primary pointer
             
             state.isDragging = true;
             state.lastMouseX = event.clientX;
             state.lastMouseY = event.clientY;
 
-            // Raycast for selection (only if not dragging much? handled in up?)
-            // For now, let's keep selection on down, but maybe check if it was a drag later.
-            // Actually, standard behavior is select on up if no drag.
-            // But let's keep it simple: Raycast on down.
-            
+            // Raycast for selection
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
@@ -805,6 +813,7 @@
         }
 
         function onPointerMove(event) {
+            if (!event.isPrimary) return;
             if (!state.isDragging) return;
 
             const deltaX = event.clientX - state.lastMouseX;
@@ -817,14 +826,11 @@
             state.targetHelixRotation += deltaX * 0.005;
 
             // Vertical Drag -> Scroll
-            // Dragging DOWN (positive deltaY) should move content DOWN (decrease scrollY? No, increase scrollY moves camera up relative to content? No.)
-            // If I drag down, I want to see what's above. So content moves down.
-            // Content Y = originalY - scrollY.
-            // To move content down (increase Y), we need to decrease scrollY.
             state.targetScrollY -= deltaY * 0.5;
         }
 
         function onPointerUp(event) {
+            if (!event.isPrimary) return;
             state.isDragging = false;
         }
 
