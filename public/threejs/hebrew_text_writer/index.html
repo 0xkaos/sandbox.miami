@@ -49,16 +49,6 @@
         let isAnimating = false;
         let animationStartTime = 0;
         const LETTER_DURATION = 1000; // ms per letter
-
-        // Widths for kerning (approximate, relative to standard spacing)
-        const charWidths = {
-            'Vav': 0.25, 'Zayin': 0.4, 'Yud': 0.25, 'Nun': 0.4, 'Final Nun': 0.3,
-            'Gimmel': 0.6, 'Final Kaf': 0.6, 'Final Pei': 0.6, 'Final Tzadi': 0.6,
-            'Shin': 1.0, 'Tet': 1.0, 'Samech': 0.9, 'Mem': 0.9,
-            'Aleph': 0.9, 'Bet': 0.9, 'Dalet': 0.8, 'Hei': 0.9, 'Het': 0.9,
-            'Kaf': 0.8, 'Lamed': 0.8, 'Pei': 0.8, 'Resh': 0.8, 'Tav': 0.9, 'Tzadi': 0.8,
-            'Ayin': 0.9, 'Kuf': 0.8
-        };
         
         // Hebrew Char to Name mapping
         const charMap = {
@@ -156,7 +146,7 @@
             scene.add(group);
 
             let cursorX = 0;
-            const baseSpacing = 35; 
+            const baseSpacing = 50; 
             
             // Calculate total width for centering
             let totalWidth = 0;
@@ -164,7 +154,11 @@
                 const char = text[i];
                 const name = charMap[char];
                 let width = 1.0;
-                if (name && charWidths[name]) width = charWidths[name];
+                if (name && letterData[name]) {
+                    const data = letterData[name];
+                    if (data.width) width = data.width;
+                    else if (Array.isArray(data)) width = 1.0;
+                }
                 if (char === ' ') width = 0.5;
                 totalWidth += width * baseSpacing;
             }
@@ -176,6 +170,7 @@
                 const name = charMap[char];
                 
                 let width = 1.0;
+                let startX = 0.0;
                 let strokesData = null;
 
                 if (name && letterData[name]) {
@@ -183,22 +178,22 @@
                     if (Array.isArray(data)) {
                         // Old format
                         strokesData = data;
-                        // Fallback to hardcoded widths if available
-                        if (charWidths[name]) width = charWidths[name];
                     } else if (data.strokes) {
                         // New format
                         strokesData = data.strokes;
                         if (data.width) width = data.width;
+                        if (data.startX) startX = data.startX;
                     }
                 }
                 
                 if (strokesData) {
-                    // Center the letter in its allocated space
-                    // Standard letter is roughly centered at 0 in local coords
-                    // We move cursor left by width*spacing
-                    // Letter position should be cursorX - (width*spacing)/2
+                    // Position logic:
+                    // We want the visual "Start Line" (at startX) to be at the Left Edge of the allocation.
+                    // Left Edge = cursorX - width * baseSpacing.
+                    // Origin = Left Edge - startX * baseSpacing
+                    // Origin = cursorX - (width + startX) * baseSpacing
                     
-                    const letterX = cursorX - (width * baseSpacing) / 2;
+                    const letterX = cursorX - (width + startX) * baseSpacing;
                     
                     const letterObj = createLetterMesh(strokesData);
                     letterObj.position.x = letterX;

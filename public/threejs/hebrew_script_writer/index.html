@@ -58,6 +58,7 @@
             <div style="margin-top:10px; border-top: 1px solid #444; padding-top:5px;">
                 <div style="font-size:0.9em; margin-bottom:5px;">Character Settings</div>
                 <div class="row">
+                    <label>Start: <input type="number" id="char-start" value="0.0" step="0.1" style="width:50px;"></label>
                     <label>Width: <input type="number" id="char-width" value="1.0" step="0.1" style="width:50px;"></label>
                 </div>
             </div>
@@ -114,6 +115,7 @@
         let strokes = []; // Array of { line: THREE.Line, points: Vector3[], curve: CatmullRomCurve3 }
         let editPoints = []; // Array of THREE.Mesh (handles)
         let bgMesh = null;
+        let boundaryLines = null;
         
         // Animation
         let isAnimating = false;
@@ -172,6 +174,9 @@
             const grid = new THREE.GridHelper(300, 30, 0x333333, 0x222222);
             grid.rotation.x = Math.PI / 2;
             scene.add(grid);
+
+            boundaryLines = new THREE.Group();
+            scene.add(boundaryLines);
 
             // Raycaster for adding points
             const raycaster = new THREE.Raycaster();
@@ -277,6 +282,9 @@
             document.getElementById('bg-y').onchange = updateBG;
             document.getElementById('bg-opac').onchange = updateBG;
 
+            document.getElementById('char-start').onchange = updateBoundaries;
+            document.getElementById('char-width').onchange = updateBoundaries;
+
             document.getElementById('btn-save').onclick = handleSave;
 
             window.addEventListener('resize', onWindowResize);
@@ -356,9 +364,12 @@
                 } else if (data.strokes) {
                     strokesData = data.strokes;
                     if (data.width) width = data.width;
+                    if (data.startX) document.getElementById('char-start').value = data.startX;
+                    else document.getElementById('char-start').value = 0.0;
                 }
 
                 document.getElementById('char-width').value = width;
+                updateBoundaries();
 
                 strokesData.forEach(strokePoints => {
                     startNewStroke();
@@ -503,6 +514,33 @@
             scene.add(stroke.line);
         }
 
+        function updateBoundaries() {
+            if (!boundaryLines) return;
+            while(boundaryLines.children.length > 0){ 
+                boundaryLines.remove(boundaryLines.children[0]); 
+            }
+             
+            const start = parseFloat(document.getElementById('char-start').value) || 0;
+            const width = parseFloat(document.getElementById('char-width').value) || 1.0;
+            const VISUAL_SCALE = 100; 
+             
+            // Start Line (Green)
+            const matStart = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
+            const geoStart = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(start * VISUAL_SCALE, -150, 0), 
+                new THREE.Vector3(start * VISUAL_SCALE, 150, 0)
+            ]);
+            boundaryLines.add(new THREE.Line(geoStart, matStart));
+             
+            // End Line (Red)
+            const matEnd = new THREE.LineBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
+            const geoEnd = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3((start + width) * VISUAL_SCALE, -150, 0), 
+                new THREE.Vector3((start + width) * VISUAL_SCALE, 150, 0)
+            ]);
+            boundaryLines.add(new THREE.Line(geoEnd, matEnd));
+        }
+
         function replayAnimation() {
             isAnimating = true;
             startTime = performance.now();
@@ -524,11 +562,13 @@
             // Update library with current strokes
             const strokesData = strokes.map(s => s.points.map(p => [parseFloat(p.x.toFixed(1)), parseFloat(p.y.toFixed(1))]));
             const width = parseFloat(document.getElementById('char-width').value);
+            const startX = parseFloat(document.getElementById('char-start').value);
             
             // Save as object with metadata
             const charData = {
                 strokes: strokesData,
-                width: width
+                width: width,
+                startX: startX
             };
             
             library[currentChar] = charData;
