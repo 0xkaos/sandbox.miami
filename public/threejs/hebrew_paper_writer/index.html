@@ -175,6 +175,19 @@
             paperMesh.castShadow = true; 
             scene.add(paperMesh);
 
+            // Debug Sphere
+            const sphereGeo = new THREE.SphereGeometry(10, 32, 32);
+            const sphereMat = new THREE.MeshStandardMaterial({ 
+                color: 0xffffff, 
+                roughness: 0.5, 
+                metalness: 0.1 
+            });
+            const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+            sphere.position.set(0, 15, 0);
+            sphere.castShadow = true;
+            sphere.receiveShadow = true;
+            scene.add(sphere);
+
             // 4. Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.1); // Very low ambient
             scene.add(ambientLight);
