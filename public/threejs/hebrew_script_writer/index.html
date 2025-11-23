@@ -139,7 +139,7 @@
             scene.background = new THREE.Color(0x111111);
 
             const aspect = window.innerWidth / window.innerHeight;
-            const frustumSize = 300;
+            const frustumSize = 400;
             camera = new THREE.OrthographicCamera(frustumSize * aspect / -2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / -2, 0.1, 1000);
             camera.position.z = 100;
 
@@ -466,6 +466,19 @@
             const data = strokes.map(s => s.points.map(p => [parseFloat(p.x.toFixed(1)), parseFloat(p.y.toFixed(1))]));
             library[currentChar] = data;
 
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+            if (!isLocal) {
+                // On production, we can't write to disk. Skip the network call.
+                const json = JSON.stringify(library, null, 2);
+                navigator.clipboard.writeText(json).then(() => {
+                    document.getElementById('status').textContent = "Saved to Clipboard (Live Site Mode)";
+                }).catch(e => {
+                    document.getElementById('status').textContent = "Save failed: " + e;
+                });
+                return;
+            }
+
             try {
                 const response = await fetch('/api/save-letters', {
                     method: 'POST',
@@ -493,7 +506,7 @@
 
         function onWindowResize() {
             const aspect = window.innerWidth / window.innerHeight;
-            const frustumSize = 300;
+            const frustumSize = 400;
             
             camera.left = -frustumSize * aspect / 2;
             camera.right = frustumSize * aspect / 2;
