@@ -9,31 +9,7 @@ export async function onRequestGet(context) {
         const object = await context.env.BUCKET.get('letters.json');
         
         if (object === null) {
-            // R2 is empty. Try to seed from static asset.
-            const url = new URL(context.request.url);
-            url.pathname = '/threejs/hebrew_script_writer/images/letters.json';
-            
-            console.log("Seeding R2 from:", url.toString());
-            
-            // Use internal asset fetcher if available, otherwise standard fetch
-            const fetcher = context.env.ASSETS || fetch;
-            const staticResp = await fetcher(url.toString());
-            
-            if (staticResp.ok) {
-                const data = await staticResp.json();
-                const json = JSON.stringify(data, null, 2);
-                
-                // Save to R2
-                await context.env.BUCKET.put('letters.json', json, {
-                    httpMetadata: { contentType: 'application/json' }
-                });
-                
-                return new Response(json, {
-                    headers: { 'Content-Type': 'application/json' }
-                });
-            }
-            
-            return new Response('Not found (Seeding failed)', { status: 404 });
+            return new Response('Not found', { status: 404 });
         }
 
         const headers = new Headers();

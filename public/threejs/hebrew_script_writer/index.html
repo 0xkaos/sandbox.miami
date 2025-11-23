@@ -192,12 +192,34 @@
             try {
                 // Try loading from R2 API first
                 let res = await fetch('/api/letters');
-                if (!res.ok) {
-                    console.warn(`API load failed (${res.status} ${res.statusText}), falling back to static file`);
-                    // If the API failed, we try to load the static file directly
-                    res = await fetch('images/letters.json');
+                
+                if (res.ok) {
+                    library = await res.json();
+                } else {
+                    if (res.status === 404) {
+                        console.log("Database empty. Initializing from static defaults...");
+                        // Load static file
+                        const staticRes = await fetch('images/letters.json');
+                        library = await staticRes.json();
+                        
+                        // Auto-seed the database
+                        try {
+                            await fetch('/api/letters', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(library)
+                            });
+                            console.log("Database successfully seeded.");
+                        } catch (seedErr) {
+                            console.warn("Failed to seed database:", seedErr);
+                        }
+                    } else {
+                        console.warn(`API error (${res.status}), falling back to static file`);
+                        const staticRes = await fetch('images/letters.json');
+                        library = await staticRes.json();
+                    }
                 }
-                library = await res.json();
+                
                 populateUI();
             } catch (err) {
                 console.error("Failed to load letters.json", err);
