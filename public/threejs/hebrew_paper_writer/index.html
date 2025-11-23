@@ -61,8 +61,13 @@
         import { Line2 } from 'three/addons/lines/Line2.js';
         import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
         import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-        let scene, camera, renderer, controls;
+        let scene, camera, renderer, controls, composer;
         let heightScene, heightCamera, heightTarget;
         let paperMesh;
         let letterData = {};
@@ -98,11 +103,30 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
             document.body.appendChild(renderer.domElement);
+
+            const pmremGenerator = new THREE.PMREMGenerator(renderer);
+            scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             
+            // Post-processing
+            composer = new EffectComposer(renderer);
+            const renderPass = new RenderPass(scene, camera);
+            composer.addPass(renderPass);
+
+            const ssaoPass = new SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
+            ssaoPass.kernelRadius = 16;
+            ssaoPass.minDistance = 0.005;
+            ssaoPass.maxDistance = 0.1;
+            composer.addPass(ssaoPass);
+
+            const outputPass = new OutputPass();
+            composer.addPass(outputPass);
+
             // 2. Height Map Setup (for indentation)
             heightScene = new THREE.Scene();
             heightScene.background = new THREE.Color(1, 1, 1); // White = High (Paper surface)
@@ -129,32 +153,36 @@
             const geometry = new THREE.PlaneGeometry(paperSize, paperSize, 512, 512);
             const material = new THREE.MeshStandardMaterial({
                 color: 0xf0f0e0,
-                roughness: 0.6,
+                roughness: 0.9, // Paper is rough
                 metalness: 0.0,
                 displacementMap: heightTarget.texture,
                 displacementScale: 2.0, // Depth of indentation
-                side: THREE.DoubleSide
+                side: THREE.DoubleSide,
+                shadowSide: THREE.DoubleSide
             });
             paperMesh = new THREE.Mesh(geometry, material);
             paperMesh.receiveShadow = true;
+            paperMesh.castShadow = true; // Self-shadowing for dents
             scene.add(paperMesh);
 
             // 4. Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.2); // Lower ambient to let SSAO/Shadows work
             scene.add(ambientLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-            dirLight.position.set(50, 50, 100);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(50, 100, 50); // Higher angle for writing
             dirLight.castShadow = true;
             dirLight.shadow.mapSize.width = 2048;
             dirLight.shadow.mapSize.height = 2048;
             dirLight.shadow.camera.near = 0.5;
             dirLight.shadow.camera.far = 500;
+            dirLight.shadow.bias = -0.0001;
             scene.add(dirLight);
             
             // Add a point light close to surface to exaggerate relief
             const pointLight = new THREE.PointLight(0xffaa00, 0.5, 200);
             pointLight.position.set(-50, 20, 20);
+            pointLight.castShadow = true;
             scene.add(pointLight);
 
             window.addEventListener('resize', onWindowResize);
@@ -375,6 +403,7 @@
             camera.aspect = aspect;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
         }
 
         function animate() {
@@ -439,7 +468,7 @@
             renderer.setRenderTarget(null);
             
             controls.update();
-            renderer.render(scene, camera);
+            composer.render();
         }
     </script>
 </body>
