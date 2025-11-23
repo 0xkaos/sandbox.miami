@@ -3,27 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hebrew Script Writer</title>
+    <title>Hebrew Script Editor</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; color: white; font-family: sans-serif; }
         #ui {
             position: absolute; top: 20px; left: 20px;
-            background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px;
+            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px;
             pointer-events: auto;
             display: flex; flex-direction: column; gap: 10px;
+            min-width: 200px;
         }
-        select { background: #333; color: white; padding: 5px; border: 1px solid #555; font-size: 1.2em; }
-        button { padding: 5px 10px; cursor: pointer; background: #444; color: white; border: 1px solid #666; }
-        button:hover { background: #555; }
+        select, button { 
+            background: #333; color: white; padding: 8px; 
+            border: 1px solid #555; font-size: 1em; border-radius: 4px;
+        }
+        button:hover { background: #444; cursor: pointer; }
+        .row { display: flex; gap: 10px; }
+        #status { font-size: 0.9em; color: #aaa; margin-top: 5px; }
+        .mode-toggle { display: flex; gap: 5px; background: #222; padding: 3px; border-radius: 4px; }
+        .mode-btn { flex: 1; border: none; background: transparent; opacity: 0.5; color: white; cursor: pointer; }
+        .mode-btn.active { background: #444; opacity: 1; }
+        
+        #save-area { margin-top: 10px; border-top: 1px solid #444; padding-top: 10px; }
+        textarea { width: 100%; height: 100px; background: #222; color: #0f0; font-family: monospace; font-size: 0.8em; border: 1px solid #444; display: none; }
     </style>
 </head>
 <body>
     <div id="ui">
-        <h1>Hebrew Script Writer</h1>
+        <h3>Hebrew Script Editor</h3>
+        
+        <div class="mode-toggle">
+            <button id="mode-view" class="mode-btn active">View</button>
+            <button id="mode-edit" class="mode-btn">Edit</button>
+        </div>
+
         <select id="char-select">
             <option value="" disabled selected>Loading...</option>
         </select>
-        <button id="btn-replay">Replay Animation</button>
+
+        <div class="row">
+            <button id="btn-replay">Replay</button>
+            <button id="btn-clear">Clear</button>
+        </div>
+
+        <div id="edit-controls" style="display:none;">
+            <div class="row">
+                <button id="btn-add-stroke">New Stroke</button>
+                <button id="btn-undo">Undo Point</button>
+            </div>
+            <div style="margin-top:5px;">
+                <label><input type="checkbox" id="chk-bg" checked> Show Reference</label>
+            </div>
+            
+            <div style="margin-top:10px; border-top: 1px solid #444; padding-top:5px;">
+                <div style="font-size:0.9em; margin-bottom:5px;">Background Adjust</div>
+                <div class="row">
+                    <label>Scale: <input type="number" id="bg-scale" value="280" step="10" style="width:50px;"></label>
+                </div>
+                <div class="row">
+                    <label>X: <input type="number" id="bg-x" value="-10" step="5" style="width:50px;"></label>
+                    <label>Y: <input type="number" id="bg-y" value="0" step="5" style="width:50px;"></label>
+                </div>
+                <div class="row">
+                    <label>Opac: <input type="number" id="bg-opac" value="0.5" step="0.1" min="0" max="1" style="width:50px;"></label>
+                </div>
+            </div>
+
+            <div style="margin-top:5px; font-size: 0.8em; color: #888;">
+                Shift+Click: Add point to end<br>
+                Alt+Click point: Delete<br>
+                Shift+Alt+Click line: Insert point<br>
+                Click point to move
+            </div>
+        </div>
+
+        <div id="save-area">
+            <button id="btn-save">Save to File</button>
+        </div>
+        
+        <div id="status">Ready</div>
     </div>
 
     <script type="importmap">
@@ -38,17 +96,41 @@
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
-        let scene, camera, renderer;
+        let scene, camera, renderer, controls, transformControl;
         let library = {};
-        let currentStrokes = []; // { line: THREE.Line, totalPoints: number }
-        let startTime = 0;
-        let isAnimating = false;
+        let currentChar = null;
         
-        // Configuration
-        const DRAW_SPEED = 0.15; // Units per millisecond
-        const LINE_COLOR = 0x4db8ff; // Light Blue
-        const LINE_WIDTH = 3;
+        // State
+        let mode = 'view'; // 'view' | 'edit'
+        let strokes = []; // Array of { line: THREE.Line, points: Vector3[], curve: CatmullRomCurve3 }
+        let editPoints = []; // Array of THREE.Mesh (handles)
+        let bgMesh = null;
+        
+        // Animation
+        let isAnimating = false;
+        let startTime = 0;
+        const DRAW_SPEED = 0.15; 
+
+        // Config
+        const LINE_COLOR = 0x4db8ff;
+        const HANDLE_COLOR = 0xffaa00;
+        const HANDLE_SIZE = 2;
+        
+        // Background settings
+        let bgSettings = {
+            scale: 320,
+            x: 0,
+            y: 0,
+            opacity: 0.5
+        };
+
+        // Load from local storage
+        try {
+            const saved = localStorage.getItem('hebrew_bg_settings');
+            if (saved) bgSettings = { ...bgSettings, ...JSON.parse(saved) };
+        } catch(e) { console.error(e); }
 
         init();
 
@@ -56,20 +138,55 @@
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x111111);
 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 150;
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 150;
+            camera = new THREE.OrthographicCamera(frustumSize * aspect / -2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / -2, 0.1, 1000);
+            camera.position.z = 100;
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
-            const controls = new OrbitControls(camera, renderer.domElement);
+            controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
+            controls.enableRotate = false; // 2D Mode
+            controls.addEventListener('change', render);
+
+            // Transform Controls for editing points
+            transformControl = new TransformControls(camera, renderer.domElement);
+            transformControl.addEventListener('change', render);
+            transformControl.addEventListener('dragging-changed', function (event) {
+                controls.enabled = !event.value;
+            });
+            transformControl.addEventListener('objectChange', updateCurveFromHandles);
+            scene.add(transformControl);
 
             // Grid
             const grid = new THREE.GridHelper(300, 30, 0x333333, 0x222222);
             grid.rotation.x = Math.PI / 2;
             scene.add(grid);
+
+            // Raycaster for adding points
+            const raycaster = new THREE.Raycaster();
+            const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+            
+            renderer.domElement.addEventListener('click', (e) => {
+                if (mode !== 'edit' || !e.shiftKey) return;
+                // Don't add point if clicking UI
+                if (e.target.closest('#ui')) return;
+                
+                const mouse = new THREE.Vector2();
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                
+                raycaster.setFromCamera(mouse, camera);
+                const target = new THREE.Vector3();
+                raycaster.ray.intersectPlane(plane, target);
+                
+                if (target) {
+                    addPointToCurrentStroke(target);
+                }
+            });
 
             // Load Data
             try {
@@ -80,22 +197,96 @@
                 console.error("Failed to load letters.json", err);
             }
 
-            window.addEventListener('resize', onWindowResize);
-            document.getElementById('char-select').addEventListener('change', (e) => playCharacter(e.target.value));
-            document.getElementById('btn-replay').addEventListener('click', () => {
-                const val = document.getElementById('char-select').value;
-                if (val) playCharacter(val);
-            });
-
+            setupUI();
             animate();
+        }
+
+        function setupUI() {
+            document.getElementById('mode-view').onclick = () => setMode('view');
+            document.getElementById('mode-edit').onclick = () => setMode('edit');
+            
+            document.getElementById('char-select').onchange = (e) => loadCharacter(e.target.value);
+            document.getElementById('btn-replay').onclick = replayAnimation;
+            document.getElementById('btn-clear').onclick = () => {
+                if(confirm("Clear all strokes?")) clearCanvas();
+            };
+            
+            document.getElementById('btn-add-stroke').onclick = startNewStroke;
+            document.getElementById('btn-undo').onclick = undoLastPoint;
+            document.getElementById('chk-bg').onchange = (e) => {
+                if (bgMesh) bgMesh.visible = e.target.checked;
+            };
+            
+            // Initialize inputs from settings
+            document.getElementById('bg-scale').value = bgSettings.scale;
+            document.getElementById('bg-x').value = bgSettings.x;
+            document.getElementById('bg-y').value = bgSettings.y;
+            document.getElementById('bg-opac').value = bgSettings.opacity;
+
+            // BG Controls
+            const updateBG = () => {
+                bgSettings.scale = parseFloat(document.getElementById('bg-scale').value);
+                bgSettings.x = parseFloat(document.getElementById('bg-x').value);
+                bgSettings.y = parseFloat(document.getElementById('bg-y').value);
+                bgSettings.opacity = parseFloat(document.getElementById('bg-opac').value);
+                
+                localStorage.setItem('hebrew_bg_settings', JSON.stringify(bgSettings));
+
+                if(currentChar) loadBackgroundImage(currentChar);
+            };
+            document.getElementById('bg-scale').onchange = updateBG;
+            document.getElementById('bg-x').onchange = updateBG;
+            document.getElementById('bg-y').onchange = updateBG;
+            document.getElementById('bg-opac').onchange = updateBG;
+
+            document.getElementById('btn-save').onclick = saveToServer;
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Shift') renderer.domElement.style.cursor = 'crosshair';
+            });
+            window.addEventListener('keyup', (e) => {
+                if (e.key === 'Shift') renderer.domElement.style.cursor = 'default';
+            });
+        }
+
+        function setMode(newMode) {
+            mode = newMode;
+            document.getElementById('mode-view').className = mode === 'view' ? 'mode-btn active' : 'mode-btn';
+            document.getElementById('mode-edit').className = mode === 'edit' ? 'mode-btn active' : 'mode-btn';
+            document.getElementById('edit-controls').style.display = mode === 'edit' ? 'block' : 'none';
+            
+            transformControl.detach();
+            
+            // Toggle visibility of handles
+            editPoints.forEach(p => p.visible = (mode === 'edit'));
+            
+            if (mode === 'view') {
+                replayAnimation();
+            } else {
+                // Show full lines in edit mode
+                strokes.forEach(s => {
+                    if(s.line) s.line.geometry.setDrawRange(0, Infinity);
+                });
+            }
         }
 
         function populateUI() {
             const select = document.getElementById('char-select');
             select.innerHTML = '<option value="" disabled selected>Select Character</option>';
             
-            // Sort keys alphabetically or by some order if preferred
-            Object.keys(library).sort().forEach(key => {
+            // Add known images that might not be in JSON yet
+            const knownImages = [
+                "Aleph", "Bet", "Gimmel", "Dalet", "Hei", "Vav", "Zayin", "Het", "Tet", "Yud", 
+                "Kaf", "Final Kaf", "Lamed", "Mem", "Final Mem", "Nun", "Final Nun", 
+                "Samech", "Ayin", "Pei", "Final Pei", "Tzadi", "Final Tzadi", "Kuf", 
+                "Resh", "Shin", "Sin", "Tav"
+            ];
+
+            // Merge keys from library and known images
+            const allKeys = new Set([...Object.keys(library), ...knownImages]);
+            
+            Array.from(allKeys).sort().forEach(key => {
                 const opt = document.createElement('option');
                 opt.value = key;
                 opt.textContent = key;
@@ -103,103 +294,389 @@
             });
         }
 
-        function playCharacter(charName) {
-            // Clear previous
-            currentStrokes.forEach(s => scene.remove(s.line));
-            currentStrokes = [];
+        async function loadCharacter(charName) {
+            currentChar = charName;
+            clearCanvas();
+            
+            // Load Background Image
+            loadBackgroundImage(charName);
 
-            const strokesData = library[charName];
-            if (!strokesData) return;
-
-            let totalCharLength = 0;
-
-            // Create geometry for each stroke
-            strokesData.forEach(points => {
-                // Convert raw [x,y] to Vector3
-                const vectors = points.map(p => new THREE.Vector3(p[0], p[1], 0));
-                
-                // Create a smooth curve from the points
-                // curveType: 'centripetal' helps avoid loops and overshooting
-                // tension: 0.5 is default, higher values (up to 1) make it more linear/tight
-                const curve = new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.75);
-                
-                // Use getSpacedPoints for uniform distribution along the curve
-                // Increased count for smoother look
-                const POINTS_COUNT = 400;
-                const sampledPoints = curve.getSpacedPoints(POINTS_COUNT); 
-                const geometry = new THREE.BufferGeometry().setFromPoints(sampledPoints);
-                
-                // Start invisible
-                geometry.setDrawRange(0, 0);
-
-                const material = new THREE.LineBasicMaterial({ 
-                    color: LINE_COLOR,
-                    linewidth: LINE_WIDTH
+            // Load Strokes if exist
+            if (library[charName]) {
+                library[charName].forEach(strokePoints => {
+                    startNewStroke();
+                    strokePoints.forEach(p => {
+                        addPointToCurrentStroke(new THREE.Vector3(p[0], p[1], 0));
+                    });
                 });
+            }
+            
+            if (mode === 'view') replayAnimation();
+        }
 
-                const line = new THREE.Line(geometry, material);
-                scene.add(line);
+        function loadBackgroundImage(charName) {
+            if (bgMesh) {
+                scene.remove(bgMesh);
+                bgMesh = null;
+            }
 
-                const length = curve.getLength();
+            const loader = new THREE.TextureLoader();
+            // Try to find the image file. Assuming lowercase filenames matching the char name roughly
+            // Mapping special cases if needed, or just try standardizing
+            const filename = charName.toLowerCase().replace(' ', '-') + '.png';
+            
+            loader.load('images/' + filename, (texture) => {
+                // Crop to left half
+                texture.repeat.set(0.5, 1);
+                texture.offset.set(0, 0);
+
+                const geometry = new THREE.PlaneGeometry(1, 1); 
+                // Adjust aspect ratio based on cropped width (50%)
+                const aspect = (texture.image.width * 0.5) / texture.image.height;
                 
-                currentStrokes.push({
-                    line: line,
-                    totalPoints: POINTS_COUNT,
-                    curve: curve,
-                    length: length,
-                    startDistance: totalCharLength
+                // Scale based on settings
+                // Height is bgSettings.scale
+                // Width is height * aspect
+                geometry.scale(bgSettings.scale * aspect, bgSettings.scale, 1);
+                
+                const material = new THREE.MeshBasicMaterial({ 
+                    map: texture, 
+                    transparent: true, 
+                    opacity: bgSettings.opacity,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
                 });
-
-                totalCharLength += length;
+                bgMesh = new THREE.Mesh(geometry, material);
+                bgMesh.position.set(bgSettings.x, bgSettings.y, -1);
+                bgMesh.visible = document.getElementById('chk-bg').checked;
+                scene.add(bgMesh);
+                
+            }, undefined, (err) => {
+                console.log("No image found for " + charName);
             });
+        }
 
-            // Start Animation
-            startTime = performance.now();
+        function clearCanvas() {
+            strokes.forEach(s => {
+                scene.remove(s.line);
+                s.handles.forEach(h => scene.remove(h));
+            });
+            editPoints = [];
+            strokes = [];
+            transformControl.detach();
+        }
+
+        function startNewStroke() {
+            // Prevent multiple empty strokes
+            if (strokes.length > 0 && strokes[strokes.length - 1].points.length === 0) {
+                document.getElementById('status').textContent = "Ready for new stroke (current is empty)";
+                return;
+            }
+
+            strokes.push({
+                line: null,
+                points: [], // Vector3s
+                handles: [], // Meshs
+                curve: null
+            });
+            document.getElementById('status').textContent = "New stroke started! Shift+Click to add points.";
+        }
+
+        function addPointToCurrentStroke(position) {
+            if (strokes.length === 0) startNewStroke();
+            const currentStroke = strokes[strokes.length - 1];
+            
+            // Add Handle
+            const geometry = new THREE.BoxGeometry(HANDLE_SIZE, HANDLE_SIZE, 0.1);
+            const material = new THREE.MeshBasicMaterial({ color: HANDLE_COLOR });
+            const handle = new THREE.Mesh(geometry, material);
+            handle.position.copy(position);
+            handle.userData = { strokeIndex: strokes.length - 1, pointIndex: currentStroke.points.length };
+            handle.visible = (mode === 'edit');
+
+            scene.add(handle);
+            editPoints.push(handle);
+            currentStroke.handles.push(handle);
+            currentStroke.points.push(position);
+
+            updateStrokeGeometry(currentStroke);
+        }
+
+        function undoLastPoint() {
+            if (strokes.length === 0) return;
+            const currentStroke = strokes[strokes.length - 1];
+            
+            if (currentStroke.points.length > 0) {
+                const handle = currentStroke.handles.pop();
+                scene.remove(handle);
+                editPoints = editPoints.filter(p => p !== handle);
+                currentStroke.points.pop();
+                
+                if (currentStroke.points.length === 0) {
+                    strokes.pop(); // Remove empty stroke
+                } else {
+                    updateStrokeGeometry(currentStroke);
+                }
+            }
+        }
+
+        function updateCurveFromHandles() {
+            if (!transformControl.object) return;
+            const handle = transformControl.object;
+            const { strokeIndex, pointIndex } = handle.userData;
+            
+            const stroke = strokes[strokeIndex];
+            stroke.points[pointIndex].copy(handle.position);
+            updateStrokeGeometry(stroke);
+        }
+
+        function updateStrokeGeometry(stroke) {
+            if (stroke.line) scene.remove(stroke.line);
+            if (stroke.points.length < 2) return;
+
+            // Use same curve settings as before
+            stroke.curve = new THREE.CatmullRomCurve3(stroke.points, false, 'centripetal', 0.75);
+            const points = stroke.curve.getSpacedPoints(200);
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: LINE_COLOR, linewidth: 3 });
+            
+            stroke.line = new THREE.Line(geometry, material);
+            scene.add(stroke.line);
+        }
+
+        function replayAnimation() {
             isAnimating = true;
+            startTime = performance.now();
+            
+            // Calculate total lengths for timing
+            let totalLen = 0;
+            strokes.forEach(s => {
+                if (s.curve) {
+                    s.length = s.curve.getLength();
+                    s.startDist = totalLen;
+                    totalLen += s.length;
+                }
+            });
+        }
+
+        async function saveToServer() {
+            if (!currentChar) return;
+
+            // Update library with current strokes
+            const data = strokes.map(s => s.points.map(p => [parseFloat(p.x.toFixed(1)), parseFloat(p.y.toFixed(1))]));
+            library[currentChar] = data;
+
+            try {
+                const response = await fetch('/api/save-letters', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(library)
+                });
+                
+                if (response.ok) {
+                    document.getElementById('status').textContent = "Saved successfully!";
+                    setTimeout(() => document.getElementById('status').textContent = "Ready", 2000);
+                } else {
+                    throw new Error('Save failed');
+                }
+            } catch (err) {
+                console.error(err);
+                // Fallback to copy to clipboard if server save fails (e.g. static host)
+                const json = JSON.stringify(library, null, 2);
+                navigator.clipboard.writeText(json);
+                document.getElementById('status').textContent = "Server save failed. JSON copied to clipboard instead.";
+            }
         }
 
         function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 150;
+            
+            camera.left = -frustumSize * aspect / 2;
+            camera.right = frustumSize * aspect / 2;
+            camera.top = frustumSize / 2;
+            camera.bottom = -frustumSize / 2;
+
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        function render() {
+            renderer.render(scene, camera);
+        }
+
         function animate() {
             requestAnimationFrame(animate);
-
-            if (isAnimating && currentStrokes.length > 0) {
+            
+            if (isAnimating && mode === 'view') {
                 const now = performance.now();
                 const elapsed = now - startTime;
-                const distanceCovered = elapsed * DRAW_SPEED;
-                
+                const dist = elapsed * DRAW_SPEED;
                 let allDone = true;
 
-                currentStrokes.forEach(stroke => {
-                    const strokeEndDistance = stroke.startDistance + stroke.length;
-
-                    if (distanceCovered >= strokeEndDistance) {
-                        // Stroke fully drawn
-                        stroke.line.geometry.setDrawRange(0, stroke.totalPoints + 1);
-                    } else if (distanceCovered >= stroke.startDistance) {
-                        // Stroke partially drawn
-                        const strokeProgress = (distanceCovered - stroke.startDistance) / stroke.length;
-                        const drawCount = Math.floor(strokeProgress * stroke.totalPoints);
-                        stroke.line.geometry.setDrawRange(0, drawCount);
+                strokes.forEach(s => {
+                    if (!s.line) return;
+                    
+                    const totalPoints = 200; // Matches getSpacedPoints(200)
+                    
+                    if (dist >= s.startDist + s.length) {
+                        s.line.geometry.setDrawRange(0, totalPoints + 1);
+                    } else if (dist >= s.startDist) {
+                        const progress = (dist - s.startDist) / s.length;
+                        const count = Math.floor(progress * totalPoints);
+                        s.line.geometry.setDrawRange(0, count);
                         allDone = false;
                     } else {
-                        // Stroke not started
-                        stroke.line.geometry.setDrawRange(0, 0);
+                        s.line.geometry.setDrawRange(0, 0);
                         allDone = false;
                     }
                 });
 
-                if (allDone) {
-                    isAnimating = false;
+                if (allDone) isAnimating = false;
+            }
+            
+            render();
+        }
+
+        // Raycasting for selecting handles
+        const mouse = new THREE.Vector2();
+        const raycaster = new THREE.Raycaster();
+        
+        window.addEventListener('click', (event) => {
+            if (mode !== 'edit') return;
+            // Don't select if we are clicking UI
+            if (event.target.closest('#ui')) return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(editPoints);
+
+            if (intersects.length > 0) {
+                const handle = intersects[0].object;
+                
+                if (event.altKey && !event.shiftKey) {
+                    // Alt+Click: Delete Point
+                    deletePoint(handle);
+                } else {
+                    transformControl.attach(handle);
+                }
+            } else if (event.shiftKey && event.altKey) {
+                // Shift+Alt+Click: Add Midpoint
+                // We need to find which line segment we clicked near
+                // This is tricky with raycasting lines, so we'll approximate by finding closest point on curve
+                // For now, let's just use the standard add point logic but insert it into the closest segment
+                // Or simpler: Just add point to end if not clicking a line? 
+                // The user asked for "add midpoint along existing line".
+                // Let's try to raycast against the lines themselves.
+                
+                const lines = strokes.map(s => s.line).filter(l => l);
+                const lineIntersects = raycaster.intersectObjects(lines);
+                
+                if (lineIntersects.length > 0) {
+                    const intersect = lineIntersects[0];
+                    const line = intersect.object;
+                    // Find which stroke this line belongs to
+                    const strokeIndex = strokes.findIndex(s => s.line === line);
+                    if (strokeIndex !== -1) {
+                        insertPointAt(strokeIndex, intersect.point);
+                    }
+                }
+            } else if (!event.shiftKey) { // Shift key is for adding points to end, don't detach
+                transformControl.detach();
+            }
+        });
+
+        function deletePoint(handle) {
+            const { strokeIndex, pointIndex } = handle.userData;
+            const stroke = strokes[strokeIndex];
+            
+            // Remove from scene
+            scene.remove(handle);
+            transformControl.detach();
+            
+            // Remove from arrays
+            stroke.handles.splice(pointIndex, 1);
+            stroke.points.splice(pointIndex, 1);
+            
+            // Update global editPoints array
+            editPoints = editPoints.filter(p => p !== handle);
+            
+            // Re-index remaining handles in this stroke
+            stroke.handles.forEach((h, idx) => {
+                h.userData.pointIndex = idx;
+            });
+            
+            // If stroke is empty or too small, maybe remove it? 
+            // For now just update geometry
+            if (stroke.points.length < 2) {
+                if (stroke.line) {
+                    scene.remove(stroke.line);
+                    stroke.line = null;
+                }
+            } else {
+                updateStrokeGeometry(stroke);
+            }
+        }
+
+        function insertPointAt(strokeIndex, position) {
+            const stroke = strokes[strokeIndex];
+            
+            // Find the closest segment index to insert after
+            // We iterate through points and find which segment [i, i+1] is closest to 'position'
+            let closestIdx = 0;
+            let minDist = Infinity;
+            
+            // Simple distance check to line segments
+            for(let i=0; i<stroke.points.length-1; i++) {
+                const p1 = stroke.points[i];
+                const p2 = stroke.points[i+1];
+                
+                // Project point onto line segment
+                const line = new THREE.Line3(p1, p2);
+                const closestPointOnSeg = new THREE.Vector3();
+                line.closestPointToPoint(position, true, closestPointOnSeg);
+                
+                const d = closestPointOnSeg.distanceTo(position);
+                if (d < minDist) {
+                    minDist = d;
+                    closestIdx = i;
                 }
             }
-
-            renderer.render(scene, camera);
+            
+            // Insert after closestIdx
+            // We actually want to insert AT the projected point on the curve/line?
+            // Or just at the click position? User clicked the line, so click position is good.
+            // But we need to make sure Z is 0
+            position.z = 0;
+            
+            const insertIndex = closestIdx + 1;
+            
+            // Create Handle
+            const geometry = new THREE.BoxGeometry(HANDLE_SIZE, HANDLE_SIZE, 0.1);
+            const material = new THREE.MeshBasicMaterial({ color: HANDLE_COLOR });
+            const handle = new THREE.Mesh(geometry, material);
+            handle.position.copy(position);
+            handle.userData = { strokeIndex: strokeIndex, pointIndex: insertIndex };
+            handle.visible = (mode === 'edit');
+            
+            scene.add(handle);
+            editPoints.push(handle);
+            
+            // Insert into arrays
+            stroke.handles.splice(insertIndex, 0, handle);
+            stroke.points.splice(insertIndex, 0, position);
+            
+            // Re-index handles
+            stroke.handles.forEach((h, idx) => {
+                h.userData.pointIndex = idx;
+            });
+            
+            updateStrokeGeometry(stroke);
+            document.getElementById('status').textContent = "Inserted point at index " + insertIndex;
         }
+
     </script>
 </body>
 </html>
