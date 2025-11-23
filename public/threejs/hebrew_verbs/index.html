@@ -71,36 +71,31 @@
         .verb-label {
             font-size: 16px; color: #aaa;
             background: rgba(0,0,0,0.85);
-            padding: 8px 12px; border-radius: 8px;
+            padding: 6px 10px; border-radius: 8px;
             border: 1px solid #333;
-            cursor: default; pointer-events: auto;
+            cursor: pointer; pointer-events: auto;
             transition: all 0.2s;
             white-space: nowrap;
             text-align: center;
-            display: flex; flex-direction: column; align-items: center; gap: 5px;
+            display: flex; flex-direction: column; align-items: center; gap: 2px;
         }
         .verb-label:hover { 
             background: rgba(20, 20, 30, 0.95); 
             border-color: #4db8ff; color: white;
             z-index: 100;
         }
-        .verb-sub { font-size: 0.8em; color: #888; display: block; margin-bottom: 5px; }
-        
-        .verb-actions {
-            display: flex; gap: 8px; margin-top: 5px;
-            opacity: 0.6; transition: opacity 0.2s;
+        .verb-sub { 
+            font-size: 0.75em; color: #888; 
+            display: flex; align-items: center; gap: 6px;
+            margin-top: 2px;
         }
-        .verb-label:hover .verb-actions { opacity: 1; }
         
-        .verb-btn {
-            background: rgba(255,255,255,0.1); border: 1px solid #555;
-            color: #ddd; border-radius: 4px; padding: 4px 8px;
-            cursor: pointer; font-size: 0.9em;
-            transition: all 0.2s;
+        .info-btn {
+            background: none; border: none; padding: 0;
+            font-size: 1.1em; cursor: pointer; opacity: 0.6;
+            transition: opacity 0.2s;
         }
-        .verb-btn:hover { background: #4db8ff; color: #000; border-color: #4db8ff; }
-        .verb-btn.play-btn { color: #4db8ff; border-color: #4db8ff; }
-        .verb-btn.play-btn:hover { background: #4db8ff; color: white; }
+        .info-btn:hover { opacity: 1; transform: scale(1.1); }
 
         /* Info Panel (Right Side) */
         #info-panel {
@@ -685,22 +680,19 @@
 
                 div.innerHTML = `
                     <div style="font-size: 1.2em; font-weight: bold;">${text}</div>
-                    <div class="verb-sub">${sub}</div>
-                    <div class="verb-actions">
-                        ${audioPath ? `<button class="verb-btn play-btn" title="Play Audio">🔊</button>` : ''}
-                        <button class="verb-btn info-btn" title="Show Info">ℹ️</button>
+                    <div class="verb-sub">
+                        ${sub}
+                        <button class="info-btn" title="Show Info">ℹ️</button>
                     </div>
                 `;
                 
-                // Attach listeners
-                const playBtn = div.querySelector('.play-btn');
-                if (playBtn) {
-                    playBtn.onclick = (e) => {
-                        e.stopPropagation();
-                        if (audioPath) playAudio(audioPath);
-                    };
-                }
+                // Click on main div -> Play Audio
+                div.onclick = (e) => {
+                    e.stopPropagation();
+                    if (audioPath) playAudio(audioPath);
+                };
 
+                // Info Button
                 const infoBtn = div.querySelector('.info-btn');
                 if (infoBtn) {
                     infoBtn.onclick = (e) => {
