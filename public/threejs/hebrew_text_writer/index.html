@@ -52,9 +52,12 @@
 
         // Widths for kerning (approximate, relative to standard spacing)
         const charWidths = {
-            'Vav': 0.4, 'Zayin': 0.5, 'Yud': 0.3, 'Nun': 0.5, 'Final Nun': 0.4,
+            'Vav': 0.25, 'Zayin': 0.4, 'Yud': 0.25, 'Nun': 0.4, 'Final Nun': 0.3,
             'Gimmel': 0.6, 'Final Kaf': 0.6, 'Final Pei': 0.6, 'Final Tzadi': 0.6,
-            'Shin': 1.1, 'Tet': 1.1, 'Samech': 1.0, 'Mem': 1.1
+            'Shin': 1.0, 'Tet': 1.0, 'Samech': 0.9, 'Mem': 0.9,
+            'Aleph': 0.9, 'Bet': 0.9, 'Dalet': 0.8, 'Hei': 0.9, 'Het': 0.9,
+            'Kaf': 0.8, 'Lamed': 0.8, 'Pei': 0.8, 'Resh': 0.8, 'Tav': 0.9, 'Tzadi': 0.8,
+            'Ayin': 0.9, 'Kuf': 0.8
         };
         
         // Hebrew Char to Name mapping
@@ -153,7 +156,7 @@
             scene.add(group);
 
             let cursorX = 0;
-            const baseSpacing = 40; 
+            const baseSpacing = 35; 
             
             // Calculate total width for centering
             let totalWidth = 0;
@@ -254,22 +257,33 @@
                 
                 animationQueue.forEach(item => {
                     const itemElapsed = totalElapsed - item.startTime;
+                    const strokes = item.obj.children;
+                    const numStrokes = strokes.length;
                     
                     if (itemElapsed < 0) {
                         // Not started yet
-                        item.obj.children.forEach(line => line.geometry.setDrawRange(0, 0));
+                        strokes.forEach(line => line.geometry.setDrawRange(0, 0));
                         allDone = false;
                     } else if (itemElapsed < item.duration) {
-                        // In progress
-                        const progress = itemElapsed / item.duration;
-                        item.obj.children.forEach(line => {
-                            const count = Math.floor(progress * line.userData.totalPoints);
-                            line.geometry.setDrawRange(0, count);
+                        // In progress - Consecutive Strokes
+                        const strokeDuration = item.duration / numStrokes;
+                        const currentStrokeIndex = Math.floor(itemElapsed / strokeDuration);
+                        const currentStrokeProgress = (itemElapsed % strokeDuration) / strokeDuration;
+                        
+                        strokes.forEach((line, idx) => {
+                            if (idx < currentStrokeIndex) {
+                                line.geometry.setDrawRange(0, Infinity);
+                            } else if (idx === currentStrokeIndex) {
+                                const count = Math.floor(currentStrokeProgress * line.userData.totalPoints);
+                                line.geometry.setDrawRange(0, count);
+                            } else {
+                                line.geometry.setDrawRange(0, 0);
+                            }
                         });
                         allDone = false;
                     } else {
                         // Finished
-                        item.obj.children.forEach(line => {
+                        strokes.forEach(line => {
                             line.geometry.setDrawRange(0, Infinity);
                         });
                     }
