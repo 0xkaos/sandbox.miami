@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hebrew Font Morph</title>
+    
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; color: white; font-family: sans-serif; }
         #info {
@@ -12,12 +12,22 @@
             pointer-events: none;
             z-index: 100;
         }
+        #controls {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 5px;
+            pointer-events: auto;
+            z-index: 100;
+            width: 250px;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .control-row { display: flex; justify-content: space-between; align-items: center; }
+        .control-row label { font-size: 0.9em; color: #aaa; }
+        input[type=range] { width: 120px; }
+        input[type=number] { width: 60px; background: #222; border: 1px solid #444; color: white; padding: 2px; }
     </style>
 </head>
 <body>
     <div id="info">
-        <h1>Hebrew Font Morph</h1>
-        <p>Morphing between Block (Frank Ruehl) and Script (Gveret Levin)</p>
         <select id="char-select" style="background: #333; color: white; border: 1px solid #555; padding: 5px; font-size: 1.2em; margin-top: 10px; pointer-events: auto;">
             <option value="א">א (Aleph)</option>
             <option value="ב">ב (Bet)</option>
@@ -44,6 +54,37 @@
         </select>
     </div>
 
+    <div id="controls">
+        <div class="control-row">
+            <label>Points</label>
+            <input type="range" id="points-range" min="1000" max="50000" step="1000" value="15000">
+            <span id="points-val">15k</span>
+        </div>
+        <div class="control-row">
+            <label>Duration (ms)</label>
+            <input type="range" id="duration-range" min="200" max="3000" step="100" value="1200">
+            <span id="duration-val">1200</span>
+        </div>
+        <div class="control-row">
+            <label>Scatter Radius</label>
+            <input type="range" id="radius-range" min="10" max="300" step="10" value="120">
+            <span id="radius-val">120</span>
+        </div>
+        <hr style="width: 100%; border-color: #444;">
+        <div class="control-row">
+            <label>Gravity</label>
+            <input type="range" id="gravity-range" min="0" max="2" step="0.1" value="0">
+        </div>
+        <div class="control-row">
+            <label>Wind</label>
+            <input type="range" id="wind-range" min="-2" max="2" step="0.1" value="0">
+        </div>
+        <div class="control-row">
+            <label>Noise</label>
+            <input type="range" id="noise-range" min="0" max="5" step="0.1" value="1">
+        </div>
+    </div>
+
     <script type="importmap">
         {
             "imports": {
@@ -64,7 +105,9 @@
         let scene, camera, renderer, particles;
         let geometry;
         let loadedFonts = { A: null, B: null };
-        const PARTICLE_COUNT = 15000;
+        let PARTICLE_COUNT = 15000;
+        let cycleDuration = 1200;
+        let scatterRadius = 120;
         let currentChar = 'א'; // Aleph
         const FONT_SIZE = 100;
 
@@ -90,12 +133,47 @@
             const controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
 
-            // UI Listener
+            // UI Listeners
             const select = document.getElementById('char-select');
             select.addEventListener('change', (e) => {
                 currentChar = e.target.value;
                 updateCharacter();
             });
+
+            document.getElementById('points-range').addEventListener('input', (e) => {
+                PARTICLE_COUNT = parseInt(e.target.value);
+                document.getElementById('points-val').innerText = (PARTICLE_COUNT / 1000).toFixed(0) + 'k';
+                if (loadedFonts.A && loadedFonts.B) {
+                    scene.remove(particles);
+                    createParticles(loadedFonts.A, loadedFonts.B);
+                }
+            });
+
+            document.getElementById('duration-range').addEventListener('input', (e) => {
+                cycleDuration = parseInt(e.target.value);
+                document.getElementById('duration-val').innerText = cycleDuration;
+            });
+
+            document.getElementById('radius-range').addEventListener('input', (e) => {
+                scatterRadius = parseInt(e.target.value);
+                document.getElementById('radius-val').innerText = scatterRadius;
+                if (loadedFonts.A && loadedFonts.B) {
+                    scene.remove(particles);
+                    createParticles(loadedFonts.A, loadedFonts.B);
+                }
+            });
+
+            const updateUniform = (id, uniformName) => {
+                document.getElementById(id).addEventListener('input', (e) => {
+                    if (particles) {
+                        particles.material.uniforms[uniformName].value = parseFloat(e.target.value);
+                    }
+                });
+            };
+
+            updateUniform('gravity-range', 'uGravity');
+            updateUniform('wind-range', 'uWind');
+            updateUniform('noise-range', 'uNoiseStrength');
 
             // Load Fonts
             const loader = new TTFLoader();
@@ -227,8 +305,8 @@
             // Random scatter positions (Spherical Fuzz)
             const pointsRandom = new Float32Array(PARTICLE_COUNT * 3);
             for(let i=0; i<PARTICLE_COUNT; i++) {
-                // Random point in sphere (Radius ~120)
-                const r = 120 * Math.cbrt(Math.random()); 
+                // Random point in sphere
+                const r = scatterRadius * Math.cbrt(Math.random()); 
                 const theta = Math.random() * 2 * Math.PI;
                 const phi = Math.acos(2 * Math.random() - 1);
                 
@@ -259,6 +337,9 @@
                     uTime: { value: 0 },
                     uMorph: { value: 0 }, // 0 = A, 1 = B
                     uScatter: { value: 0 }, // 0 = Formed, 1 = Scattered
+                    uGravity: { value: parseFloat(document.getElementById('gravity-range').value) },
+                    uWind: { value: parseFloat(document.getElementById('wind-range').value) },
+                    uNoiseStrength: { value: parseFloat(document.getElementById('noise-range').value) },
                     uColorA: { value: new THREE.Color(0x4db8ff) },
                     uColorB: { value: new THREE.Color(0xff4d4d) }
                 },
@@ -266,6 +347,9 @@
                     uniform float uTime;
                     uniform float uMorph;
                     uniform float uScatter;
+                    uniform float uGravity;
+                    uniform float uWind;
+                    uniform float uNoiseStrength;
                     
                     attribute vec3 targetA;
                     attribute vec3 targetB;
@@ -289,11 +373,17 @@
                         vec3 formedPos = mix(targetA, targetB, uMorph);
                         
                         // 2. Add some subtle motion to formed state
-                        formedPos += getNoise(formedPos, uTime * 2.0) * 1.0;
+                        formedPos += getNoise(formedPos, uTime * 2.0) * uNoiseStrength;
 
                         // 3. Calculate Scatter Position
                         // Add noise to scatter
                         vec3 noisyScatter = scatterPos + getNoise(scatterPos, uTime * 0.5) * 20.0;
+                        
+                        // Apply Gravity and Wind to Scatter
+                        // Gravity pulls down (-y), Wind pulls sideways (x)
+                        // We want this effect to be stronger when scattered
+                        vec3 physicsOffset = vec3(uWind * 100.0, -uGravity * 100.0, 0.0) * uScatter * aRandom;
+                        noisyScatter += physicsOffset;
                         
                         // 4. Mix Formed and Scatter
                         // Use a non-linear mix for explosion effect?
@@ -351,7 +441,6 @@
         }
 
         function startMorphCycle() {
-            const duration = 1200; // Reduced from 2000
             const pause = 800; // Reduced from 1000
             
             const animateProp = (obj, prop, target, time) => {
@@ -382,25 +471,25 @@
                 await new Promise(r => setTimeout(r, pause));
                 
                 // Scatter
-                await animateProp(particles.material.uniforms.uScatter, 'value', 1, duration);
+                await animateProp(particles.material.uniforms.uScatter, 'value', 1, cycleDuration);
                 
                 // Switch Morph to B (invisible while scattered)
                 particles.material.uniforms.uMorph.value = 1;
                 
                 // Coalesce to B
-                await animateProp(particles.material.uniforms.uScatter, 'value', 0, duration);
+                await animateProp(particles.material.uniforms.uScatter, 'value', 0, cycleDuration);
                 
                 // Wait at B
                 await new Promise(r => setTimeout(r, pause));
                 
                 // Scatter
-                await animateProp(particles.material.uniforms.uScatter, 'value', 1, duration);
+                await animateProp(particles.material.uniforms.uScatter, 'value', 1, cycleDuration);
                 
                 // Switch Morph to A
                 particles.material.uniforms.uMorph.value = 0;
                 
                 // Coalesce to A
-                await animateProp(particles.material.uniforms.uScatter, 'value', 0, duration);
+                await animateProp(particles.material.uniforms.uScatter, 'value', 0, cycleDuration);
                 
                 cycle();
             };
