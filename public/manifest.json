@@ -7,7 +7,13 @@
   },
   {
     "path": "/threejs/hebrew_font_morph/",
-    "title": "Hebrew Font Morph",
+    "title": "hebrew_font_morph",
+    "description": "No description available.",
+    "category": "threejs"
+  },
+  {
+    "path": "/threejs/hebrew_script_writer/",
+    "title": "Hebrew Script Writer",
     "description": "No description available.",
     "category": "threejs"
   },
