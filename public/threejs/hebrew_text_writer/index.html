@@ -48,7 +48,7 @@
         let animationQueue = [];
         let isAnimating = false;
         let animationStartTime = 0;
-        const LETTER_DURATION = 1000; // ms per letter
+        const DRAW_SPEED = 0.1; // Units per ms (adjust for speed)
         
         // Hebrew Char to Name mapping
         const charMap = {
@@ -168,6 +168,8 @@
             
             cursorX = totalWidth / 2; // Start from right
 
+            let currentStartTime = 0;
+
             for (let i = 0; i < text.length; i++) {
                 const char = text[i];
                 const name = charMap[char];
@@ -203,14 +205,32 @@
                     letterObj.position.x = letterX;
                     group.add(letterObj);
                     
+                    // Calculate duration based on total length of strokes
+                    let totalLength = 0;
+                    letterObj.children.forEach(line => {
+                        if (line.userData.length) totalLength += line.userData.length;
+                    });
+                    
+                    // Scale length by mesh scale (0.3) to get visual length
+                    const visualLength = totalLength * 0.3;
+                    const duration = visualLength / DRAW_SPEED;
+
                     // Add to animation queue
                     animationQueue.push({
                         obj: letterObj,
-                        startTime: i * LETTER_DURATION,
-                        duration: LETTER_DURATION
+                        startTime: currentStartTime,
+                        duration: duration,
+                        strokes: letterObj.children.map(line => ({
+                            line: line,
+                            length: line.userData.length * 0.3 // Visual length
+                        }))
                     });
+                    
+                    currentStartTime += duration;
                 } else if (char === ' ') {
                     width = 0.5;
+                    // Add a small pause for space?
+                    currentStartTime += 200;
                 }
                 
                 cursorX -= width * baseSpacing;
@@ -241,7 +261,10 @@
                 geometry.setDrawRange(0, 0);
                 
                 // Store metadata for animation
-                line.userData = { totalPoints: totalPoints };
+                line.userData = { 
+                    totalPoints: totalPoints,
+                    length: curve.getLength()
+                };
                 
                 letterGroup.add(line);
             });
@@ -270,39 +293,48 @@
                 
                 animationQueue.forEach(item => {
                     const itemElapsed = totalElapsed - item.startTime;
-                    const strokes = item.obj.children;
-                    const numStrokes = strokes.length;
+                    const strokes = item.strokes;
                     
                     if (itemElapsed < 0) {
                         // Not started yet
-                        strokes.forEach(line => line.geometry.setDrawRange(0, 0));
+                        strokes.forEach(s => s.line.geometry.setDrawRange(0, 0));
                         allDone = false;
                     } else if (itemElapsed < item.duration) {
-                        // In progress - Consecutive Strokes
-                        const strokeDuration = item.duration / numStrokes;
-                        const currentStrokeIndex = Math.floor(itemElapsed / strokeDuration);
-                        const currentStrokeProgress = (itemElapsed % strokeDuration) / strokeDuration;
+                        // In progress - Consecutive Strokes based on length
+                        let currentDist = itemElapsed * DRAW_SPEED;
                         
-                        strokes.forEach((line, idx) => {
-                            if (idx < currentStrokeIndex) {
-                                line.geometry.setDrawRange(0, Infinity);
-                            } else if (idx === currentStrokeIndex) {
-                                const count = Math.floor(currentStrokeProgress * line.userData.totalPoints);
-                                line.geometry.setDrawRange(0, count);
+                        strokes.forEach(s => {
+                            if (currentDist >= s.length) {
+                                // Finished this stroke
+                                s.line.geometry.setDrawRange(0, Infinity);
+                                currentDist -= s.length;
+                            } else if (currentDist > 0) {
+                                // Drawing this stroke
+                                const progress = currentDist / s.length;
+                                const count = Math.floor(progress * s.line.userData.totalPoints);
+                                s.line.geometry.setDrawRange(0, count);
+                                currentDist = 0; // Consumed all distance
                             } else {
-                                line.geometry.setDrawRange(0, 0);
+                                // Not reached yet
+                                s.line.geometry.setDrawRange(0, 0);
                             }
                         });
                         allDone = false;
                     } else {
                         // Finished
-                        strokes.forEach(line => {
-                            line.geometry.setDrawRange(0, Infinity);
+                        strokes.forEach(s => {
+                            s.line.geometry.setDrawRange(0, Infinity);
                         });
                     }
                 });
                 
-                if (allDone && animationQueue.length > 0 && totalElapsed > animationQueue[animationQueue.length-1].startTime + LETTER_DURATION) {
+                // Check if the last item is finished
+                if (animationQueue.length > 0) {
+                    const lastItem = animationQueue[animationQueue.length - 1];
+                    if (totalElapsed > lastItem.startTime + lastItem.duration) {
+                        isAnimating = false;
+                    }
+                } else {
                     isAnimating = false;
                 }
             }
