@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hebrew Paper Writer</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; color: white; font-family: sans-serif; }
+        #ui {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px;
+            pointer-events: auto;
+            display: flex; flex-direction: column; gap: 10px;
+            min-width: 300px;
+            z-index: 10;
+        }
+        input, button { 
+            background: #333; color: white; padding: 8px; 
+            border: 1px solid #555; font-size: 1em; border-radius: 4px;
+        }
+        button:hover { background: #444; cursor: pointer; }
+        #status { font-size: 0.9em; color: #aaa; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h3>Hebrew Paper Writer</h3>
+        <input type="text" id="text-input" placeholder="Enter Hebrew Text..." dir="rtl" value="שלום">
+        <button id="btn-write">Write</button>
+        
+        <div style="border-top: 1px solid #444; margin-top: 5px; padding-top: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 0.9em;">
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+                Size: <input type="number" id="setting-size" value="30" step="5" min="5" max="200" style="width: 60px;">
+            </label>
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+                Pressure: <input type="number" id="setting-pressure" value="2.0" step="0.1" min="0.1" max="10" style="width: 60px;">
+            </label>
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+                Ink Color: <input type="color" id="setting-color" value="#000000" style="height: 30px; width: 60px; padding: 0;">
+            </label>
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+                Paper Color: <input type="color" id="setting-paper" value="#f0f0e0" style="height: 30px; width: 60px; padding: 0;">
+            </label>
+        </div>
+
+        <div id="status">Loading font data...</div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { Line2 } from 'three/addons/lines/Line2.js';
+        import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+        import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+
+        let scene, camera, renderer, controls;
+        let heightScene, heightCamera, heightTarget;
+        let paperMesh;
+        let letterData = {};
+        
+        let animationQueue = [];
+        let isAnimating = false;
+        let animationStartTime = 0;
+        const DRAW_SPEED = 0.1; 
+        
+        // Hebrew Char to Name mapping
+        const charMap = {
+            'א': 'Aleph', 'ב': 'Bet', 'ג': 'Gimmel', 'ד': 'Dalet', 'ה': 'Hei',
+            'ו': 'Vav', 'ז': 'Zayin', 'ח': 'Het', 'ט': 'Tet', 'י': 'Yud',
+            'כ': 'Kaf', 'ך': 'Final Kaf', 'ל': 'Lamed', 'מ': 'Mem', 'ם': 'Final Mem',
+            'נ': 'Nun', 'ן': 'Final Nun', 'ס': 'Samech', 'ע': 'Ayin', 'פ': 'Pei',
+            'ף': 'Final Pei', 'צ': 'Tzadi', 'ץ': 'Final Tzadi', 'ק': 'Kuf',
+            'ר': 'Resh', 'ש': 'Shin', 'ת': 'Tav'
+        };
+
+        init();
+
+        async function init() {
+            // 1. Main Scene
+            scene = new THREE.Scene();
+            // scene.background = new THREE.Color(0x222222); // Dark background for the app
+
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 200;
+            camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
+            camera.position.set(0, 0, 200);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            
+            // 2. Height Map Setup (for indentation)
+            heightScene = new THREE.Scene();
+            heightScene.background = new THREE.Color(1, 1, 1); // White = High (Paper surface)
+            
+            // Orthographic camera for the height map to match the paper plane exactly
+            // We'll assume the paper is 300x300 for now
+            const paperSize = 300;
+            heightCamera = new THREE.OrthographicCamera(
+                -paperSize/2, paperSize/2, 
+                paperSize/2, -paperSize/2, 
+                0.1, 100
+            );
+            heightCamera.position.z = 10;
+            heightCamera.lookAt(0, 0, 0);
+
+            heightTarget = new THREE.WebGLRenderTarget(2048, 2048, {
+                minFilter: THREE.LinearFilter,
+                magFilter: THREE.LinearFilter,
+                format: THREE.RedFormat // We only need one channel for height
+            });
+
+            // 3. Paper Mesh
+            // High segment count for displacement
+            const geometry = new THREE.PlaneGeometry(paperSize, paperSize, 512, 512);
+            const material = new THREE.MeshStandardMaterial({
+                color: 0xf0f0e0,
+                roughness: 0.6,
+                metalness: 0.0,
+                displacementMap: heightTarget.texture,
+                displacementScale: 2.0, // Depth of indentation
+                side: THREE.DoubleSide
+            });
+            paperMesh = new THREE.Mesh(geometry, material);
+            paperMesh.receiveShadow = true;
+            scene.add(paperMesh);
+
+            // 4. Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            dirLight.position.set(50, 50, 100);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 500;
+            scene.add(dirLight);
+            
+            // Add a point light close to surface to exaggerate relief
+            const pointLight = new THREE.PointLight(0xffaa00, 0.5, 200);
+            pointLight.position.set(-50, 20, 20);
+            scene.add(pointLight);
+
+            window.addEventListener('resize', onWindowResize);
+
+            // Load Data
+            try {
+                const res = await fetch('/api/letters');
+                if (res.ok) {
+                    letterData = await res.json();
+                    document.getElementById('status').textContent = "Ready";
+                } else {
+                    const localRes = await fetch('../hebrew_script_writer/images/letters.json');
+                    if (localRes.ok) {
+                        letterData = await localRes.json();
+                        document.getElementById('status').textContent = "Ready (Local Data)";
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+                document.getElementById('status').textContent = "Error loading data";
+            }
+
+            document.getElementById('btn-write').onclick = writeText;
+            
+            // Settings listeners
+            document.getElementById('setting-paper').addEventListener('input', (e) => {
+                paperMesh.material.color.set(e.target.value);
+            });
+            document.getElementById('setting-pressure').addEventListener('input', (e) => {
+                paperMesh.material.displacementScale = parseFloat(e.target.value);
+            });
+
+            animate();
+        }
+
+        function writeText() {
+            let text = document.getElementById('text-input').value;
+            text = text.replace(/[\u0591-\u05C7]/g, '');
+            if (!text) return;
+
+            // Clear previous strokes from both scenes
+            // We need to keep the paper in main scene, and nothing in height scene initially
+            heightScene.children = []; 
+            
+            // Remove old ink from main scene (children of a group)
+            const oldGroup = scene.getObjectByName("inkGroup");
+            if (oldGroup) scene.remove(oldGroup);
+
+            animationQueue = [];
+            isAnimating = false;
+
+            const inkGroup = new THREE.Group();
+            inkGroup.name = "inkGroup";
+            // Lift ink slightly above paper to avoid z-fighting, although displacement might handle it
+            // Actually, if we displace DOWN, the ink at Z=0 will float. 
+            // We should probably displace the ink too? Or just project it?
+            // For now, let's put ink at Z=0.01. If paper indents, ink will be floating.
+            // Ideally, ink should be part of the paper texture. 
+            // But for "Simulating a pen", maybe we just rely on the shadow/indentation for now?
+            // User asked for "impression", but usually you want color too.
+            // Let's try rendering the ink onto the paper texture? 
+            // No, that's complex. Let's just render ink meshes and hope the visual works.
+            // OR: We can apply the same displacement map to the ink meshes?
+            // Let's stick to simple Z offset for now and see how it looks.
+            inkGroup.position.z = 0.05; 
+            scene.add(inkGroup);
+
+            let cursorX = 0;
+            
+            // Settings
+            const sizeInput = parseFloat(document.getElementById('setting-size').value) || 30;
+            const textSize = sizeInput / 100; 
+            const pressure = parseFloat(document.getElementById('setting-pressure').value) || 2.0;
+            const inkColor = document.getElementById('setting-color').value || '#000000';
+            
+            paperMesh.material.displacementScale = pressure;
+            
+            const baseSpacing = 100 * textSize; 
+            
+            // Calculate total width for centering
+            let totalWidth = 0;
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const name = charMap[char];
+                let width = 1.0;
+                if (name && letterData[name]) {
+                    const data = letterData[name];
+                    if (data.width) width = data.width;
+                    else if (Array.isArray(data)) width = 1.0;
+                }
+                if (char === ' ') width = 0.8;
+                totalWidth += width * baseSpacing;
+            }
+            
+            cursorX = totalWidth / 2; 
+
+            let currentStartTime = 0;
+
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const name = charMap[char];
+                
+                let width = 1.0;
+                let startX = 0.0;
+                let strokesData = null;
+
+                if (name && letterData[name]) {
+                    const data = letterData[name];
+                    if (Array.isArray(data)) strokesData = data;
+                    else if (data.strokes) {
+                        strokesData = data.strokes;
+                        if (data.width) width = data.width;
+                        if (data.startX) startX = data.startX;
+                    }
+                }
+                
+                if (strokesData) {
+                    const letterX = cursorX - startX * baseSpacing;
+                    
+                    // 1. Create Ink Mesh (Main Scene)
+                    // We use a slightly thinner line for ink than the indentation to simulate the ballpoint tip vs the dent
+                    const inkObj = createLetterMesh(strokesData, textSize, 2, inkColor); 
+                    inkObj.position.x = letterX;
+                    inkGroup.add(inkObj);
+
+                    // 2. Create Dent Mesh (Height Scene)
+                    // Black color = Low height (indentation)
+                    // Thicker line for softer dent edges?
+                    // Note: Line2 in world units
+                    const dentWidth = textSize * 4; // Heuristic for dent width
+                    const dentObj = createLetterMesh(strokesData, textSize, dentWidth, 0x000000);
+                    dentObj.position.x = letterX;
+                    heightScene.add(dentObj);
+                    
+                    // Calculate duration
+                    let totalLength = 0;
+                    inkObj.children.forEach(line => {
+                        if (line.userData.length) totalLength += line.userData.length;
+                    });
+                    
+                    const visualLength = totalLength * textSize;
+                    const duration = visualLength / DRAW_SPEED;
+
+                    // Add to animation queue
+                    // We need to animate BOTH the ink and the dent
+                    animationQueue.push({
+                        inkObj: inkObj,
+                        dentObj: dentObj,
+                        startTime: currentStartTime,
+                        duration: duration,
+                        strokes: inkObj.children.map((line, idx) => ({
+                            inkLine: line,
+                            dentLine: dentObj.children[idx],
+                            length: line.userData.length * textSize
+                        }))
+                    });
+                    
+                    currentStartTime += duration;
+                } else if (char === ' ') {
+                    width = 0.8;
+                    currentStartTime += 200;
+                }
+                
+                cursorX -= width * baseSpacing;
+            }
+            
+            if (animationQueue.length > 0) {
+                isAnimating = true;
+                animationStartTime = performance.now();
+            }
+        }
+
+        function createLetterMesh(strokesData, scale, linewidth, color) {
+            const letterGroup = new THREE.Group();
+            
+            strokesData.forEach(strokePoints => {
+                if (strokePoints.length < 2) return;
+                
+                const points = strokePoints.map(p => new THREE.Vector3(p[0], p[1], 0));
+                const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.5);
+                const totalPoints = 100;
+                const curvePoints = curve.getSpacedPoints(totalPoints);
+                
+                const positions = [];
+                curvePoints.forEach(p => positions.push(p.x, p.y, p.z));
+                
+                const geometry = new LineGeometry();
+                geometry.setPositions(positions);
+                
+                const material = new LineMaterial({ 
+                    color: color, 
+                    linewidth: linewidth, 
+                    worldUnits: true, // Important for height map consistency
+                    resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+                    dashed: false,
+                    alphaToCoverage: true,
+                });
+                
+                const line = new Line2(geometry, material);
+                line.computeLineDistances();
+                line.scale.set(scale, scale, scale);
+                
+                geometry.instanceCount = 0;
+                
+                line.userData = { 
+                    totalSegments: totalPoints,
+                    length: curve.getLength()
+                };
+                
+                letterGroup.add(line);
+            });
+
+            return letterGroup;
+        }
+
+        function onWindowResize() {
+            const aspect = window.innerWidth / window.innerHeight;
+            camera.aspect = aspect;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (isAnimating) {
+                const now = performance.now();
+                const totalElapsed = now - animationStartTime;
+                let allDone = true;
+                
+                animationQueue.forEach(item => {
+                    const itemElapsed = totalElapsed - item.startTime;
+                    const strokes = item.strokes;
+                    
+                    if (itemElapsed < 0) {
+                        strokes.forEach(s => {
+                            s.inkLine.geometry.instanceCount = 0;
+                            s.dentLine.geometry.instanceCount = 0;
+                        });
+                        allDone = false;
+                    } else if (itemElapsed < item.duration) {
+                        let currentDist = itemElapsed * DRAW_SPEED;
+                        
+                        strokes.forEach(s => {
+                            if (currentDist >= s.length) {
+                                s.inkLine.geometry.instanceCount = s.inkLine.userData.totalSegments;
+                                s.dentLine.geometry.instanceCount = s.dentLine.userData.totalSegments;
+                                currentDist -= s.length;
+                            } else if (currentDist > 0) {
+                                const progress = currentDist / s.length;
+                                const count = Math.floor(progress * s.inkLine.userData.totalSegments);
+                                s.inkLine.geometry.instanceCount = count;
+                                s.dentLine.geometry.instanceCount = count;
+                                currentDist = 0;
+                            } else {
+                                s.inkLine.geometry.instanceCount = 0;
+                                s.dentLine.geometry.instanceCount = 0;
+                            }
+                        });
+                        allDone = false;
+                    } else {
+                        strokes.forEach(s => {
+                            s.inkLine.geometry.instanceCount = s.inkLine.userData.totalSegments;
+                            s.dentLine.geometry.instanceCount = s.dentLine.userData.totalSegments;
+                        });
+                    }
+                });
+                
+                if (animationQueue.length > 0) {
+                    const lastItem = animationQueue[animationQueue.length - 1];
+                    if (totalElapsed > lastItem.startTime + lastItem.duration) {
+                        isAnimating = false;
+                    }
+                } else {
+                    isAnimating = false;
+                }
+            }
+            
+            // Render Height Map
+            renderer.setRenderTarget(heightTarget);
+            renderer.render(heightScene, heightCamera);
+            renderer.setRenderTarget(null);
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
