@@ -57,6 +57,9 @@
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { Line2 } from 'three/addons/lines/Line2.js';
+        import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+        import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 
         let scene, camera, renderer, controls;
         let letterData = {};
@@ -278,18 +281,33 @@
                 const points = strokePoints.map(p => new THREE.Vector3(p[0], p[1], 0));
                 const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.5);
                 const totalPoints = 100;
-                const geometry = new THREE.BufferGeometry().setFromPoints(curve.getSpacedPoints(totalPoints));
-                const material = new THREE.LineBasicMaterial({ color: color, linewidth: linewidth });
-                const line = new THREE.Line(geometry, material);
+                const curvePoints = curve.getSpacedPoints(totalPoints);
                 
+                // Convert to flat array for LineGeometry
+                const positions = [];
+                curvePoints.forEach(p => positions.push(p.x, p.y, p.z));
+                
+                const geometry = new LineGeometry();
+                geometry.setPositions(positions);
+                
+                const material = new LineMaterial({ 
+                    color: color, 
+                    linewidth: linewidth, // in pixels
+                    resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+                    dashed: false,
+                    alphaToCoverage: true,
+                });
+                
+                const line = new Line2(geometry, material);
+                line.computeLineDistances();
                 line.scale.set(scale, scale, scale);
                 
-                // Hide initially
-                geometry.setDrawRange(0, 0);
+                // Hide initially (instanceCount = 0)
+                geometry.instanceCount = 0;
                 
                 // Store metadata for animation
                 line.userData = { 
-                    totalPoints: totalPoints,
+                    totalSegments: totalPoints, // actually totalPoints segments roughly (points-1)
                     length: curve.getLength()
                 };
                 
@@ -308,6 +326,13 @@
             camera.bottom = -frustumSize / 2;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            // Update resolution for all Line2 materials
+            scene.traverse(obj => {
+                if (obj.isLine2 && obj.material) {
+                    obj.material.resolution.set(window.innerWidth, window.innerHeight);
+                }
+            });
         }
 
         function animate() {
@@ -324,7 +349,7 @@
                     
                     if (itemElapsed < 0) {
                         // Not started yet
-                        strokes.forEach(s => s.line.geometry.setDrawRange(0, 0));
+                        strokes.forEach(s => s.line.geometry.instanceCount = 0);
                         allDone = false;
                     } else if (itemElapsed < item.duration) {
                         // In progress - Consecutive Strokes based on length
@@ -333,24 +358,24 @@
                         strokes.forEach(s => {
                             if (currentDist >= s.length) {
                                 // Finished this stroke
-                                s.line.geometry.setDrawRange(0, Infinity);
+                                s.line.geometry.instanceCount = s.line.userData.totalSegments;
                                 currentDist -= s.length;
                             } else if (currentDist > 0) {
                                 // Drawing this stroke
                                 const progress = currentDist / s.length;
-                                const count = Math.floor(progress * s.line.userData.totalPoints);
-                                s.line.geometry.setDrawRange(0, count);
+                                const count = Math.floor(progress * s.line.userData.totalSegments);
+                                s.line.geometry.instanceCount = count;
                                 currentDist = 0; // Consumed all distance
                             } else {
                                 // Not reached yet
-                                s.line.geometry.setDrawRange(0, 0);
+                                s.line.geometry.instanceCount = 0;
                             }
                         });
                         allDone = false;
                     } else {
                         // Finished
                         strokes.forEach(s => {
-                            s.line.geometry.setDrawRange(0, Infinity);
+                            s.line.geometry.instanceCount = s.line.userData.totalSegments;
                         });
                     }
                 });
