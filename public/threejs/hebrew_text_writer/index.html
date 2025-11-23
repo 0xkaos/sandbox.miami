@@ -97,6 +97,39 @@
 
             // Grid
             const grid = new THREE.GridHelper(500, 50, 0x333333, 0x222222);
+        let animationQueue = [];
+        let isAnimating = false;
+        let animationStartTime = 0;
+        const LETTER_DURATION = 1000; // ms per letter
+
+        // Widths for kerning (approximate, relative to standard spacing)
+        const charWidths = {
+            'Vav': 0.4, 'Zayin': 0.5, 'Yud': 0.3, 'Nun': 0.5, 'Final Nun': 0.4,
+            'Gimmel': 0.6, 'Final Kaf': 0.6, 'Final Pei': 0.6, 'Final Tzadi': 0.6,
+            'Shin': 1.1, 'Tet': 1.1, 'Samech': 1.0, 'Mem': 1.1
+        };
+
+        init();
+
+        async function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 200;
+            camera = new THREE.OrthographicCamera(frustumSize * aspect / -2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / -2, 0.1, 1000);
+            camera.position.z = 100;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.enableRotate = false; // 2D view
+
+            // Grid
+            const grid = new THREE.GridHelper(500, 50, 0x333333, 0x222222);
             grid.rotation.x = Math.PI / 2;
             scene.add(grid);
 
@@ -134,34 +167,63 @@
 
             // Clear previous
             scene.children = scene.children.filter(c => c.type !== 'Group'); // Keep grid/lights if any
+            animationQueue = [];
+            isAnimating = false;
 
             const group = new THREE.Group();
             scene.add(group);
 
             let cursorX = 0;
-            const spacing = 40; // Adjust based on letter size
-
-            // Process text right-to-left visually, but string is logical
-            // Hebrew is RTL. If we draw from right to left:
-            // Start cursor at some positive X and move left (negative X)
+            const baseSpacing = 40; 
             
-            cursorX = (text.length * spacing) / 2; // Center roughly
+            // Calculate total width for centering
+            let totalWidth = 0;
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const name = charMap[char];
+                let width = 1.0;
+                if (name && charWidths[name]) width = charWidths[name];
+                if (char === ' ') width = 0.5;
+                totalWidth += width * baseSpacing;
+            }
+            
+            cursorX = totalWidth / 2; // Start from right
 
             for (let i = 0; i < text.length; i++) {
                 const char = text[i];
                 const name = charMap[char];
                 
+                let width = 1.0;
+                if (name && charWidths[name]) width = charWidths[name];
+                
                 if (name && letterData[name]) {
-                    const letterMesh = createLetterMesh(letterData[name]);
-                    letterMesh.position.x = cursorX;
-                    group.add(letterMesh);
+                    // Center the letter in its allocated space
+                    // Standard letter is roughly centered at 0 in local coords
+                    // We move cursor left by width*spacing
+                    // Letter position should be cursorX - (width*spacing)/2
+                    
+                    const letterX = cursorX - (width * baseSpacing) / 2;
+                    
+                    const letterObj = createLetterMesh(letterData[name]);
+                    letterObj.position.x = letterX;
+                    group.add(letterObj);
+                    
+                    // Add to animation queue
+                    animationQueue.push({
+                        obj: letterObj,
+                        startTime: i * LETTER_DURATION,
+                        duration: LETTER_DURATION
+                    });
                 } else if (char === ' ') {
-                    // Space
-                } else {
-                    console.warn("Unknown char:", char);
+                    width = 0.5;
                 }
                 
-                cursorX -= spacing;
+                cursorX -= width * baseSpacing;
+            }
+            
+            if (animationQueue.length > 0) {
+                isAnimating = true;
+                animationStartTime = performance.now();
             }
         }
 
@@ -173,13 +235,18 @@
                 
                 const points = strokePoints.map(p => new THREE.Vector3(p[0], p[1], 0));
                 const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.5);
-                const geometry = new THREE.BufferGeometry().setFromPoints(curve.getSpacedPoints(50));
+                const totalPoints = 100;
+                const geometry = new THREE.BufferGeometry().setFromPoints(curve.getSpacedPoints(totalPoints));
                 const material = new THREE.LineBasicMaterial({ color: 0x4db8ff, linewidth: 2 });
                 const line = new THREE.Line(geometry, material);
                 
-                // Scale down? The editor scale was quite large (-100 to 100 approx)
-                // Let's scale it down to be reasonable
                 line.scale.set(0.3, 0.3, 0.3);
+                
+                // Hide initially
+                geometry.setDrawRange(0, 0);
+                
+                // Store metadata for animation
+                line.userData = { totalPoints: totalPoints };
                 
                 letterGroup.add(line);
             });
@@ -200,6 +267,40 @@
 
         function animate() {
             requestAnimationFrame(animate);
+            
+            if (isAnimating) {
+                const now = performance.now();
+                const totalElapsed = now - animationStartTime;
+                let allDone = true;
+                
+                animationQueue.forEach(item => {
+                    const itemElapsed = totalElapsed - item.startTime;
+                    
+                    if (itemElapsed < 0) {
+                        // Not started yet
+                        item.obj.children.forEach(line => line.geometry.setDrawRange(0, 0));
+                        allDone = false;
+                    } else if (itemElapsed < item.duration) {
+                        // In progress
+                        const progress = itemElapsed / item.duration;
+                        item.obj.children.forEach(line => {
+                            const count = Math.floor(progress * line.userData.totalPoints);
+                            line.geometry.setDrawRange(0, count);
+                        });
+                        allDone = false;
+                    } else {
+                        // Finished
+                        item.obj.children.forEach(line => {
+                            line.geometry.setDrawRange(0, Infinity);
+                        });
+                    }
+                });
+                
+                if (allDone && animationQueue.length > 0 && totalElapsed > animationQueue[animationQueue.length-1].startTime + LETTER_DURATION) {
+                    isAnimating = false;
+                }
+            }
+            
             controls.update();
             renderer.render(scene, camera);
         }
