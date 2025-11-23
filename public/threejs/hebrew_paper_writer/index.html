@@ -151,26 +151,36 @@
             // 3. Paper Mesh
             // High segment count for displacement
             const geometry = new THREE.PlaneGeometry(paperSize, paperSize, 512, 512);
+            
+            // Compute tangents for normal map/bump map accuracy
+            geometry.computeTangents();
+
             const material = new THREE.MeshStandardMaterial({
-                color: 0xf0f0e0,
-                roughness: 0.9, // Paper is rough
-                metalness: 0.0,
+                color: 0xe0e0d0, // Slightly darker to allow highlights
+                roughness: 0.9, 
+                metalness: 0.1, 
+                
+                // Use the height target for BOTH displacement (geometry) and bump (lighting/normals)
                 displacementMap: heightTarget.texture,
-                displacementScale: 2.0, // Depth of indentation
+                displacementScale: 2.0, 
+                
+                bumpMap: heightTarget.texture,
+                bumpScale: 2.0, // Exaggerate the lighting effect of the dent
+                
                 side: THREE.DoubleSide,
                 shadowSide: THREE.DoubleSide
             });
             paperMesh = new THREE.Mesh(geometry, material);
             paperMesh.receiveShadow = true;
-            paperMesh.castShadow = true; // Self-shadowing for dents
+            paperMesh.castShadow = true; 
             scene.add(paperMesh);
 
             // 4. Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.2); // Lower ambient to let SSAO/Shadows work
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.1); // Very low ambient
             scene.add(ambientLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-            dirLight.position.set(50, 100, 50); // Higher angle for writing
+            const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+            dirLight.position.set(-50, 60, 50); // Grazing angle from top-left
             dirLight.castShadow = true;
             dirLight.shadow.mapSize.width = 2048;
             dirLight.shadow.mapSize.height = 2048;
@@ -184,13 +194,15 @@
             dirLight.shadow.camera.top = d;
             dirLight.shadow.camera.bottom = -d;
             
-            dirLight.shadow.bias = -0.0001;
+            dirLight.shadow.bias = -0.0005; 
+            dirLight.shadow.normalBias = 0.02; 
             scene.add(dirLight);
             
             // Add a point light close to surface to exaggerate relief
-            const pointLight = new THREE.PointLight(0xffaa00, 0.5, 200);
-            pointLight.position.set(-50, 20, 20);
+            const pointLight = new THREE.PointLight(0xffaa00, 0.8, 200);
+            pointLight.position.set(50, 30, 30); // Low angle light
             pointLight.castShadow = true;
+            pointLight.shadow.bias = -0.0001;
             scene.add(pointLight);
 
             window.addEventListener('resize', onWindowResize);
