@@ -128,7 +128,34 @@
         }
         #close-panel:hover { color: #fff; }
 
-        h1 { margin: 0; font-size: 1.5em; background: linear-gradient(45deg, #4db8ff, #b84dff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        /* Satellite Layer (2D Overlay) */
+        #satellite-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 500;
+            overflow: hidden;
+        }
+        
+        .satellite-item {
+            position: absolute;
+            pointer-events: auto;
+            /* Default Mobile: Pinned to right */
+            right: 10px;
+            width: auto;
+            max-width: 180px;
+            transition: top 0.1s linear; /* Smooth vertical tracking */
+        }
+
+        @media (min-width: 800px) {
+            .satellite-item {
+                right: auto;
+                /* Desktop: Pinned to right of center */
+                left: calc(50% + 120px);
+                max-width: 300px;
+            }
+        }
+
+        h1 { margin: 0; font-size: 1.5em; background: linear-gradient(45deg, #4db8ff, #b84dff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
         
         /* Search */
         #search-box {
@@ -139,6 +166,7 @@
 </head>
 <body>
     <div id="canvas-container"></div>
+    <div id="satellite-layer"></div>
 
     <div id="ui-layer">
         <!-- Top Bar Removed -->
@@ -541,44 +569,37 @@
 
         function spawnSatellites(rootStr, rootMesh, rootColor) {
             // Clear existing satellites
-            state.objects.satellites.forEach(obj => {
-                if (obj.labelObj) obj.labelObj.removeFromParent();
-            });
+            const layer = document.getElementById('satellite-layer');
+            layer.innerHTML = '';
             state.objects.satellites = [];
 
             const verbs = state.roots[rootStr];
             const count = verbs.length;
 
             // 2D Layout Parameters
-            const xOffset = 60; // Distance to the right
-            const ySpacing = 50; // Vertical spacing between verbs
+            const ySpacing = 60; // Vertical spacing between verbs (tighter)
             
             verbs.forEach((verb, i) => {
                 // Calculate offset relative to root center
                 // Center the stack vertically
                 const yOffset = (i - (count - 1) / 2) * ySpacing;
                 
-                // Verb Node
+                // Verb Node (Standard DOM element)
                 const div = document.createElement('div');
-                div.className = 'verb-label';
+                div.className = 'verb-label satellite-item';
                 div.style.borderColor = '#' + rootColor.getHexString();
                 div.style.boxShadow = `0 0 10px #${rootColor.getHexString()}`;
                 
                 // Click on container does nothing (buttons handle actions)
                 div.onclick = (e) => e.stopPropagation();
                 
-                const labelObj = new CSS2DObject(div);
-                // Initial position (will be updated in animate)
-                labelObj.position.set(0, 0, 0); 
-                
-                // Add to satelliteGroup (scene level), NOT rootMesh
-                satelliteGroup.add(labelObj);
+                layer.appendChild(div);
 
                 state.objects.satellites.push({ 
-                    labelObj, 
+                    element: div, 
                     verb, 
                     targetMesh: rootMesh,
-                    offset: new THREE.Vector3(xOffset, yOffset, 0)
+                    yOffset: yOffset // Only Y offset matters now
                 });
             });
 
@@ -586,25 +607,49 @@
         }
 
         function updateSatellites() {
+            if (state.objects.satellites.length === 0) return;
+
+            // We need to find the screen Y of the target mesh
+            // Since all satellites share the same targetMesh (the active root),
+            // we can calculate it once.
+            const firstSat = state.objects.satellites[0];
+            if (!firstSat.targetMesh) return;
+
+            const vector = new THREE.Vector3();
+            firstSat.targetMesh.getWorldPosition(vector);
+            
+            // Project to screen space
+            vector.project(camera);
+            
+            // Convert NDC to pixel coordinates
+            // Y is inverted in CSS (0 is top)
+            const screenY = (-(vector.y) * 0.5 + 0.5) * window.innerHeight;
+            
+            // Check if root is roughly on screen
+            const isVisible = (screenY > -100 && screenY < window.innerHeight + 100);
+            
             state.objects.satellites.forEach(obj => {
-                if (!obj.targetMesh) return;
-                
-                // Get world position of the root mesh
-                const worldPos = new THREE.Vector3();
-                obj.targetMesh.getWorldPosition(worldPos);
-                
-                // Apply fixed 2D offset (ignoring rotation)
-                // We want the offset to be in camera/screen space relative to the object
-                // Since camera is fixed looking at Z, X is right, Y is up.
-                
-                obj.labelObj.position.copy(worldPos).add(obj.offset);
+                if (!isVisible) {
+                    obj.element.style.display = 'none';
+                } else {
+                    obj.element.style.display = 'flex';
+                    // Apply vertical offset
+                    // Note: yOffset is in pixels? No, it was in 3D units before.
+                    // We should treat yOffset as pixels now for the UI layer.
+                    // Let's assume yOffset is pixels.
+                    
+                    const finalY = screenY + obj.yOffset;
+                    obj.element.style.top = `${finalY}px`;
+                    // Centering the element itself
+                    obj.element.style.transform = `translateY(-50%)`;
+                }
             });
         }
 
         function updateSatelliteLabels() {
             state.objects.satellites.forEach(obj => {
                 const verb = obj.verb;
-                const div = obj.labelObj.element;
+                const div = obj.element;
                 
                 let text = '';
                 let sub = verb.bnE; // Binyan as subtitle
