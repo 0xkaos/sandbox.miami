@@ -12,14 +12,14 @@
     "category": "threejs"
   },
   {
-    "path": "/threejs/hebrew_paper_writer/",
-    "title": "Hebrew Paper Writer",
+    "path": "/threejs/hebrew_script_writer/",
+    "title": "Hebrew Script Editor",
     "description": "No description available.",
     "category": "threejs"
   },
   {
-    "path": "/threejs/hebrew_script_writer/",
-    "title": "Hebrew Script Editor",
+    "path": "/threejs/hebrew_text_effects/",
+    "title": "Hebrew Text Effects Writer",
     "description": "No description available.",
     "category": "threejs"
   },

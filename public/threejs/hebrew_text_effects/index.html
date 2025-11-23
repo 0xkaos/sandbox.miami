@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hebrew Text Effects Writer</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #04050d;
+            color: #e8f6ff;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 320px;
+            background: rgba(4, 5, 20, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 16px 18px 18px;
+            backdrop-filter: blur(18px);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 100;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+        }
+        h3 {
+            margin: 0 0 6px;
+            font-size: 1.15rem;
+            letter-spacing: 0.02em;
+        }
+        label {
+            font-size: 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+        }
+        input[type="number"], input[type="color"], select {
+            padding: 6px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(6, 8, 20, 0.7);
+            color: #eaf7ff;
+        }
+        input[type="range"] {
+            accent-color: #59ebff;
+        }
+        button {
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: none;
+            background: linear-gradient(120deg, #3ddcff, #7c61ff);
+            color: #04050d;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 30px rgba(94, 140, 255, 0.35);
+        }
+        #status {
+            font-size: 0.8rem;
+            color: #9fb7ff;
+        }
+        #effect-description {
+            font-size: 0.82rem;
+            color: #cfd9ff;
+            line-height: 1.4;
+            background: rgba(255, 255, 255, 0.04);
+            padding: 8px 10px;
+            border-radius: 10px;
+        }
+        canvas { display: block; }
+        .disabled {
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h3>Hebrew Text Effects</h3>
+        <input type="text" id="text-input" dir="rtl" placeholder="הקלד טקסט" value="שלום עולם">
+        <button id="btn-write">Render Effect</button>
+
+        <label>
+            Effect Preset
+            <select id="setting-effect">
+                <option value="neonGlow">Neon Bloom</option>
+                <option value="chromeSheen">Chrome Sheen</option>
+                <option value="holoSpectrum">Holographic Wave</option>
+            </select>
+        </label>
+
+        <label>
+            Accent Color
+            <input type="color" id="setting-accent" value="#5cf0ff">
+        </label>
+
+        <label>
+            Text Size
+            <input type="number" id="setting-size" value="36" min="10" max="160" step="2">
+        </label>
+
+        <label>
+            Stroke Weight
+            <input type="number" id="setting-stroke" value="12" min="2" max="40" step="1">
+        </label>
+
+        <label>
+            Animation Speed
+            <input type="range" id="setting-speed" value="1" min="0.3" max="2" step="0.05">
+        </label>
+
+        <div id="effect-description">Layered cyan plasma lines with animated neon halos and bloom.</div>
+        <div id="status">Loading stroke data…</div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { Line2 } from 'three/addons/lines/Line2.js';
+        import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+        import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { FilmPass } from 'three/addons/postprocessing/FilmPass.js';
+        import { GlitchPass } from 'three/addons/postprocessing/GlitchPass.js';
+
+        const TOTAL_POINTS = 120;
+        const DRAW_SPEED = 0.12;
+
+        const EFFECT_PRESETS = {
+            neonGlow: {
+                label: 'Neon Bloom',
+                description: 'Layered cyan plasma with animated dash motion, pulsing halos, and cinematic bloom.',
+                background: '#020312',
+                baseStroke: 12,
+                allowAccent: true,
+                bloom: { strength: 1.8, radius: 0.45, threshold: 0.2 },
+                film: { enabled: true, noise: 0.35, scanlines: 512, scanlineIntensity: 0.3 },
+                glitch: { enabled: false },
+                layers: [
+                    {
+                        linewidthMultiplier: 1.0,
+                        opacity: 1,
+                        dashed: true,
+                        dashSize: 0.9,
+                        gapSize: 0.45,
+                        dashSpeed: 0.35,
+                        useAccent: true
+                    },
+                    {
+                        linewidthMultiplier: 1.7,
+                        opacity: 0.4,
+                        blending: 'additive',
+                        pulse: { speed: 1.3, amplitude: 0.25 },
+                        useAccent: true,
+                        accentShift: { h: 0.02, l: 0.08 }
+                    },
+                    {
+                        linewidthMultiplier: 2.4,
+                        opacity: 0.2,
+                        blending: 'additive',
+                        pulse: { speed: 0.8, amplitude: 0.12 },
+                        color: '#00b3ff'
+                    }
+                ]
+            },
+            chromeSheen: {
+                label: 'Chrome Sheen',
+                description: 'High-gloss metallic lettering with cool/warm highlights and subtle hue drift.',
+                background: '#070910',
+                baseStroke: 11,
+                allowAccent: false,
+                bloom: { strength: 0.7, radius: 0.18, threshold: 0.82 },
+                film: { enabled: false },
+                glitch: { enabled: false },
+                layers: [
+                    {
+                        linewidthMultiplier: 1.2,
+                        opacity: 1,
+                        gradientStops: [
+                            { t: 0, color: '#7aa8ff' },
+                            { t: 0.45, color: '#f8fbff' },
+                            { t: 1, color: '#5c83ff' }
+                        ]
+                    },
+                    {
+                        linewidthMultiplier: 1.45,
+                        opacity: 0.85,
+                        gradientStops: [
+                            { t: 0, color: '#ffe7c0' },
+                            { t: 0.4, color: '#92b7ff' },
+                            { t: 1, color: '#fefefe' }
+                        ],
+                        hueShift: { speed: 0.035 }
+                    }
+                ]
+            },
+            holoSpectrum: {
+                label: 'Holographic Wave',
+                description: 'Spectrum gradients with subtle glitching and scanning pulses like an RGB hologram.',
+                background: '#01060f',
+                baseStroke: 10,
+                allowAccent: false,
+                bloom: { strength: 1.1, radius: 0.3, threshold: 0.6 },
+                film: { enabled: true, noise: 0.25, scanlines: 420, scanlineIntensity: 0.22 },
+                glitch: { enabled: true, wild: false },
+                layers: [
+                    {
+                        linewidthMultiplier: 1.15,
+                        opacity: 1,
+                        gradientStops: [
+                            { t: 0, color: '#ff00ff' },
+                            { t: 0.25, color: '#00f6ff' },
+                            { t: 0.6, color: '#00ff87' },
+                            { t: 1, color: '#ffd600' }
+                        ],
+                        hueShift: { speed: 0.12 }
+                    },
+                    {
+                        linewidthMultiplier: 1.5,
+                        opacity: 0.55,
+                        dashed: true,
+                        dashSize: 1.2,
+                        gapSize: 0.6,
+                        dashSpeed: 0.15,
+                        gradientStops: [
+                            { t: 0, color: '#00f0ff' },
+                            { t: 1, color: '#ff0ac1' }
+                        ]
+                    }
+                ]
+            }
+        };
+
+        const charMap = {
+            'א': 'Aleph','ב': 'Bet','ג': 'Gimmel','ד': 'Dalet','ה': 'Hei','ו': 'Vav','ז': 'Zayin','ח': 'Het','ט': 'Tet','י': 'Yud','כ': 'Kaf','ך': 'Final Kaf','ל': 'Lamed','מ': 'Mem','ם': 'Final Mem','נ': 'Nun','ן': 'Final Nun','ס': 'Samech','ע': 'Ayin','פ': 'Pei','ף': 'Final Pei','צ': 'Tzadi','ץ': 'Final Tzadi','ק': 'Kuf','ר': 'Resh','ש': 'Shin','ת': 'Tav'
+        };
+
+        let scene, camera, renderer, controls;
+        let composer, bloomPass, filmPass, glitchPass;
+        let letterData = {};
+        let textGroup = null;
+        let animationQueue = [];
+        let isAnimating = false;
+        let animationStartTime = 0;
+        let drawSpeedMultiplier = 1;
+        let animatedMaterials = [];
+        let responsiveMaterials = new Set();
+        const resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
+        const clock = new THREE.Clock();
+        let elapsed = 0;
+
+        init();
+
+        async function init() {
+            scene = new THREE.Scene();
+
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 220;
+            camera = new THREE.OrthographicCamera(frustumSize * aspect / -2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / -2, -500, 500);
+            camera.position.set(0, 0, 200);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableRotate = false;
+            controls.enablePan = true;
+            controls.enableDamping = true;
+            controls.zoomSpeed = 0.8;
+
+            composer = new EffectComposer(renderer);
+            const renderPass = new RenderPass(scene, camera);
+            composer.addPass(renderPass);
+
+            bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            composer.addPass(bloomPass);
+
+            filmPass = new FilmPass(0.35, 0.3, 512, false);
+            composer.addPass(filmPass);
+
+            glitchPass = new GlitchPass();
+            glitchPass.enabled = false;
+            composer.addPass(glitchPass);
+
+            window.addEventListener('resize', onWindowResize);
+
+            document.getElementById('btn-write').addEventListener('click', writeText);
+            document.getElementById('setting-effect').addEventListener('change', () => {
+                updateEffectDescription();
+                applyEffectPreset();
+            });
+
+            applyEffectPreset();
+            updateEffectDescription();
+
+            try {
+                const res = await fetch('/api/letters');
+                if (res.ok) {
+                    letterData = await res.json();
+                    document.getElementById('status').textContent = 'Ready';
+                } else {
+                    const localRes = await fetch('../hebrew_script_writer/images/letters.json');
+                    if (localRes.ok) {
+                        letterData = await localRes.json();
+                        document.getElementById('status').textContent = 'Ready (Local Cache)';
+                    } else {
+                        document.getElementById('status').textContent = 'Unable to load strokes';
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+                document.getElementById('status').textContent = 'Error loading strokes';
+            }
+
+            animate();
+        }
+
+        function applyEffectPreset() {
+            const preset = getPreset();
+            scene.background = new THREE.Color(preset.background);
+
+            if (bloomPass) {
+                bloomPass.strength = preset.bloom.strength;
+                bloomPass.radius = preset.bloom.radius;
+                bloomPass.threshold = preset.bloom.threshold;
+            }
+
+            if (filmPass) {
+                filmPass.enabled = preset.film.enabled;
+                filmPass.uniforms.nIntensity.value = preset.film.noise ?? 0.3;
+                filmPass.uniforms.sIntensity.value = preset.film.scanlineIntensity ?? 0.15;
+                filmPass.uniforms.sCount.value = preset.film.scanlines ?? 512;
+            }
+
+            if (glitchPass) {
+                glitchPass.enabled = preset.glitch.enabled;
+                glitchPass.goWild = preset.glitch.wild ?? false;
+            }
+        }
+
+        function updateEffectDescription() {
+            const preset = getPreset();
+            document.getElementById('effect-description').textContent = preset.description;
+            const accentWrap = document.getElementById('setting-accent').parentElement;
+            document.getElementById('setting-accent').disabled = !preset.allowAccent;
+            accentWrap.classList.toggle('disabled', !preset.allowAccent);
+        }
+
+        function getPreset() {
+            const key = document.getElementById('setting-effect').value;
+            return EFFECT_PRESETS[key] || EFFECT_PRESETS.neonGlow;
+        }
+
+        function writeText() {
+            const textInput = document.getElementById('text-input').value.replace(/[\u0591-\u05C7]/g, '');
+            if (!textInput) {
+                document.getElementById('status').textContent = 'Enter Hebrew text to render.';
+                return;
+            }
+            if (Object.keys(letterData).length === 0) {
+                document.getElementById('status').textContent = 'Stroke data not ready yet.';
+                return;
+            }
+
+            const preset = getPreset();
+            const size = parseFloat(document.getElementById('setting-size').value) || preset.baseStroke;
+            const textSize = size / 100;
+            const baseStroke = parseFloat(document.getElementById('setting-stroke').value) || preset.baseStroke;
+            drawSpeedMultiplier = parseFloat(document.getElementById('setting-speed').value) || 1;
+            const accentColorHex = document.getElementById('setting-accent').value || '#5cf0ff';
+            const accentColor = new THREE.Color(accentColorHex);
+
+            if (textGroup) {
+                disposeGroup(textGroup);
+                scene.remove(textGroup);
+            }
+            textGroup = new THREE.Group();
+            scene.add(textGroup);
+
+            animatedMaterials = [];
+            animationQueue = [];
+            isAnimating = false;
+
+            const baseSpacing = 100 * textSize;
+
+            let totalWidth = 0;
+            for (let i = 0; i < textInput.length; i++) {
+                const meta = getLetterMeta(textInput[i]);
+                totalWidth += (meta.width ?? 1) * baseSpacing;
+            }
+
+            let cursorX = totalWidth / 2;
+            let currentStartTime = 0;
+
+            for (let i = 0; i < textInput.length; i++) {
+                const char = textInput[i];
+                const { strokes, width, startX } = getLetterMeta(char);
+                if (!strokes) {
+                    cursorX -= width * baseSpacing;
+                    continue;
+                }
+
+                const letterX = cursorX - startX * baseSpacing;
+                const { group, strokeEntries, totalStrokeLength } = buildLetter(strokes, textSize, baseStroke, preset, accentColor);
+                group.position.x = letterX;
+                textGroup.add(group);
+
+                const duration = totalStrokeLength / (DRAW_SPEED * drawSpeedMultiplier);
+                animationQueue.push({
+                    strokes: strokeEntries,
+                    startTime: currentStartTime,
+                    duration
+                });
+
+                currentStartTime += duration;
+                cursorX -= width * baseSpacing;
+            }
+
+            if (animationQueue.length > 0) {
+                isAnimating = true;
+                animationStartTime = performance.now();
+                document.getElementById('status').textContent = `Rendering ${textInput.length} glyphs with ${preset.label}.`;
+            }
+        }
+
+        function getLetterMeta(char) {
+            if (char === ' ') {
+                return { strokes: null, width: 0.8, startX: 0 };
+            }
+            const name = charMap[char];
+            if (!name || !letterData[name]) {
+                return { strokes: null, width: 1, startX: 0 };
+            }
+            const data = letterData[name];
+            if (Array.isArray(data)) {
+                return { strokes: data, width: 1, startX: 0 };
+            }
+            return {
+                strokes: data.strokes,
+                width: data.width ?? 1,
+                startX: data.startX ?? 0
+            };
+        }
+
+        function buildLetter(strokesData, scale, baseStroke, preset, accentColor) {
+            const group = new THREE.Group();
+            const strokeEntries = [];
+            let totalStrokeLength = 0;
+
+            strokesData.forEach(points => {
+                if (points.length < 2) return;
+                const vectors = points.map(p => new THREE.Vector3(p[0], p[1], 0));
+                const curve = new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.5);
+                const curvePoints = curve.getSpacedPoints(TOTAL_POINTS);
+                const positions = [];
+                curvePoints.forEach(pt => positions.push(pt.x, pt.y, pt.z));
+
+                const layers = preset.layers.map(layer => {
+                    const line = createStrokeLine(curvePoints, positions, scale, baseStroke, layer, accentColor);
+                    group.add(line);
+                    return line;
+                });
+
+                const length = curve.getLength() * scale;
+                totalStrokeLength += length;
+                strokeEntries.push({
+                    length,
+                    layers
+                });
+            });
+
+            return { group, strokeEntries, totalStrokeLength };
+        }
+
+    function createStrokeLine(curvePoints, positions, scale, baseStroke, layer, accentColor) {
+            const geometry = new LineGeometry();
+            geometry.setPositions(positions);
+
+            const color = resolveLayerColor(layer, accentColor);
+            const material = new LineMaterial({
+        color: color.getHex(),
+                linewidth: baseStroke * (layer.linewidthMultiplier ?? 1),
+                resolution: resolution,
+                worldUnits: false,
+                alphaToCoverage: true,
+                dashed: Boolean(layer.dashed)
+            });
+
+            material.transparent = layer.opacity < 1 || layer.blending === 'additive' || layer.pulse || Boolean(layer.hueShift);
+            material.opacity = layer.opacity ?? 1;
+            material.depthWrite = layer.blending === 'additive' ? false : true;
+            if (layer.blending === 'additive') {
+                material.blending = THREE.AdditiveBlending;
+            }
+
+            if (layer.gradientStops) {
+                const colors = buildGradientColors(curvePoints.length, layer.gradientStops);
+                geometry.setColors(colors);
+                material.vertexColors = true;
+            }
+
+            if (layer.dashed) {
+                material.defines = material.defines || {};
+                material.defines.USE_DASH = '';
+                material.dashSize = layer.dashSize ?? 1;
+                material.gapSize = layer.gapSize ?? 1;
+                material.dashOffset = 0;
+                registerAnimatedMaterial(material, { type: 'dash', speed: layer.dashSpeed ?? 0.1 });
+            }
+
+            if (layer.pulse) {
+                registerAnimatedMaterial(material, {
+                    type: 'pulse',
+                    speed: layer.pulse.speed ?? 1,
+                    amplitude: layer.pulse.amplitude ?? 0.2,
+                    baseOpacity: material.opacity
+                });
+            }
+
+            if (layer.hueShift) {
+                const hsl = { h: 0, s: 0, l: 0 };
+                color.getHSL(hsl);
+                registerAnimatedMaterial(material, {
+                    type: 'hue',
+                    speed: layer.hueShift.speed ?? 0.05,
+                    saturation: hsl.s,
+                    lightness: hsl.l
+                });
+            }
+
+            const line = new Line2(geometry, material);
+            line.computeLineDistances();
+            line.scale.set(scale, scale, scale);
+            geometry.instanceCount = 0;
+            line.userData.totalSegments = TOTAL_POINTS;
+
+            responsiveMaterials.add(material);
+            return line;
+        }
+
+        function resolveLayerColor(layer, accentColor) {
+            if (layer.color) return new THREE.Color(layer.color);
+            if (layer.useAccent) {
+                const col = accentColor.clone();
+                if (layer.accentShift) {
+                    col.offsetHSL(layer.accentShift.h ?? 0, layer.accentShift.s ?? 0, layer.accentShift.l ?? 0);
+                }
+                return col;
+            }
+            return new THREE.Color('#ffffff');
+        }
+
+        function buildGradientColors(count, stops) {
+            const colors = [];
+            for (let i = 0; i < count; i++) {
+                const t = i / (count - 1);
+                const color = sampleGradient(stops, t);
+                colors.push(color.r, color.g, color.b);
+            }
+            return colors;
+        }
+
+        function sampleGradient(stops, t) {
+            if (!stops || stops.length === 0) return new THREE.Color('#ffffff');
+            const clamped = Math.min(Math.max(t, 0), 1);
+            if (clamped <= stops[0].t) return new THREE.Color(stops[0].color);
+            if (clamped >= stops[stops.length - 1].t) return new THREE.Color(stops[stops.length - 1].color);
+            for (let i = 0; i < stops.length - 1; i++) {
+                const a = stops[i];
+                const b = stops[i + 1];
+                if (clamped >= a.t && clamped <= b.t) {
+                    const local = (clamped - a.t) / Math.max(b.t - a.t, 0.0001);
+                    const colorA = new THREE.Color(a.color);
+                    const colorB = new THREE.Color(b.color);
+                    return colorA.lerp(colorB, local);
+                }
+            }
+            return new THREE.Color(stops[stops.length - 1].color);
+        }
+
+        function disposeGroup(group) {
+            group.traverse(child => {
+                if (child.isLine2) {
+                    child.geometry.dispose();
+                    child.material.dispose();
+                    responsiveMaterials.delete(child.material);
+                }
+            });
+            animatedMaterials = [];
+        }
+
+        function onWindowResize() {
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 220;
+            camera.left = -frustumSize * aspect / 2;
+            camera.right = frustumSize * aspect / 2;
+            camera.top = frustumSize / 2;
+            camera.bottom = -frustumSize / 2;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+
+            resolution.set(window.innerWidth, window.innerHeight);
+            responsiveMaterials.forEach(mat => mat.resolution.copy(resolution));
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            elapsed += delta;
+
+            if (isAnimating) {
+                const now = performance.now();
+                const totalElapsed = now - animationStartTime;
+
+                animationQueue.forEach(item => {
+                    const itemElapsed = totalElapsed - item.startTime;
+                    if (itemElapsed < 0) {
+                        item.strokes.forEach(stroke => {
+                            stroke.layers.forEach(line => line.geometry.instanceCount = 0);
+                        });
+                        return;
+                    }
+
+                    if (itemElapsed < item.duration) {
+                        let currentDist = itemElapsed * DRAW_SPEED * drawSpeedMultiplier;
+                        item.strokes.forEach(stroke => {
+                            if (!stroke.layers || stroke.layers.length === 0) return;
+                            if (currentDist >= stroke.length) {
+                                stroke.layers.forEach(line => {
+                                    const maxSegments = line.userData.totalSegments ?? TOTAL_POINTS;
+                                    line.geometry.instanceCount = maxSegments;
+                                });
+                                currentDist -= stroke.length;
+                            } else if (currentDist > 0) {
+                                const progress = currentDist / stroke.length;
+                                stroke.layers.forEach(line => {
+                                    const maxSegments = line.userData.totalSegments ?? TOTAL_POINTS;
+                                    const count = Math.floor(progress * maxSegments);
+                                    line.geometry.instanceCount = count;
+                                });
+                                currentDist = 0;
+                            } else {
+                                stroke.layers.forEach(line => line.geometry.instanceCount = 0);
+                            }
+                        });
+                    } else {
+                        item.strokes.forEach(stroke => {
+                            stroke.layers.forEach(line => {
+                                const maxSegments = line.userData.totalSegments ?? TOTAL_POINTS;
+                                line.geometry.instanceCount = maxSegments;
+                            });
+                        });
+                    }
+                });
+
+                const lastItem = animationQueue[animationQueue.length - 1];
+                if (lastItem && totalElapsed > lastItem.startTime + lastItem.duration) {
+                    isAnimating = false;
+                }
+            }
+
+            animatedMaterials.forEach(entry => {
+                if (entry.type === 'dash') {
+                    entry.material.dashOffset -= delta * entry.speed * drawSpeedMultiplier;
+                    entry.material.needsUpdate = true;
+                } else if (entry.type === 'pulse') {
+                    const osc = Math.sin(elapsed * entry.speed);
+                    const value = THREE.MathUtils.clamp(entry.baseOpacity + osc * entry.amplitude, 0, 1.2);
+                    entry.material.opacity = value;
+                } else if (entry.type === 'hue') {
+                    const hue = (elapsed * entry.speed) % 1;
+                    entry.material.color.setHSL(hue, entry.saturation, entry.lightness);
+                }
+            });
+
+            controls.update();
+            composer.render();
+        }
+
+        function registerAnimatedMaterial(material, config) {
+            animatedMaterials.push({ material, ...config });
+        }
+    </script>
+</body>
+</html>
