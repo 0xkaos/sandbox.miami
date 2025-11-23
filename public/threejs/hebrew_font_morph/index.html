@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hebrew Font Morph</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; color: white; font-family: sans-serif; }
+        #info {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h1>Hebrew Font Morph</h1>
+        <p>Morphing between Block (Frank Ruehl) and Script (Gveret Levin)</p>
+        <select id="char-select" style="background: #333; color: white; border: 1px solid #555; padding: 5px; font-size: 1.2em; margin-top: 10px;">
+            <option value="א">א (Aleph)</option>
+            <option value="ב">ב (Bet)</option>
+            <option value="ג">ג (Gimel)</option>
+            <option value="ד">ד (Dalet)</option>
+            <option value="ה">ה (He)</option>
+            <option value="ו">ו (Vav)</option>
+            <option value="ז">ז (Zayin)</option>
+            <option value="ח">ח (Het)</option>
+            <option value="ט">ט (Tet)</option>
+            <option value="י">י (Yod)</option>
+            <option value="כ">כ (Kaf)</option>
+            <option value="ל">ל (Lamed)</option>
+            <option value="מ">מ (Mem)</option>
+            <option value="נ">נ (Nun)</option>
+            <option value="ס">ס (Samekh)</option>
+            <option value="ע">ע (Ayin)</option>
+            <option value="פ">פ (Pe)</option>
+            <option value="צ">צ (Tsade)</option>
+            <option value="ק">ק (Qof)</option>
+            <option value="r">ר (Resh)</option>
+            <option value="ש">ש (Shin)</option>
+            <option value="ת">ת (Tav)</option>
+        </select>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+                "three/addons/libs/opentype.module.js": "https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.module.js"
+            }
+        }
+    </script>
+    <!-- Opentype.js is loaded via importmap -->
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { TTFLoader } from 'three/addons/loaders/TTFLoader.js';
+        import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let scene, camera, renderer, particles;
+        let geometry;
+        let loadedFonts = { A: null, B: null };
+        const PARTICLE_COUNT = 15000;
+        let currentChar = 'א'; // Aleph
+        const FONT_SIZE = 100;
+
+        const state = {
+            morph: 0,   // 0 = Font A, 1 = Font B
+            scatter: 0, // 0 = Formed, 1 = Scattered
+            phase: 'A'  // A, TO_SCATTER, SWITCH_TARGET, TO_B, B, TO_SCATTER_BACK, SWITCH_TARGET_BACK, TO_A
+        };
+
+        init();
+
+        async function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 200;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            // UI Listener
+            const select = document.getElementById('char-select');
+            select.addEventListener('change', (e) => {
+                currentChar = e.target.value;
+                updateCharacter();
+            });
+
+            // Load Fonts
+            const loader = new TTFLoader();
+            const fontLoader = new FontLoader();
+
+            const loadFont = (url) => new Promise((resolve, reject) => {
+                loader.load(url, (json) => {
+                    try {
+                        const font = fontLoader.parse(json);
+                        resolve(font);
+                    } catch (e) { reject(e); }
+                }, undefined, reject);
+            });
+
+            try {
+                const [fontA, fontB] = await Promise.all([
+                    loadFont('assets/FrankRuehl.ttf'),
+                    loadFont('assets/GveretLevin.ttf')
+                ]);
+                
+                loadedFonts.A = fontA;
+                loadedFonts.B = fontB;
+
+                createParticles(fontA, fontB);
+                animate();
+                startMorphCycle();
+
+            } catch (err) {
+                console.error('Error loading fonts:', err);
+            }
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function getPointsFromFont(font, char) {
+            const shapes = font.generateShapes(char, FONT_SIZE);
+            const geometry = new THREE.ShapeGeometry(shapes);
+            geometry.computeBoundingBox();
+            
+            // Center the geometry
+            const xMid = - 0.5 * ( geometry.boundingBox.max.x - geometry.boundingBox.min.x );
+            const yMid = - 0.5 * ( geometry.boundingBox.max.y - geometry.boundingBox.min.y );
+            geometry.translate( xMid, yMid, 0 );
+
+            // Sample points from the surface (triangles)
+            const posAttribute = geometry.attributes.position;
+            const indexAttribute = geometry.index; // ShapeGeometry usually has an index
+            
+            // Calculate total area
+            let totalArea = 0;
+            const triangleAreas = [];
+            const triangleIndices = [];
+
+            // Helper to get vertex
+            const getVertex = (i) => {
+                return new THREE.Vector3(
+                    posAttribute.getX(i),
+                    posAttribute.getY(i),
+                    posAttribute.getZ(i)
+                );
+            };
+
+            // If indexed
+            if (indexAttribute) {
+                for (let i = 0; i < indexAttribute.count; i += 3) {
+                    const a = getVertex(indexAttribute.getX(i));
+                    const b = getVertex(indexAttribute.getX(i+1));
+                    const c = getVertex(indexAttribute.getX(i+2));
+                    
+                    const area = new THREE.Triangle(a, b, c).getArea();
+                    totalArea += area;
+                    triangleAreas.push(area);
+                    triangleIndices.push([a, b, c]);
+                }
+            } else {
+                // Non-indexed
+                for (let i = 0; i < posAttribute.count; i += 3) {
+                    const a = getVertex(i);
+                    const b = getVertex(i+1);
+                    const c = getVertex(i+2);
+                    
+                    const area = new THREE.Triangle(a, b, c).getArea();
+                    totalArea += area;
+                    triangleAreas.push(area);
+                    triangleIndices.push([a, b, c]);
+                }
+            }
+
+            // Sample points
+            const points = [];
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                // Select triangle by weighted random
+                let r = Math.random() * totalArea;
+                let triIndex = 0;
+                for (let j = 0; j < triangleAreas.length; j++) {
+                    r -= triangleAreas[j];
+                    if (r <= 0) {
+                        triIndex = j;
+                        break;
+                    }
+                }
+
+                // Random point in triangle
+                const [a, b, c] = triangleIndices[triIndex];
+                
+                // Random barycentric coordinates
+                let r1 = Math.random();
+                let r2 = Math.random();
+                if (r1 + r2 > 1) {
+                    r1 = 1 - r1;
+                    r2 = 1 - r2;
+                }
+                
+                const p = new THREE.Vector3()
+                    .copy(a)
+                    .addScaledVector(new THREE.Vector3().subVectors(b, a), r1)
+                    .addScaledVector(new THREE.Vector3().subVectors(c, a), r2);
+                
+                points.push(p.x, p.y, p.z);
+            }
+
+            return new Float32Array(points);
+        }
+
+        function createParticles(fontA, fontB) {
+            const pointsA = getPointsFromFont(fontA, currentChar);
+            const pointsB = getPointsFromFont(fontB, currentChar);
+            
+            // Random scatter positions
+            const pointsRandom = new Float32Array(PARTICLE_COUNT * 3);
+            for(let i=0; i<PARTICLE_COUNT * 3; i++) {
+                pointsRandom[i] = (Math.random() - 0.5) * 600; // Spread 600
+            }
+
+            geometry = new THREE.BufferGeometry();
+            
+            // We'll use a shader material, so we pass attributes
+            geometry.setAttribute('position', new THREE.BufferAttribute(pointsA, 3)); // Initial pos
+            geometry.setAttribute('targetA', new THREE.BufferAttribute(pointsA, 3));
+            geometry.setAttribute('targetB', new THREE.BufferAttribute(pointsB, 3));
+            geometry.setAttribute('scatterPos', new THREE.BufferAttribute(pointsRandom, 3));
+            
+            // Add random offset for noise animation
+            const randoms = new Float32Array(PARTICLE_COUNT);
+            for(let i=0; i<PARTICLE_COUNT; i++) randoms[i] = Math.random();
+            geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 1));
+
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime: { value: 0 },
+                    uMorph: { value: 0 }, // 0 = A, 1 = B
+                    uScatter: { value: 0 }, // 0 = Formed, 1 = Scattered
+                    uColorA: { value: new THREE.Color(0x4db8ff) },
+                    uColorB: { value: new THREE.Color(0xff4d4d) }
+                },
+                vertexShader: `
+                    uniform float uTime;
+                    uniform float uMorph;
+                    uniform float uScatter;
+                    
+                    attribute vec3 targetA;
+                    attribute vec3 targetB;
+                    attribute vec3 scatterPos;
+                    attribute float aRandom;
+                    
+                    varying float vAlpha;
+                    varying vec3 vColor;
+                    
+                    // Simplex noise or simple sine noise
+                    vec3 getNoise(vec3 p, float t) {
+                        return vec3(
+                            sin(p.y * 0.1 + t + aRandom * 6.0),
+                            cos(p.x * 0.1 + t + aRandom * 6.0),
+                            sin(p.z * 0.1 + t)
+                        );
+                    }
+
+                    void main() {
+                        // 1. Morph between A and B
+                        vec3 formedPos = mix(targetA, targetB, uMorph);
+                        
+                        // 2. Add some subtle motion to formed state
+                        formedPos += getNoise(formedPos, uTime * 2.0) * 1.0;
+
+                        // 3. Calculate Scatter Position
+                        // Add noise to scatter
+                        vec3 noisyScatter = scatterPos + getNoise(scatterPos, uTime * 0.5) * 20.0;
+                        
+                        // 4. Mix Formed and Scatter
+                        // Use a non-linear mix for explosion effect?
+                        // smoothstep for uScatter?
+                        vec3 finalPos = mix(formedPos, noisyScatter, uScatter);
+                        
+                        vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
+                        gl_Position = projectionMatrix * mvPosition;
+                        
+                        // Size attenuation
+                        gl_PointSize = (3.0 + aRandom * 2.0) * (300.0 / -mvPosition.z);
+                        
+                        // Fade out when scattered?
+                        vAlpha = 1.0 - uScatter * 0.5;
+                        
+                        // Color mix
+                        // uniform colors
+                        vec3 colorA = vec3(0.3, 0.7, 1.0); // Blueish
+                        vec3 colorB = vec3(1.0, 0.8, 0.2); // Goldish
+                        vColor = mix(colorA, colorB, uMorph);
+                    }
+                `,
+                fragmentShader: `
+                    varying float vAlpha;
+                    varying vec3 vColor;
+                    
+                    void main() {
+                        // Circular particle
+                        vec2 coord = gl_PointCoord - vec2(0.5);
+                        if(length(coord) > 0.5) discard;
+                        
+                        gl_FragColor = vec4(vColor, vAlpha);
+                    }
+                `,
+                transparent: true,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+
+        function updateCharacter() {
+            if (!loadedFonts.A || !loadedFonts.B || !geometry) return;
+
+            const pointsA = getPointsFromFont(loadedFonts.A, currentChar);
+            const pointsB = getPointsFromFont(loadedFonts.B, currentChar);
+
+            geometry.attributes.targetA.array.set(pointsA);
+            geometry.attributes.targetB.array.set(pointsB);
+            
+            geometry.attributes.targetA.needsUpdate = true;
+            geometry.attributes.targetB.needsUpdate = true;
+        }
+
+        function startMorphCycle() {
+            const duration = 2000; // ms
+            const pause = 1000;
+            
+            const animateProp = (obj, prop, target, time) => {
+                return new Promise(resolve => {
+                    const start = obj[prop];
+                    const startTime = performance.now();
+                    
+                    const update = () => {
+                        const now = performance.now();
+                        const progress = Math.min((now - startTime) / time, 1);
+                        // Ease in out
+                        const ease = progress < .5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+                        
+                        obj[prop] = start + (target - start) * ease;
+                        
+                        if (progress < 1) {
+                            requestAnimationFrame(update);
+                        } else {
+                            resolve();
+                        }
+                    };
+                    update();
+                });
+            };
+
+            const cycle = async () => {
+                // Start at A (Morph 0, Scatter 0)
+                await new Promise(r => setTimeout(r, pause));
+                
+                // Scatter
+                await animateProp(particles.material.uniforms.uScatter, 'value', 1, duration);
+                
+                // Switch Morph to B (invisible while scattered)
+                particles.material.uniforms.uMorph.value = 1;
+                
+                // Coalesce to B
+                await animateProp(particles.material.uniforms.uScatter, 'value', 0, duration);
+                
+                // Wait at B
+                await new Promise(r => setTimeout(r, pause));
+                
+                // Scatter
+                await animateProp(particles.material.uniforms.uScatter, 'value', 1, duration);
+                
+                // Switch Morph to A
+                particles.material.uniforms.uMorph.value = 0;
+                
+                // Coalesce to A
+                await animateProp(particles.material.uniforms.uScatter, 'value', 0, duration);
+                
+                cycle();
+            };
+            
+            cycle();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (particles) {
+                particles.material.uniforms.uTime.value = performance.now() * 0.001;
+            }
+            
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
