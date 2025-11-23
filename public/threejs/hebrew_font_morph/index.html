@@ -224,10 +224,21 @@
             const pointsA = getPointsFromFont(fontA, currentChar);
             const pointsB = getPointsFromFont(fontB, currentChar);
             
-            // Random scatter positions
+            // Random scatter positions (Spherical Fuzz)
             const pointsRandom = new Float32Array(PARTICLE_COUNT * 3);
-            for(let i=0; i<PARTICLE_COUNT * 3; i++) {
-                pointsRandom[i] = (Math.random() - 0.5) * 600; // Spread 600
+            for(let i=0; i<PARTICLE_COUNT; i++) {
+                // Random point in sphere (Radius ~120)
+                const r = 120 * Math.cbrt(Math.random()); 
+                const theta = Math.random() * 2 * Math.PI;
+                const phi = Math.acos(2 * Math.random() - 1);
+                
+                const x = r * Math.sin(phi) * Math.cos(theta);
+                const y = r * Math.sin(phi) * Math.sin(theta);
+                const z = r * Math.cos(phi);
+                
+                pointsRandom[i*3] = x;
+                pointsRandom[i*3+1] = y;
+                pointsRandom[i*3+2] = z;
             }
 
             geometry = new THREE.BufferGeometry();
@@ -340,8 +351,8 @@
         }
 
         function startMorphCycle() {
-            const duration = 2000; // ms
-            const pause = 1000;
+            const duration = 1200; // Reduced from 2000
+            const pause = 800; // Reduced from 1000
             
             const animateProp = (obj, prop, target, time) => {
                 return new Promise(resolve => {
