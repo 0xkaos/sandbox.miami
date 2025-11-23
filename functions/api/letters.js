@@ -4,6 +4,28 @@ export async function onRequestGet(context) {
         const object = await context.env.BUCKET.get('letters.json');
         
         if (object === null) {
+            // R2 is empty. Try to seed from static asset.
+            const url = new URL(context.request.url);
+            // Replace /api/letters with /images/letters.json
+            url.pathname = '/threejs/hebrew_script_writer/images/letters.json';
+            
+            console.log("Seeding R2 from:", url.toString());
+            const staticResp = await fetch(url.toString());
+            
+            if (staticResp.ok) {
+                const data = await staticResp.json();
+                const json = JSON.stringify(data, null, 2);
+                
+                // Save to R2
+                await context.env.BUCKET.put('letters.json', json, {
+                    httpMetadata: { contentType: 'application/json' }
+                });
+                
+                return new Response(json, {
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+            
             return new Response('Not found', { status: 404 });
         }
 

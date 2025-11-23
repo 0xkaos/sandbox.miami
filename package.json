@@ -4,6 +4,7 @@
   "description": "Three.js sandbox hosted on Cloudflare Pages",
   "main": "index.html",
   "scripts": {
+    "start": "node server.js",
     "build": "node scripts/generate-manifest.js",
     "dev": "npm run build && python3 -m http.server --directory public 8000",
     "dev:wrangler": "npm run build && wrangler pages dev public",
