@@ -56,6 +56,13 @@
             </div>
             
             <div style="margin-top:10px; border-top: 1px solid #444; padding-top:5px;">
+                <div style="font-size:0.9em; margin-bottom:5px;">Character Settings</div>
+                <div class="row">
+                    <label>Width: <input type="number" id="char-width" value="1.0" step="0.1" style="width:50px;"></label>
+                </div>
+            </div>
+
+            <div style="margin-top:10px; border-top: 1px solid #444; padding-top:5px;">
                 <div style="font-size:0.9em; margin-bottom:5px;">Background Adjust</div>
                 <div class="row">
                     <label>Scale: <input type="number" id="bg-scale" value="280" step="10" style="width:50px;"></label>
@@ -339,12 +346,28 @@
 
             // Load Strokes if exist
             if (library[charName]) {
-                library[charName].forEach(strokePoints => {
+                let data = library[charName];
+                let strokesData = [];
+                let width = 1.0;
+
+                // Handle new format { strokes: [], width: 1.0 } vs old format [[],[]]
+                if (Array.isArray(data)) {
+                    strokesData = data;
+                } else if (data.strokes) {
+                    strokesData = data.strokes;
+                    if (data.width) width = data.width;
+                }
+
+                document.getElementById('char-width').value = width;
+
+                strokesData.forEach(strokePoints => {
                     startNewStroke();
                     strokePoints.forEach(p => {
                         addPointToCurrentStroke(new THREE.Vector3(p[0], p[1], 0));
                     });
                 });
+            } else {
+                document.getElementById('char-width').value = 1.0;
             }
             
             if (mode === 'view') replayAnimation();
@@ -499,14 +522,25 @@
             if (!currentChar) return;
 
             // Update library with current strokes
-            const data = strokes.map(s => s.points.map(p => [parseFloat(p.x.toFixed(1)), parseFloat(p.y.toFixed(1))]));
-            library[currentChar] = data;
+            const strokesData = strokes.map(s => s.points.map(p => [parseFloat(p.x.toFixed(1)), parseFloat(p.y.toFixed(1))]));
+            const width = parseFloat(document.getElementById('char-width').value);
+            
+            // Save as object with metadata
+            const charData = {
+                strokes: strokesData,
+                width: width
+            };
+            
+            library[currentChar] = charData;
 
             const json = JSON.stringify(library, null, 2);
 
             // Try to save to server (R2 or Local)
             // First try a partial update (single character) to reduce chance of conflicts and payload size
-            const partialPayload = JSON.stringify({ char: currentChar, strokes: data });
+            // Note: API expects { char: "Name", strokes: ... } but we are sending the whole object as 'strokes' property?
+            // Wait, the API logic is: store[body.char] = body.strokes;
+            // So if we send body.strokes = { strokes: [], width: 1.0 }, it will be saved correctly as an object.
+            const partialPayload = JSON.stringify({ char: currentChar, strokes: charData });
 
             try {
                 let response = await fetch('/api/letters', {

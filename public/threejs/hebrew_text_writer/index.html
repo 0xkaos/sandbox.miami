@@ -176,9 +176,23 @@
                 const name = charMap[char];
                 
                 let width = 1.0;
-                if (name && charWidths[name]) width = charWidths[name];
-                
+                let strokesData = null;
+
                 if (name && letterData[name]) {
+                    const data = letterData[name];
+                    if (Array.isArray(data)) {
+                        // Old format
+                        strokesData = data;
+                        // Fallback to hardcoded widths if available
+                        if (charWidths[name]) width = charWidths[name];
+                    } else if (data.strokes) {
+                        // New format
+                        strokesData = data.strokes;
+                        if (data.width) width = data.width;
+                    }
+                }
+                
+                if (strokesData) {
                     // Center the letter in its allocated space
                     // Standard letter is roughly centered at 0 in local coords
                     // We move cursor left by width*spacing
@@ -186,7 +200,7 @@
                     
                     const letterX = cursorX - (width * baseSpacing) / 2;
                     
-                    const letterObj = createLetterMesh(letterData[name]);
+                    const letterObj = createLetterMesh(strokesData);
                     letterObj.position.x = letterX;
                     group.add(letterObj);
                     
