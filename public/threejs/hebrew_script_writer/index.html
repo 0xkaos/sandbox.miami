@@ -78,7 +78,7 @@
         </div>
 
         <div id="save-area">
-            <button id="btn-save">Save to File</button>
+            <button id="btn-save">Save / Download</button>
         </div>
         
         <div id="status">Ready</div>
@@ -190,7 +190,12 @@
 
             // Load Data
             try {
-                const res = await fetch('images/letters.json');
+                // Try loading from R2 API first
+                let res = await fetch('/api/letters');
+                if (!res.ok) {
+                    console.log("API load failed, falling back to static file");
+                    res = await fetch('images/letters.json');
+                }
                 library = await res.json();
                 populateUI();
             } catch (err) {
@@ -239,7 +244,7 @@
             document.getElementById('bg-y').onchange = updateBG;
             document.getElementById('bg-opac').onchange = updateBG;
 
-            document.getElementById('btn-save').onclick = saveToServer;
+            document.getElementById('btn-save').onclick = handleSave;
 
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('keydown', (e) => {
@@ -459,49 +464,44 @@
             });
         }
 
-        async function saveToServer() {
+        async function handleSave() {
             if (!currentChar) return;
 
             // Update library with current strokes
             const data = strokes.map(s => s.points.map(p => [parseFloat(p.x.toFixed(1)), parseFloat(p.y.toFixed(1))]));
             library[currentChar] = data;
 
-            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const json = JSON.stringify(library, null, 2);
 
-            if (!isLocal) {
-                // On production, we can't write to disk. Skip the network call.
-                const json = JSON.stringify(library, null, 2);
-                navigator.clipboard.writeText(json).then(() => {
-                    document.getElementById('status').textContent = "Saved to Clipboard (Live Site Mode)";
-                }).catch(e => {
-                    document.getElementById('status').textContent = "Save failed: " + e;
-                });
-                return;
-            }
-
+            // Try to save to server (R2 or Local)
             try {
-                const response = await fetch('/api/save-letters', {
+                const response = await fetch('/api/letters', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(library)
+                    body: json
                 });
                 
                 if (response.ok) {
-                    document.getElementById('status').textContent = "Saved successfully!";
+                    document.getElementById('status').textContent = "Saved to Cloud successfully!";
                     setTimeout(() => document.getElementById('status').textContent = "Ready", 2000);
                 } else {
-                    throw new Error('Save failed');
+                    throw new Error('Server returned ' + response.status);
                 }
             } catch (err) {
-                console.warn("Server save unavailable, falling back to clipboard.");
-                // Fallback to copy to clipboard if server save fails (e.g. static host)
-                const json = JSON.stringify(library, null, 2);
-                navigator.clipboard.writeText(json).then(() => {
-                    document.getElementById('status').textContent = "Saved to Clipboard (Server unavailable)";
-                }).catch(e => {
-                    document.getElementById('status').textContent = "Save failed: " + e;
-                });
+                console.warn("Cloud save failed:", err);
+                // Fallback
+                downloadJSON(json, 'letters.json');
+                document.getElementById('status').textContent = "Cloud save failed. Downloaded file instead.";
             }
+        }
+
+        function downloadJSON(content, fileName) {
+            const a = document.createElement("a");
+            const file = new Blob([content], { type: 'application/json' });
+            a.href = URL.createObjectURL(file);
+            a.download = fileName;
+            a.click();
+            URL.revokeObjectURL(a.href);
         }
 
         function onWindowResize() {

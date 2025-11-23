@@ -7,7 +7,20 @@ const port = 3000;
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
-app.post('/api/save-letters', (req, res) => {
+app.get('/api/letters', (req, res) => {
+    try {
+        const filePath = path.join(__dirname, 'public/threejs/hebrew_script_writer/images/letters.json');
+        if (fs.existsSync(filePath)) {
+            res.sendFile(filePath);
+        } else {
+            res.status(404).send('Not found');
+        }
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to read file' });
+    }
+});
+
+app.post('/api/letters', (req, res) => {
     try {
         const filePath = path.join(__dirname, 'public/threejs/hebrew_script_writer/images/letters.json');
         fs.writeFileSync(filePath, JSON.stringify(req.body, null, 2));
