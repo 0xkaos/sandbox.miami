@@ -204,14 +204,19 @@
                         
                         // Auto-seed the database
                         try {
-                            await fetch('/api/letters', {
+                            const seedRes = await fetch('/api/letters', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify(library)
                             });
-                            console.log("Database successfully seeded.");
+                            
+                            if (seedRes.ok) {
+                                console.log("Database successfully seeded.");
+                            } else {
+                                console.warn(`Failed to seed database: ${seedRes.status} ${seedRes.statusText}`);
+                            }
                         } catch (seedErr) {
-                            console.warn("Failed to seed database:", seedErr);
+                            console.warn("Failed to seed database (Network Error):", seedErr);
                         }
                     } else {
                         console.warn(`API error (${res.status}), falling back to static file`);
