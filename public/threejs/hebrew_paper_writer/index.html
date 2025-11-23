@@ -65,10 +65,13 @@
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
         import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { HorizontalBlurShader } from 'three/addons/shaders/HorizontalBlurShader.js';
+        import { VerticalBlurShader } from 'three/addons/shaders/VerticalBlurShader.js';
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
         let scene, camera, renderer, controls, composer;
-        let heightScene, heightCamera, heightTarget;
+        let heightScene, heightCamera, heightTarget, heightComposer;
         let paperMesh;
         let letterData = {};
         
@@ -145,8 +148,26 @@
             heightTarget = new THREE.WebGLRenderTarget(2048, 2048, {
                 minFilter: THREE.LinearFilter,
                 magFilter: THREE.LinearFilter,
-                format: THREE.RedFormat // We only need one channel for height
+                format: THREE.RGBAFormat // Blur shaders usually expect RGBA
             });
+
+            // Height Map Blur Composer
+            heightComposer = new EffectComposer(renderer, heightTarget);
+            heightComposer.renderToScreen = false;
+            
+            const heightRenderPass = new RenderPass(heightScene, heightCamera);
+            heightComposer.addPass(heightRenderPass);
+            
+            const hBlur = new ShaderPass(HorizontalBlurShader);
+            const vBlur = new ShaderPass(VerticalBlurShader);
+            
+            // Blur amount - increase for smoother/rounder edges
+            const blurSize = 3.0; 
+            hBlur.uniforms.h.value = blurSize / 2048;
+            vBlur.uniforms.v.value = blurSize / 2048;
+            
+            heightComposer.addPass(hBlur);
+            heightComposer.addPass(vBlur);
 
             // 3. Paper Mesh
             // High segment count for displacement
@@ -183,7 +204,7 @@
                 metalness: 0.1 
             });
             const sphere = new THREE.Mesh(sphereGeo, sphereMat);
-            sphere.position.set(0, 15, 0);
+            sphere.position.set(0, -130, 10); // Bottom edge
             sphere.castShadow = true;
             sphere.receiveShadow = true;
             scene.add(sphere);
@@ -495,10 +516,8 @@
                 }
             }
             
-            // Render Height Map
-            renderer.setRenderTarget(heightTarget);
-            renderer.render(heightScene, heightCamera);
-            renderer.setRenderTarget(null);
+            // Render Height Map with Blur
+            heightComposer.render();
             
             controls.update();
             composer.render();
