@@ -193,7 +193,7 @@
                     if (data.width) width = data.width;
                     else if (Array.isArray(data)) width = 1.0;
                 }
-                if (char === ' ') width = 0.5;
+                if (char === ' ') width = 0.8;
                 totalWidth += width * baseSpacing;
             }
             
@@ -259,7 +259,7 @@
                     
                     currentStartTime += duration;
                 } else if (char === ' ') {
-                    width = 0.5;
+                    width = 0.8;
                     // Add a small pause for space?
                     currentStartTime += 200;
                 }
