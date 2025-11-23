@@ -174,6 +174,8 @@
                 if (mode !== 'edit' || !e.shiftKey) return;
                 // Don't add point if clicking UI
                 if (e.target.closest('#ui')) return;
+                // Don't add point if Alt is pressed (that's for inserting midpoints)
+                if (e.altKey) return;
                 
                 const mouse = new THREE.Vector2();
                 mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -273,6 +275,11 @@
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('keydown', (e) => {
                 if (e.key === 'Shift') renderer.domElement.style.cursor = 'crosshair';
+                if ((e.key === 'Delete' || e.key === 'Backspace') && mode === 'edit') {
+                    if (transformControl.object) {
+                        deletePoint(transformControl.object);
+                    }
+                }
             });
             window.addEventListener('keyup', (e) => {
                 if (e.key === 'Shift') renderer.domElement.style.cursor = 'default';
@@ -614,8 +621,8 @@
             if (intersects.length > 0) {
                 const handle = intersects[0].object;
                 
-                if (event.altKey && !event.shiftKey) {
-                    // Alt+Click: Delete Point
+                if ((event.altKey || event.ctrlKey || event.metaKey) && !event.shiftKey) {
+                    // Alt/Ctrl+Click: Delete Point
                     deletePoint(handle);
                 } else {
                     transformControl.attach(handle);
