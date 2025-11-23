@@ -6,17 +6,24 @@
     <title>Hebrew Script Writer</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; color: white; font-family: sans-serif; }
-        #info {
+        #ui {
             position: absolute; top: 20px; left: 20px;
             background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px;
-            pointer-events: none;
+            pointer-events: auto;
+            display: flex; flex-direction: column; gap: 10px;
         }
+        select { background: #333; color: white; padding: 5px; border: 1px solid #555; font-size: 1.2em; }
+        button { padding: 5px 10px; cursor: pointer; background: #444; color: white; border: 1px solid #666; }
+        button:hover { background: #555; }
     </style>
 </head>
 <body>
-    <div id="info">
+    <div id="ui">
         <h1>Hebrew Script Writer</h1>
-        <p>Path tracing test for Script Aleph (א)</p>
+        <select id="char-select">
+            <option value="" disabled selected>Loading...</option>
+        </select>
+        <button id="btn-replay">Replay Animation</button>
     </div>
 
     <script type="importmap">
@@ -33,21 +40,24 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         let scene, camera, renderer;
-        let strokes = []; // Array of { line: THREE.Line, curve: THREE.Curve, points: [] }
-        let isAnimating = true;
+        let library = {};
+        let currentStrokes = []; // { line: THREE.Line, totalPoints: number }
         let startTime = 0;
-        const DRAW_SPEED = 0.002; // Progress per ms
+        let isAnimating = false;
+        
+        // Configuration
+        const DRAW_SPEED = 0.15; // Units per millisecond
+        const LINE_COLOR = 0x4db8ff; // Light Blue
+        const LINE_WIDTH = 3;
 
         init();
-        animate();
 
-        function init() {
+        async function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x111111);
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 100;
-            camera.position.y = 0;
+            camera.position.z = 150;
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -56,67 +66,96 @@
             const controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
 
-            // Grid for reference
-            const gridHelper = new THREE.GridHelper(200, 20);
-            gridHelper.rotation.x = Math.PI / 2;
-            scene.add(gridHelper);
+            // Grid
+            const grid = new THREE.GridHelper(300, 30, 0x333333, 0x222222);
+            grid.rotation.x = Math.PI / 2;
+            scene.add(grid);
 
-            createAleph();
+            // Load Data
+            try {
+                const res = await fetch('images/letters.json');
+                library = await res.json();
+                populateUI();
+            } catch (err) {
+                console.error("Failed to load letters.json", err);
+            }
 
             window.addEventListener('resize', onWindowResize);
+            document.getElementById('char-select').addEventListener('change', (e) => playCharacter(e.target.value));
+            document.getElementById('btn-replay').addEventListener('click', () => {
+                const val = document.getElementById('char-select').value;
+                if (val) playCharacter(val);
+            });
+
+            animate();
+        }
+
+        function populateUI() {
+            const select = document.getElementById('char-select');
+            select.innerHTML = '<option value="" disabled selected>Select Character</option>';
             
-            // Restart animation on click
-            window.addEventListener('click', () => {
-                startTime = performance.now();
-                strokes.forEach(s => s.line.geometry.setDrawRange(0, 0));
+            // Sort keys alphabetically or by some order if preferred
+            Object.keys(library).sort().forEach(key => {
+                const opt = document.createElement('option');
+                opt.value = key;
+                opt.textContent = key;
+                select.appendChild(opt);
             });
         }
 
-        function createAleph() {
-            // Define strokes for Script Aleph
-            // Coordinates are roughly centered around 0,0
-            
-            // Stroke 1: The Vertical Spine (Right side)
-            // Top-Right to Bottom-Right
-            const stroke1 = new THREE.QuadraticBezierCurve3(
-                new THREE.Vector3(20, 40, 0),   // Start
-                new THREE.Vector3(25, 0, 0),    // Control (slight curve)
-                new THREE.Vector3(20, -40, 0)   // End
-            );
+        function playCharacter(charName) {
+            // Clear previous
+            currentStrokes.forEach(s => scene.remove(s.line));
+            currentStrokes = [];
 
-            // Stroke 2: The Curved Arm (Left side)
-            // Top-Left, curving down to connect to the spine
-            const stroke2 = new THREE.CubicBezierCurve3(
-                new THREE.Vector3(-20, 30, 0),  // Start (Top Left)
-                new THREE.Vector3(-20, 10, 0),  // Control 1 (Down)
-                new THREE.Vector3(-10, -10, 0), // Control 2 (In)
-                new THREE.Vector3(20, -10, 0)   // End (Connect to spine)
-            );
+            const strokesData = library[charName];
+            if (!strokesData) return;
 
-            addStroke(stroke1, 0xff4d4d); // Red
-            addStroke(stroke2, 0x4db8ff); // Blue
-        }
+            let totalCharLength = 0;
 
-        function addStroke(curve, color) {
-            const points = curve.getPoints(100); // 100 segments
-            const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            
-            // Initialize draw range to 0
-            geometry.setDrawRange(0, 0);
+            // Create geometry for each stroke
+            strokesData.forEach(points => {
+                // Convert raw [x,y] to Vector3
+                const vectors = points.map(p => new THREE.Vector3(p[0], p[1], 0));
+                
+                // Create a smooth curve from the points
+                // curveType: 'centripetal' helps avoid loops and overshooting
+                // tension: 0.5 is default, higher values (up to 1) make it more linear/tight
+                const curve = new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.75);
+                
+                // Use getSpacedPoints for uniform distribution along the curve
+                // Increased count for smoother look
+                const POINTS_COUNT = 400;
+                const sampledPoints = curve.getSpacedPoints(POINTS_COUNT); 
+                const geometry = new THREE.BufferGeometry().setFromPoints(sampledPoints);
+                
+                // Start invisible
+                geometry.setDrawRange(0, 0);
 
-            const material = new THREE.LineBasicMaterial({ 
-                color: color,
-                linewidth: 5 // Note: linewidth only works in WebGL2 with specific drivers, usually 1px in Chrome
+                const material = new THREE.LineBasicMaterial({ 
+                    color: LINE_COLOR,
+                    linewidth: LINE_WIDTH
+                });
+
+                const line = new THREE.Line(geometry, material);
+                scene.add(line);
+
+                const length = curve.getLength();
+                
+                currentStrokes.push({
+                    line: line,
+                    totalPoints: POINTS_COUNT,
+                    curve: curve,
+                    length: length,
+                    startDistance: totalCharLength
+                });
+
+                totalCharLength += length;
             });
 
-            const line = new THREE.Line(geometry, material);
-            scene.add(line);
-
-            strokes.push({
-                line: line,
-                curve: curve,
-                totalPoints: 100
-            });
+            // Start Animation
+            startTime = performance.now();
+            isAnimating = true;
         }
 
         function onWindowResize() {
@@ -128,28 +167,36 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            const time = performance.now();
-            if (startTime === 0) startTime = time;
-            const elapsed = time - startTime;
-
-            // Animation Logic
-            // Draw stroke 1, then stroke 2
-            
-            const strokeDuration = 1000; // ms per stroke
-            
-            strokes.forEach((stroke, index) => {
-                // Calculate start time for this stroke
-                const strokeStart = index * strokeDuration;
+            if (isAnimating && currentStrokes.length > 0) {
+                const now = performance.now();
+                const elapsed = now - startTime;
+                const distanceCovered = elapsed * DRAW_SPEED;
                 
-                if (elapsed >= strokeStart) {
-                    // Calculate progress 0 to 1
-                    const progress = Math.min((elapsed - strokeStart) / strokeDuration, 1);
-                    
-                    // Map progress to number of points
-                    const drawCount = Math.floor(progress * stroke.totalPoints);
-                    stroke.line.geometry.setDrawRange(0, drawCount);
+                let allDone = true;
+
+                currentStrokes.forEach(stroke => {
+                    const strokeEndDistance = stroke.startDistance + stroke.length;
+
+                    if (distanceCovered >= strokeEndDistance) {
+                        // Stroke fully drawn
+                        stroke.line.geometry.setDrawRange(0, stroke.totalPoints + 1);
+                    } else if (distanceCovered >= stroke.startDistance) {
+                        // Stroke partially drawn
+                        const strokeProgress = (distanceCovered - stroke.startDistance) / stroke.length;
+                        const drawCount = Math.floor(strokeProgress * stroke.totalPoints);
+                        stroke.line.geometry.setDrawRange(0, drawCount);
+                        allDone = false;
+                    } else {
+                        // Stroke not started
+                        stroke.line.geometry.setDrawRange(0, 0);
+                        allDone = false;
+                    }
+                });
+
+                if (allDone) {
+                    isAnimating = false;
                 }
-            });
+            }
 
             renderer.render(scene, camera);
         }
