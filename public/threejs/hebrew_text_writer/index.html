@@ -187,13 +187,14 @@
                 }
                 
                 if (strokesData) {
-                    // Position logic:
-                    // We want the visual "Start Line" (at startX) to be at the Left Edge of the allocation.
-                    // Left Edge = cursorX - width * baseSpacing.
-                    // Origin = Left Edge - startX * baseSpacing
-                    // Origin = cursorX - (width + startX) * baseSpacing
+                    // Position logic (RTL):
+                    // cursorX is the Right boundary of the current character slot.
+                    // startX is the offset of the Right boundary from the character origin (local 0,0).
+                    // So: World_Right_Boundary = World_Origin + startX * spacing
+                    // We want World_Right_Boundary = cursorX
+                    // So: World_Origin = cursorX - startX * spacing
                     
-                    const letterX = cursorX - (width + startX) * baseSpacing;
+                    const letterX = cursorX - startX * baseSpacing;
                     
                     const letterObj = createLetterMesh(strokesData);
                     letterObj.position.x = letterX;

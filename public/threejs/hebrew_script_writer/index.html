@@ -524,7 +524,7 @@
             const width = parseFloat(document.getElementById('char-width').value) || 1.0;
             const VISUAL_SCALE = 100; 
              
-            // Start Line (Green)
+            // Start Line (Green) - Right Side
             const matStart = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
             const geoStart = new THREE.BufferGeometry().setFromPoints([
                 new THREE.Vector3(start * VISUAL_SCALE, -150, 0), 
@@ -532,11 +532,11 @@
             ]);
             boundaryLines.add(new THREE.Line(geoStart, matStart));
              
-            // End Line (Red)
+            // End Line (Red) - Left Side (Start - Width)
             const matEnd = new THREE.LineBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
             const geoEnd = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3((start + width) * VISUAL_SCALE, -150, 0), 
-                new THREE.Vector3((start + width) * VISUAL_SCALE, 150, 0)
+                new THREE.Vector3((start - width) * VISUAL_SCALE, -150, 0), 
+                new THREE.Vector3((start - width) * VISUAL_SCALE, 150, 0)
             ]);
             boundaryLines.add(new THREE.Line(geoEnd, matEnd));
         }
