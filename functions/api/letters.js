@@ -1,16 +1,23 @@
 
 export async function onRequestGet(context) {
+    // Check if the bucket is bound
+    if (!context.env.BUCKET) {
+        return new Response("R2 Bucket 'BUCKET' not bound. Check Cloudflare Dashboard > Settings > Functions.", { status: 503 });
+    }
+
     try {
         const object = await context.env.BUCKET.get('letters.json');
         
         if (object === null) {
             // R2 is empty. Try to seed from static asset.
             const url = new URL(context.request.url);
-            // Replace /api/letters with /images/letters.json
             url.pathname = '/threejs/hebrew_script_writer/images/letters.json';
             
             console.log("Seeding R2 from:", url.toString());
-            const staticResp = await fetch(url.toString());
+            
+            // Use internal asset fetcher if available, otherwise standard fetch
+            const fetcher = context.env.ASSETS || fetch;
+            const staticResp = await fetcher(url.toString());
             
             if (staticResp.ok) {
                 const data = await staticResp.json();
@@ -26,7 +33,7 @@ export async function onRequestGet(context) {
                 });
             }
             
-            return new Response('Not found', { status: 404 });
+            return new Response('Not found (Seeding failed)', { status: 404 });
         }
 
         const headers = new Headers();
@@ -43,6 +50,10 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPost(context) {
+    if (!context.env.BUCKET) {
+        return new Response("R2 Bucket 'BUCKET' not bound.", { status: 503 });
+    }
+
     try {
         const data = await context.request.json();
         const json = JSON.stringify(data, null, 2);

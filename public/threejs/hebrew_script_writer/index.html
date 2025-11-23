@@ -193,7 +193,8 @@
                 // Try loading from R2 API first
                 let res = await fetch('/api/letters');
                 if (!res.ok) {
-                    console.log("API load failed, falling back to static file");
+                    console.warn(`API load failed (${res.status} ${res.statusText}), falling back to static file`);
+                    // If the API failed, we try to load the static file directly
                     res = await fetch('images/letters.json');
                 }
                 library = await res.json();
