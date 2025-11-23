@@ -541,14 +541,7 @@
 
         function spawnSatellites(rootStr, rootMesh, rootColor) {
             // Clear existing satellites
-            // Note: We need to remove them from their parents (which are root meshes)
-            // But state.objects.satellites stores { labelObj, verb }.
-            // labelObj is a CSS2DObject.
-            // We also added a Line to satelliteGroup? No, we should add Line to rootMesh too.
-            
-            // Clean up previous satellites
             state.objects.satellites.forEach(obj => {
-                if (obj.line) obj.line.removeFromParent();
                 if (obj.labelObj) obj.labelObj.removeFromParent();
             });
             state.objects.satellites = [];
@@ -556,33 +549,15 @@
             const verbs = state.roots[rootStr];
             const count = verbs.length;
 
-            // Helical arrangement parameters
-            const turns = 2; 
-            const heightSpread = 40; // Increased from 20 to use the gap
+            // 2D Layout Parameters
+            const xOffset = 60; // Distance to the right
+            const ySpacing = 50; // Vertical spacing between verbs
             
             verbs.forEach((verb, i) => {
-                // Helical path around the root (Local Coordinates)
-                const progress = i / count;
-                const angle = progress * Math.PI * 2 * turns;
-                const yOffset = (progress - 0.5) * heightSpread;
+                // Calculate offset relative to root center
+                // Center the stack vertically
+                const yOffset = (i - (count - 1) / 2) * ySpacing;
                 
-                const x = Math.cos(angle) * SATELLITE_RADIUS;
-                const y = yOffset;
-                const z = Math.sin(angle) * SATELLITE_RADIUS;
-
-                const pos = new THREE.Vector3(x, y, z);
-
-                // Line to center (0,0,0 is root center in local space)
-                const points = [new THREE.Vector3(0,0,0), pos];
-                const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-                const lineMat = new THREE.LineBasicMaterial({ 
-                    color: rootColor, 
-                    transparent: true, 
-                    opacity: 0.4 
-                });
-                const line = new THREE.Line(lineGeo, lineMat);
-                rootMesh.add(line);
-
                 // Verb Node
                 const div = document.createElement('div');
                 div.className = 'verb-label';
@@ -593,13 +568,37 @@
                 div.onclick = (e) => e.stopPropagation();
                 
                 const labelObj = new CSS2DObject(div);
-                labelObj.position.copy(pos);
-                rootMesh.add(labelObj);
+                // Initial position (will be updated in animate)
+                labelObj.position.set(0, 0, 0); 
+                
+                // Add to satelliteGroup (scene level), NOT rootMesh
+                satelliteGroup.add(labelObj);
 
-                state.objects.satellites.push({ labelObj, line, verb });
+                state.objects.satellites.push({ 
+                    labelObj, 
+                    verb, 
+                    targetMesh: rootMesh,
+                    offset: new THREE.Vector3(xOffset, yOffset, 0)
+                });
             });
 
             updateSatelliteLabels();
+        }
+
+        function updateSatellites() {
+            state.objects.satellites.forEach(obj => {
+                if (!obj.targetMesh) return;
+                
+                // Get world position of the root mesh
+                const worldPos = new THREE.Vector3();
+                obj.targetMesh.getWorldPosition(worldPos);
+                
+                // Apply fixed 2D offset (ignoring rotation)
+                // We want the offset to be in camera/screen space relative to the object
+                // Since camera is fixed looking at Z, X is right, Y is up.
+                
+                obj.labelObj.position.copy(worldPos).add(obj.offset);
+            });
         }
 
         function updateSatelliteLabels() {
@@ -785,6 +784,7 @@
             TWEEN.update();
             // controls.update(); // Removed
             updateHelixInfinite();
+            updateSatellites();
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
         }
