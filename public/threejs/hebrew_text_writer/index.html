@@ -134,7 +134,10 @@
         }
 
         function writeText() {
-            const text = document.getElementById('text-input').value;
+            let text = document.getElementById('text-input').value;
+            // Strip Nikkud (Hebrew vowels/diacritics)
+            text = text.replace(/[\u0591-\u05C7]/g, '');
+
             if (!text) return;
 
             // Clear previous
