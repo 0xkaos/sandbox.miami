@@ -139,7 +139,7 @@
             scene.background = new THREE.Color(0x111111);
 
             const aspect = window.innerWidth / window.innerHeight;
-            const frustumSize = 150;
+            const frustumSize = 300;
             camera = new THREE.OrthographicCamera(frustumSize * aspect / -2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / -2, 0.1, 1000);
             camera.position.z = 100;
 
@@ -480,17 +480,20 @@
                     throw new Error('Save failed');
                 }
             } catch (err) {
-                console.error(err);
+                console.warn("Server save unavailable, falling back to clipboard.");
                 // Fallback to copy to clipboard if server save fails (e.g. static host)
                 const json = JSON.stringify(library, null, 2);
-                navigator.clipboard.writeText(json);
-                document.getElementById('status').textContent = "Server save failed. JSON copied to clipboard instead.";
+                navigator.clipboard.writeText(json).then(() => {
+                    document.getElementById('status').textContent = "Saved to Clipboard (Server unavailable)";
+                }).catch(e => {
+                    document.getElementById('status').textContent = "Save failed: " + e;
+                });
             }
         }
 
         function onWindowResize() {
             const aspect = window.innerWidth / window.innerHeight;
-            const frustumSize = 150;
+            const frustumSize = 300;
             
             camera.left = -frustumSize * aspect / 2;
             camera.right = frustumSize * aspect / 2;
