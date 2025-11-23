@@ -190,39 +190,35 @@
 
             // Load Data
             try {
-                // Try loading from R2 API first
-                let res = await fetch('/api/letters');
-                
-                if (res.ok) {
-                    library = await res.json();
-                } else {
-                    if (res.status === 404) {
-                        console.log("Database empty. Initializing from static defaults...");
-                        // Load static file
-                        const staticRes = await fetch('images/letters.json');
-                        library = await staticRes.json();
-                        
-                        // Auto-seed the database
-                        try {
-                            const seedRes = await fetch('/api/letters', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(library)
-                            });
-                            
-                            if (seedRes.ok) {
-                                console.log("Database successfully seeded.");
-                            } else {
-                                console.warn(`Failed to seed database: ${seedRes.status} ${seedRes.statusText}`);
-                            }
-                        } catch (seedErr) {
-                            console.warn("Failed to seed database (Network Error):", seedErr);
-                        }
-                    } else {
-                        console.warn(`API error (${res.status}), falling back to static file`);
-                        const staticRes = await fetch('images/letters.json');
-                        library = await staticRes.json();
+                // 1. Load Static Defaults
+                let staticData = {};
+                try {
+                    const staticRes = await fetch('images/letters.json');
+                    if (staticRes.ok) staticData = await staticRes.json();
+                } catch (e) { console.warn("Could not load static defaults", e); }
+
+                // 2. Load Cloud Data
+                let cloudData = {};
+                try {
+                    const cloudRes = await fetch('/api/letters');
+                    if (cloudRes.ok) {
+                        cloudData = await cloudRes.json();
                     }
+                } catch (e) { console.warn("Could not load cloud data", e); }
+
+                // 3. Merge (Cloud overrides Static)
+                library = { ...staticData, ...cloudData };
+                
+                // 4. Auto-seed if cloud is empty but static exists
+                if (Object.keys(cloudData).length === 0 && Object.keys(staticData).length > 0) {
+                    console.log("Cloud empty. Seeding from static defaults...");
+                    try {
+                        await fetch('/api/letters', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(staticData)
+                        });
+                    } catch (e) { console.warn("Auto-seed failed", e); }
                 }
                 
                 populateUI();

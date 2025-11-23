@@ -18,8 +18,7 @@ export default {
           const object = await env.BUCKET.get('letters.json');
           
           if (object === null) {
-            // Return empty object if file doesn't exist yet
-            return new Response("{}", { headers: { 'Content-Type': 'application/json' } });
+            return new Response("Not found", { status: 404 });
           }
 
           const headers = new Headers();
