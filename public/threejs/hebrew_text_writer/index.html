@@ -45,6 +45,18 @@
         let scene, camera, renderer, controls;
         let letterData = {};
         
+        let animationQueue = [];
+        let isAnimating = false;
+        let animationStartTime = 0;
+        const LETTER_DURATION = 1000; // ms per letter
+
+        // Widths for kerning (approximate, relative to standard spacing)
+        const charWidths = {
+            'Vav': 0.4, 'Zayin': 0.5, 'Yud': 0.3, 'Nun': 0.5, 'Final Nun': 0.4,
+            'Gimmel': 0.6, 'Final Kaf': 0.6, 'Final Pei': 0.6, 'Final Tzadi': 0.6,
+            'Shin': 1.1, 'Tet': 1.1, 'Samech': 1.0, 'Mem': 1.1
+        };
+        
         // Hebrew Char to Name mapping
         const charMap = {
             'א': 'Aleph',
@@ -74,39 +86,6 @@
             'ר': 'Resh',
             'ש': 'Shin', // Default to Shin, Sin handling might be needed
             'ת': 'Tav'
-        };
-
-        init();
-
-        async function init() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x111111);
-
-            const aspect = window.innerWidth / window.innerHeight;
-            const frustumSize = 200;
-            camera = new THREE.OrthographicCamera(frustumSize * aspect / -2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / -2, 0.1, 1000);
-            camera.position.z = 100;
-
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
-
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.enableRotate = false; // 2D view
-
-            // Grid
-            const grid = new THREE.GridHelper(500, 50, 0x333333, 0x222222);
-        let animationQueue = [];
-        let isAnimating = false;
-        let animationStartTime = 0;
-        const LETTER_DURATION = 1000; // ms per letter
-
-        // Widths for kerning (approximate, relative to standard spacing)
-        const charWidths = {
-            'Vav': 0.4, 'Zayin': 0.5, 'Yud': 0.3, 'Nun': 0.5, 'Final Nun': 0.4,
-            'Gimmel': 0.6, 'Final Kaf': 0.6, 'Final Pei': 0.6, 'Final Tzadi': 0.6,
-            'Shin': 1.1, 'Tet': 1.1, 'Samech': 1.0, 'Mem': 1.1
         };
 
         init();
