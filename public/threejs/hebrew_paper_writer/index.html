@@ -162,7 +162,7 @@
             const vBlur = new ShaderPass(VerticalBlurShader);
             
             // Blur amount - increase for smoother/rounder edges
-            const blurSize = 3.0; 
+            const blurSize = 8.0; 
             hBlur.uniforms.h.value = blurSize / 2048;
             vBlur.uniforms.v.value = blurSize / 2048;
             
@@ -183,10 +183,10 @@
                 
                 // Use the height target for BOTH displacement (geometry) and bump (lighting/normals)
                 displacementMap: heightTarget.texture,
-                displacementScale: 2.0, 
+                displacementScale: 5.0, 
                 
                 bumpMap: heightTarget.texture,
-                bumpScale: 2.0, // Exaggerate the lighting effect of the dent
+                bumpScale: 5.0, // Exaggerate the lighting effect of the dent
                 
                 side: THREE.DoubleSide,
                 shadowSide: THREE.DoubleSide
@@ -266,7 +266,9 @@
                 paperMesh.material.color.set(e.target.value);
             });
             document.getElementById('setting-pressure').addEventListener('input', (e) => {
-                paperMesh.material.displacementScale = parseFloat(e.target.value);
+                const val = parseFloat(e.target.value);
+                paperMesh.material.displacementScale = val * 5.0;
+                paperMesh.material.bumpScale = val * 5.0;
             });
 
             animate();
@@ -312,7 +314,8 @@
             const pressure = parseFloat(document.getElementById('setting-pressure').value) || 2.0;
             const inkColor = document.getElementById('setting-color').value || '#000000';
             
-            paperMesh.material.displacementScale = pressure;
+            paperMesh.material.displacementScale = pressure * 5.0;
+            paperMesh.material.bumpScale = pressure * 5.0;
             
             const baseSpacing = 100 * textSize; 
             
@@ -366,7 +369,7 @@
                     // Black color = Low height (indentation)
                     // Thicker line for softer dent edges?
                     // Note: Line2 in world units
-                    const dentWidth = textSize * 4; // Heuristic for dent width
+                    const dentWidth = textSize * 8; // Heuristic for dent width
                     const dentObj = createLetterMesh(strokesData, textSize, dentWidth, 0x000000);
                     dentObj.position.x = letterX;
                     heightScene.add(dentObj);
