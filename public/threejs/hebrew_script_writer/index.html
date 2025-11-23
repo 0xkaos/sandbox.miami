@@ -502,22 +502,40 @@
             const json = JSON.stringify(library, null, 2);
 
             // Try to save to server (R2 or Local)
+            // First try a partial update (single character) to reduce chance of conflicts and payload size
+            const partialPayload = JSON.stringify({ char: currentChar, strokes: data });
+
             try {
-                const response = await fetch('/api/letters', {
+                let response = await fetch('/api/letters', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: partialPayload
+                });
+
+                if (response.ok) {
+                    document.getElementById('status').textContent = "Saved character to Cloud successfully!";
+                    setTimeout(() => document.getElementById('status').textContent = "Ready", 2000);
+                    return;
+                }
+
+                // If partial update failed with a client/server error, try full replace
+                console.warn('Partial save failed, trying full store save:', response.status);
+                response = await fetch('/api/letters', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: json
                 });
-                
+
                 if (response.ok) {
-                    document.getElementById('status').textContent = "Saved to Cloud successfully!";
+                    document.getElementById('status').textContent = "Saved full store to Cloud successfully!";
                     setTimeout(() => document.getElementById('status').textContent = "Ready", 2000);
-                } else {
-                    throw new Error('Server returned ' + response.status);
+                    return;
                 }
+
+                throw new Error('Server returned ' + response.status);
             } catch (err) {
                 console.warn("Cloud save failed:", err);
-                // Fallback
+                // Fallback: download a local copy
                 downloadJSON(json, 'letters.json');
                 document.getElementById('status').textContent = "Cloud save failed. Downloaded file instead.";
             }
