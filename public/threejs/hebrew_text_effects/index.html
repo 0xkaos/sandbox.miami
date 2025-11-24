@@ -359,11 +359,15 @@
             }
 
             if (filmPass) {
-                filmPass.enabled = preset.film.enabled;
-                if (filmPass.uniforms) {
-                    filmPass.uniforms.nIntensity.value = preset.film.noise ?? 0.3;
-                    filmPass.uniforms.sIntensity.value = preset.film.scanlineIntensity ?? 0.15;
-                    filmPass.uniforms.sCount.value = preset.film.scanlines ?? 512;
+                const uniforms = filmPass.uniforms || filmPass.material?.uniforms;
+                const hasUniforms = Boolean(uniforms);
+                filmPass.enabled = preset.film.enabled && hasUniforms;
+                if (hasUniforms) {
+                    uniforms.nIntensity.value = preset.film.noise ?? 0.3;
+                    uniforms.sIntensity.value = preset.film.scanlineIntensity ?? 0.15;
+                    uniforms.sCount.value = preset.film.scanlines ?? 512;
+                } else if (preset.film.enabled) {
+                    console.warn('FilmPass uniforms missing; disabling film effect for compatibility.');
                 }
             }
 
