@@ -14,6 +14,7 @@
             font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: #04050d;
             color: #e8f6ff;
+            position: relative;
         }
         #ui {
             position: absolute;
@@ -30,6 +31,12 @@
             gap: 12px;
             z-index: 100;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+            transition: transform 0.25s ease, opacity 0.25s ease;
+        }
+        #ui.collapsed {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-20px);
         }
         h3 {
             margin: 0 0 6px;
@@ -87,9 +94,46 @@
             padding: 8px 10px;
             border-radius: 10px;
         }
+        #controls-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 110;
+            border: none;
+            border-radius: 999px;
+            padding: 10px 18px;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.16);
+            color: #f6fbff;
+            cursor: pointer;
+            backdrop-filter: blur(12px);
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+        #controls-toggle:hover {
+            background: rgba(255, 255, 255, 0.28);
+            transform: translateY(-1px);
+        }
         canvas { display: block; }
         .disabled {
             opacity: 0.5;
+        }
+        @media (max-width: 900px) {
+            #ui {
+                width: calc(100% - 32px);
+                left: 50%;
+                right: 16px;
+                top: auto;
+                bottom: 20px;
+                transform: translateX(-50%);
+            }
+            #ui.collapsed {
+                transform: translate(-50%, calc(100% + 30px));
+            }
+            #controls-toggle {
+                bottom: 20px;
+                top: auto;
+                right: 20px;
+            }
         }
     </style>
 </head>
@@ -133,6 +177,7 @@
         <div id="effect-description">Layered cyan plasma lines with animated neon halos and bloom.</div>
         <div id="status">Loading stroke data…</div>
     </div>
+    <button id="controls-toggle" aria-expanded="true" type="button">Hide Controls</button>
 
     <script type="importmap">
         {
@@ -364,8 +409,25 @@
         const resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
         const clock = new THREE.Clock();
         let elapsed = 0;
+        const uiPanel = document.getElementById('ui');
+        const controlsToggle = document.getElementById('controls-toggle');
+        const MOBILE_BREAKPOINT = 900;
+        let controlsCollapsed = false;
 
         init();
+
+        function setControlsCollapsed(state) {
+            controlsCollapsed = state;
+            uiPanel?.classList.toggle('collapsed', state);
+            if (controlsToggle) {
+                controlsToggle.textContent = state ? 'Show Controls' : 'Hide Controls';
+                controlsToggle.setAttribute('aria-expanded', (!state).toString());
+            }
+        }
+
+        controlsToggle?.addEventListener('click', () => {
+            setControlsCollapsed(!controlsCollapsed);
+        });
 
         async function init() {
             scene = new THREE.Scene();
@@ -401,7 +463,7 @@
             glitchPass.enabled = false;
             composer.addPass(glitchPass);
 
-            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('resize', handleWindowResize);
 
             document.getElementById('btn-write').addEventListener('click', writeText);
             document.getElementById('setting-effect').addEventListener('change', () => {
@@ -411,6 +473,7 @@
 
             applyEffectPreset();
             updateEffectDescription();
+            setControlsCollapsed(false);
 
             try {
                 const res = await fetch('/api/letters');
@@ -545,6 +608,10 @@
                 isAnimating = true;
                 animationStartTime = performance.now();
                 document.getElementById('status').textContent = `Rendering ${textInput.length} glyphs with ${preset.label}.`;
+            }
+
+            if (window.innerWidth <= MOBILE_BREAKPOINT) {
+                setControlsCollapsed(true);
             }
         }
 
@@ -728,6 +795,13 @@
 
             resolution.set(window.innerWidth, window.innerHeight);
             responsiveMaterials.forEach(mat => mat.resolution.copy(resolution));
+        }
+
+        function handleWindowResize() {
+            onWindowResize();
+            if (window.innerWidth > MOBILE_BREAKPOINT && controlsCollapsed) {
+                setControlsCollapsed(false);
+            }
         }
 
         function animate() {
