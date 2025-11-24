@@ -78,11 +78,11 @@
             <input type="range" id="gravity-range" min="0" max="2" step="0.1" value="0">
         </div>
         <div class="control-row">
-            <label>Wind</label>
+            <label>Swirl Speed</label>
             <input type="range" id="wind-range" min="-2" max="2" step="0.1" value="0">
         </div>
         <div class="control-row">
-            <label>Noise</label>
+            <label>Swirl Strength</label>
             <input type="range" id="noise-range" min="0" max="5" step="0.1" value="1">
         </div>
     </div>
@@ -382,6 +382,13 @@
                         );
                     }
 
+                    // Swirl function for vortex effect
+                    vec3 swirl(vec3 pos, float time, float strength) {
+                        float angle = atan(pos.y, pos.x) + time * strength + aRandom * 3.14;
+                        float radius = length(pos.xy);
+                        return vec3(cos(angle) * radius, sin(angle) * radius, pos.z + sin(time + aRandom * 6.28) * 10.0);
+                    }
+
                     void main() {
                         // 1. Morph between A and B
                         vec3 formedPos = mix(targetA, targetB, uMorph);
@@ -389,19 +396,15 @@
                         // 2. Add some subtle motion to formed state
                         formedPos += getNoise(formedPos, uTime * 2.0) * uNoiseStrength;
 
-                        // 3. Calculate Scatter Position
-                        // Add noise to scatter
-                        vec3 noisyScatter = scatterPos + getNoise(scatterPos, uTime * 0.5) * 20.0;
+                        // 3. Calculate Scatter Position with swirl
+                        vec3 swirledScatter = swirl(scatterPos, uTime * uWind, uNoiseStrength * 0.5);
+                        vec3 noisyScatter = swirledScatter + getNoise(swirledScatter, uTime * 0.5) * 20.0;
                         
-                        // Apply Gravity and Wind to Scatter
-                        // Gravity pulls down (-y), Wind pulls sideways (x)
-                        // We want this effect to be stronger when scattered
-                        vec3 physicsOffset = vec3(uWind * 100.0, -uGravity * 100.0, 0.0) * uScatter * aRandom;
-                        noisyScatter += physicsOffset;
+                        // Apply gravity pull towards center or down
+                        vec3 gravityOffset = vec3(0.0, -uGravity * 50.0, 0.0) * uScatter;
+                        noisyScatter += gravityOffset;
                         
                         // 4. Mix Formed and Scatter
-                        // Use a non-linear mix for explosion effect?
-                        // smoothstep for uScatter?
                         vec3 finalPos = mix(formedPos, noisyScatter, uScatter);
                         
                         vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
@@ -411,10 +414,9 @@
                         gl_PointSize = (3.0 + aRandom * 2.0) * (300.0 / -mvPosition.z);
                         
                         // Fade out when scattered?
-                        vAlpha = 1.0 - uScatter * 0.5;
+                        vAlpha = 1.0 - uScatter * 0.3;
                         
                         // Color mix
-                        // uniform colors
                         vec3 colorA = vec3(0.3, 0.7, 1.0); // Blueish
                         vec3 colorB = vec3(1.0, 0.8, 0.2); // Goldish
                         vColor = mix(colorA, colorB, uMorph);
