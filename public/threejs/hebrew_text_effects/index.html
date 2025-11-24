@@ -105,6 +105,8 @@
                 <option value="neonGlow">Neon Bloom</option>
                 <option value="chromeSheen">Chrome Sheen</option>
                 <option value="holoSpectrum">Holographic Wave</option>
+                <option value="emberPulse">Molten Ember</option>
+                <option value="aquaGlass">Liquid Glass</option>
             </select>
         </label>
 
@@ -255,6 +257,90 @@
                         gradientStops: [
                             { t: 0, color: '#00f0ff' },
                             { t: 1, color: '#ff0ac1' }
+                        ]
+                    }
+                ]
+            },
+            emberPulse: {
+                label: 'Molten Ember',
+                description: 'Smoldering orange embers with heat distortion pulses and smoky trails.',
+                background: '#0b0301',
+                baseStroke: 13,
+                allowAccent: false,
+                bloom: { strength: 1.4, radius: 0.32, threshold: 0.35 },
+                film: { enabled: false },
+                glitch: { enabled: false },
+                layers: [
+                    {
+                        linewidthMultiplier: 1.1,
+                        opacity: 1,
+                        gradientStops: [
+                            { t: 0, color: '#ffb347' },
+                            { t: 0.4, color: '#ff713b' },
+                            { t: 1, color: '#ff2d00' }
+                        ]
+                    },
+                    {
+                        linewidthMultiplier: 1.65,
+                        opacity: 0.5,
+                        blending: 'additive',
+                        pulse: { speed: 1.1, amplitude: 0.35 },
+                        gradientStops: [
+                            { t: 0, color: '#ffefbd' },
+                            { t: 1, color: '#ff6a00' }
+                        ]
+                    },
+                    {
+                        linewidthMultiplier: 2.3,
+                        opacity: 0.35,
+                        dashed: true,
+                        dashSize: 0.8,
+                        gapSize: 0.5,
+                        dashSpeed: 0.4,
+                        gradientStops: [
+                            { t: 0, color: '#ffd18f' },
+                            { t: 1, color: '#9a1b00' }
+                        ]
+                    }
+                ]
+            },
+            aquaGlass: {
+                label: 'Liquid Glass',
+                description: 'Translucent cyan lettering with refracted rim lights and slow iridescent drift.',
+                background: '#02121f',
+                baseStroke: 12,
+                allowAccent: true,
+                bloom: { strength: 0.95, radius: 0.25, threshold: 0.5 },
+                film: { enabled: false },
+                glitch: { enabled: false },
+                layers: [
+                    {
+                        linewidthMultiplier: 1.05,
+                        opacity: 1,
+                        useAccent: true,
+                        accentShift: { h: -0.02, l: 0.12 }
+                    },
+                    {
+                        linewidthMultiplier: 1.6,
+                        opacity: 0.55,
+                        gradientStops: [
+                            { t: 0, color: '#0ef4ff' },
+                            { t: 0.5, color: '#4bd2ff' },
+                            { t: 1, color: '#9fdfff' }
+                        ],
+                        hueShift: { speed: 0.06 }
+                    },
+                    {
+                        linewidthMultiplier: 2.1,
+                        opacity: 0.25,
+                        blending: 'additive',
+                        dashed: true,
+                        dashSize: 1.1,
+                        gapSize: 0.7,
+                        dashSpeed: 0.1,
+                        gradientStops: [
+                            { t: 0, color: '#a8f5ff' },
+                            { t: 1, color: '#4fa0ff' }
                         ]
                     }
                 ]
