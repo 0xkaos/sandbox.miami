@@ -360,9 +360,11 @@
 
             if (filmPass) {
                 filmPass.enabled = preset.film.enabled;
-                filmPass.uniforms.nIntensity.value = preset.film.noise ?? 0.3;
-                filmPass.uniforms.sIntensity.value = preset.film.scanlineIntensity ?? 0.15;
-                filmPass.uniforms.sCount.value = preset.film.scanlines ?? 512;
+                if (filmPass.uniforms) {
+                    filmPass.uniforms.nIntensity.value = preset.film.noise ?? 0.3;
+                    filmPass.uniforms.sIntensity.value = preset.film.scanlineIntensity ?? 0.15;
+                    filmPass.uniforms.sCount.value = preset.film.scanlines ?? 512;
+                }
             }
 
             if (glitchPass) {
