@@ -360,14 +360,14 @@
 
             if (filmPass) {
                 const uniforms = filmPass.uniforms || filmPass.material?.uniforms;
-                const hasUniforms = Boolean(uniforms);
+                const hasUniforms = Boolean(uniforms && uniforms.nIntensity && uniforms.sIntensity && uniforms.sCount);
                 filmPass.enabled = preset.film.enabled && hasUniforms;
                 if (hasUniforms) {
                     uniforms.nIntensity.value = preset.film.noise ?? 0.3;
                     uniforms.sIntensity.value = preset.film.scanlineIntensity ?? 0.15;
                     uniforms.sCount.value = preset.film.scanlines ?? 512;
                 } else if (preset.film.enabled) {
-                    console.warn('FilmPass uniforms missing; disabling film effect for compatibility.');
+                    console.warn('FilmPass uniforms incomplete; disabling film effect for compatibility.');
                 }
             }
 
