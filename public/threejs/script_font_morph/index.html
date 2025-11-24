@@ -110,13 +110,13 @@
         let scene, camera, renderer, particles;
         let geometry;
         const fontConfigs = [
-            { id: 'scriptPrimary', url: 'assets/FrankRuehl.ttf' },
-            { id: 'blockPrimary', url: 'assets/GveretLevin.ttf' },
-            { id: 'scriptItalic', url: 'assets/DorianCLMBookItalic.ttf' },
-            { id: 'blockSans', url: 'assets/Heebo.ttf' }
+            { id: 'scriptPrimary', url: 'assets/FrankRuehl.ttf', layoutRTL: true },
+            { id: 'blockPrimary', url: 'assets/GveretLevin.ttf', layoutRTL: true },
+            { id: 'scriptItalic', url: 'assets/DorianCLMBookItalic.ttf', layoutRTL: true },
+            { id: 'blockSans', url: 'assets/Heebo.ttf', layoutRTL: true }
         ];
 
-        const loadedFonts = [];
+    const loadedFonts = [];
         let currentFontIndex = 0;
         let nextFontIndex = 1;
         let PARTICLE_COUNT = 15000;
@@ -140,10 +140,10 @@
 
             const controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
-            controls.minAzimuthAngle = -Math.PI / 3;
-            controls.maxAzimuthAngle = Math.PI / 3;
-            controls.minPolarAngle = Math.PI / 3;
-            controls.maxPolarAngle = Math.PI / 2.1;
+            controls.minAzimuthAngle = -Math.PI / 2;
+            controls.maxAzimuthAngle = Math.PI / 2;
+            controls.minPolarAngle = 0.2;
+            controls.maxPolarAngle = Math.PI - 0.2;
             controls.enablePan = false;
 
             // UI Listeners
@@ -208,7 +208,14 @@
 
             try {
                 const fonts = await Promise.all(fontConfigs.map(cfg => loadFont(cfg.url)));
-                fonts.forEach((font, index) => loadedFonts[index] = font);
+                fonts.forEach((font, index) => {
+                    loadedFonts[index] = {
+                        font,
+                        layoutRTL: Boolean(fontConfigs[index].layoutRTL),
+                        mirrorHebrew: Boolean(fontConfigs[index].mirrorHebrew),
+                        skipSingleCharFlip: Boolean(fontConfigs[index].skipSingleCharFlip)
+                    };
+                });
 
                 if (loadedFonts.length < 2) {
                     throw new Error('At least two fonts are required for morphing.');
@@ -228,8 +235,13 @@
             window.addEventListener('resize', onWindowResize);
         }
 
-        function getPointsFromFont(font, text, pointCount = PARTICLE_COUNT) {
-            const shapes = font.generateShapes(text, FONT_SIZE);
+        function getPointsFromFont(fontEntry, text, pointCount = PARTICLE_COUNT) {
+            const { font, layoutRTL = false, mirrorHebrew = false, skipSingleCharFlip = false } = fontEntry;
+            const rtlRegex = /[\u0590-\u05FF]/;
+            const isRTL = rtlRegex.test(text);
+            const processedText = isRTL && layoutRTL ? Array.from(text).reverse().join('') : text;
+
+            const shapes = font.generateShapes(processedText, FONT_SIZE);
             const geometry = new THREE.ShapeGeometry(shapes);
             geometry.computeBoundingBox();
             
@@ -238,8 +250,8 @@
             const yMid = - 0.5 * ( geometry.boundingBox.max.y - geometry.boundingBox.min.y );
             geometry.translate( xMid, yMid, 0 );
 
-            const rtlRegex = /[\u0590-\u05FF]/;
-            if (rtlRegex.test(text)) {
+            const shouldMirror = mirrorHebrew && isRTL && !(skipSingleCharFlip && text.length === 1);
+            if (shouldMirror) {
                 geometry.scale(-1, 1, 1);
             }
 
