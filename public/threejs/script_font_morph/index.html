@@ -50,7 +50,7 @@
             <option value="פ">פ (Pe)</option>
             <option value="צ">צ (Tsade)</option>
             <option value="ק">ק (Qof)</option>
-            <option value="r">ר (Resh)</option>
+            <option value="ר">ר (Resh)</option>
             <option value="ש">ש (Shin)</option>
             <option value="ת">ת (Tav)</option>
         </select>
@@ -106,18 +106,21 @@
 
         let scene, camera, renderer, particles;
         let geometry;
-        let loadedFonts = { A: null, B: null };
+        const fontConfigs = [
+            { id: 'scriptPrimary', url: 'assets/FrankRuehl.ttf' },
+            { id: 'blockPrimary', url: 'assets/GveretLevin.ttf' },
+            { id: 'scriptItalic', url: 'assets/DorianCLMBookItalic.ttf' },
+            { id: 'blockSerif', url: 'assets/NotoSerifHebrew.ttf' }
+        ];
+
+        const loadedFonts = [];
+        let currentFontIndex = 0;
+        let nextFontIndex = 1;
         let PARTICLE_COUNT = 15000;
         let cycleDuration = 1200;
         let scatterRadius = 120;
         let currentChar = 'א'; // Aleph
         const FONT_SIZE = 100;
-
-        const state = {
-            morph: 0,   // 0 = Font A, 1 = Font B
-            scatter: 0, // 0 = Formed, 1 = Scattered
-            phase: 'A'  // A, TO_SCATTER, SWITCH_TARGET, TO_B, B, TO_SCATTER_BACK, SWITCH_TARGET_BACK, TO_A
-        };
 
         init();
 
@@ -142,12 +145,18 @@
                 updateCharacter();
             });
 
+            const rebuildParticles = () => {
+                if (particles) {
+                    scene.remove(particles);
+                }
+                createParticles();
+            };
+
             document.getElementById('points-range').addEventListener('input', (e) => {
                 PARTICLE_COUNT = parseInt(e.target.value);
                 document.getElementById('points-val').innerText = (PARTICLE_COUNT / 1000).toFixed(0) + 'k';
-                if (loadedFonts.A && loadedFonts.B) {
-                    scene.remove(particles);
-                    createParticles(loadedFonts.A, loadedFonts.B);
+                if (loadedFonts.length >= 2) {
+                    rebuildParticles();
                 }
             });
 
@@ -159,9 +168,8 @@
             document.getElementById('radius-range').addEventListener('input', (e) => {
                 scatterRadius = parseInt(e.target.value);
                 document.getElementById('radius-val').innerText = scatterRadius;
-                if (loadedFonts.A && loadedFonts.B) {
-                    scene.remove(particles);
-                    createParticles(loadedFonts.A, loadedFonts.B);
+                if (loadedFonts.length >= 2) {
+                    rebuildParticles();
                 }
             });
 
@@ -191,15 +199,17 @@
             });
 
             try {
-                const [fontA, fontB] = await Promise.all([
-                    loadFont('assets/FrankRuehl.ttf'),
-                    loadFont('assets/GveretLevin.ttf')
-                ]);
-                
-                loadedFonts.A = fontA;
-                loadedFonts.B = fontB;
+                const fonts = await Promise.all(fontConfigs.map(cfg => loadFont(cfg.url)));
+                fonts.forEach((font, index) => loadedFonts[index] = font);
 
-                createParticles(fontA, fontB);
+                if (loadedFonts.length < 2) {
+                    throw new Error('At least two fonts are required for morphing.');
+                }
+
+                currentFontIndex = 0;
+                nextFontIndex = 1 % loadedFonts.length;
+
+                createParticles();
                 animate();
                 startMorphCycle();
 
@@ -210,7 +220,7 @@
             window.addEventListener('resize', onWindowResize);
         }
 
-        function getPointsFromFont(font, char) {
+        function getPointsFromFont(font, char, pointCount = PARTICLE_COUNT) {
             const shapes = font.generateShapes(char, FONT_SIZE);
             const geometry = new THREE.ShapeGeometry(shapes);
             geometry.computeBoundingBox();
@@ -266,7 +276,7 @@
 
             // Sample points
             const points = [];
-            for (let i = 0; i < PARTICLE_COUNT; i++) {
+            for (let i = 0; i < pointCount; i++) {
                 // Select triangle by weighted random
                 let r = Math.random() * totalArea;
                 let triIndex = 0;
@@ -300,9 +310,11 @@
             return new Float32Array(points);
         }
 
-        function createParticles(fontA, fontB) {
-            const pointsA = getPointsFromFont(fontA, currentChar);
-            const pointsB = getPointsFromFont(fontB, currentChar);
+        function createParticles() {
+            if (loadedFonts.length < 2) return;
+
+            const pointsA = getPointsFromFont(loadedFonts[currentFontIndex], currentChar, PARTICLE_COUNT);
+            const pointsB = getPointsFromFont(loadedFonts[nextFontIndex], currentChar, PARTICLE_COUNT);
             
             // Random scatter positions (Spherical Fuzz)
             const pointsRandom = new Float32Array(PARTICLE_COUNT * 3);
@@ -324,7 +336,7 @@
             geometry = new THREE.BufferGeometry();
             
             // We'll use a shader material, so we pass attributes
-            geometry.setAttribute('position', new THREE.BufferAttribute(pointsA, 3)); // Initial pos
+            geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pointsA), 3));
             geometry.setAttribute('targetA', new THREE.BufferAttribute(pointsA, 3));
             geometry.setAttribute('targetB', new THREE.BufferAttribute(pointsB, 3));
             geometry.setAttribute('scatterPos', new THREE.BufferAttribute(pointsRandom, 3));
@@ -430,16 +442,19 @@
         }
 
         function updateCharacter() {
-            if (!loadedFonts.A || !loadedFonts.B || !geometry) return;
+            if (!geometry || loadedFonts.length < 2) return;
 
-            const pointsA = getPointsFromFont(loadedFonts.A, currentChar);
-            const pointsB = getPointsFromFont(loadedFonts.B, currentChar);
+            const pointCount = geometry.attributes.targetA.count;
+            const pointsA = getPointsFromFont(loadedFonts[currentFontIndex], currentChar, pointCount);
+            const pointsB = getPointsFromFont(loadedFonts[nextFontIndex], currentChar, pointCount);
 
             geometry.attributes.targetA.array.set(pointsA);
             geometry.attributes.targetB.array.set(pointsB);
+            geometry.attributes.position.array.set(pointsA);
             
             geometry.attributes.targetA.needsUpdate = true;
             geometry.attributes.targetB.needsUpdate = true;
+            geometry.attributes.position.needsUpdate = true;
         }
 
         function startMorphCycle() {
@@ -468,30 +483,38 @@
                 });
             };
 
-            const cycle = async () => {
-                // Start at A (Morph 0, Scatter 0)
-                await new Promise(r => setTimeout(r, pause));
-                
-                // Scatter
-                await animateProp(particles.material.uniforms.uScatter, 'value', 1, cycleDuration);
-                
-                // Switch Morph to B (invisible while scattered)
-                particles.material.uniforms.uMorph.value = 1;
-                
-                // Coalesce to B
-                await animateProp(particles.material.uniforms.uScatter, 'value', 0, cycleDuration);
-                
-                // Wait at B
-                await new Promise(r => setTimeout(r, pause));
-                
-                // Scatter
-                await animateProp(particles.material.uniforms.uScatter, 'value', 1, cycleDuration);
-                
-                // Switch Morph to A
+            const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+            const advanceFonts = () => {
+                if (loadedFonts.length < 2 || !geometry) return;
+
+                const targetBArray = geometry.attributes.targetB.array;
+                geometry.attributes.targetA.array.set(targetBArray);
+                geometry.attributes.targetA.needsUpdate = true;
+                geometry.attributes.position.array.set(targetBArray);
+                geometry.attributes.position.needsUpdate = true;
+
+                currentFontIndex = nextFontIndex;
+                nextFontIndex = (nextFontIndex + 1) % loadedFonts.length;
+
+                const pointCount = geometry.attributes.targetA.count;
+                const nextPoints = getPointsFromFont(loadedFonts[nextFontIndex], currentChar, pointCount);
+                geometry.attributes.targetB.array.set(nextPoints);
+                geometry.attributes.targetB.needsUpdate = true;
+
                 particles.material.uniforms.uMorph.value = 0;
-                
-                // Coalesce to A
+            };
+
+            const cycle = async () => {
+                await sleep(pause);
+
+                await animateProp(particles.material.uniforms.uScatter, 'value', 1, cycleDuration);
+                particles.material.uniforms.uMorph.value = 1;
                 await animateProp(particles.material.uniforms.uScatter, 'value', 0, cycleDuration);
+
+                await sleep(pause);
+
+                advanceFonts();
                 
                 cycle();
             };
