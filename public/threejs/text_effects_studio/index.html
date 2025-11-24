@@ -20,16 +20,19 @@
             background: #04050d;
             color: #e8f6ff;
             position: relative;
+            padding-bottom: env(safe-area-inset-bottom, 24px);
         }
         #ui {
             position: absolute;
-            top: 20px;
-            left: 20px;
+            top: 18px;
+            left: 18px;
             width: 320px;
-            background: rgba(4, 5, 20, 0.9);
+            max-width: calc(100vw - 48px);
+            max-height: calc(100vh - 64px);
+            background: rgba(4, 5, 20, 0.88);
             border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
-            padding: 16px 18px 18px;
+            border-radius: 18px;
+            padding: 16px 18px;
             backdrop-filter: blur(18px);
             display: flex;
             flex-direction: column;
@@ -44,44 +47,57 @@
             transform: translateY(-20px);
         }
         h3 {
-            margin: 0 0 6px;
-            font-size: 1.15rem;
-            letter-spacing: 0.02em;
+            margin: 0;
+            font-size: 1.05rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
         }
         label {
-            font-size: 0.85rem;
+            font-size: 0.78rem;
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 4px;
+        }
+        .field-label {
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            font-size: 0.68rem;
+            color: rgba(232, 246, 255, 0.75);
         }
         input[type="text"] {
             width: 100%;
             padding: 10px 12px;
-            border-radius: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.06);
             color: #fff;
             font-size: 1rem;
         }
         input[type="number"], input[type="color"], select {
             padding: 6px 10px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(6, 8, 20, 0.7);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(6, 8, 20, 0.75);
             color: #eaf7ff;
-            font-size: 1rem;
+            font-size: 0.95rem;
         }
         input[type="range"] {
             accent-color: #59ebff;
         }
         button {
             padding: 10px 12px;
-            border-radius: 10px;
+            border-radius: 12px;
             border: none;
             background: linear-gradient(120deg, #3ddcff, #7c61ff);
             color: #04050d;
             font-weight: 600;
-            font-size: 1rem;
+            font-size: 0.95rem;
             cursor: pointer;
             transition: transform 0.15s ease, box-shadow 0.15s ease;
         }
@@ -90,21 +106,46 @@
             box-shadow: 0 12px 30px rgba(94, 140, 255, 0.35);
         }
         #status {
-            font-size: 0.8rem;
-            color: #9fb7ff;
+            font-size: 0.7rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: #8cb4ff;
         }
         #effect-description {
-            font-size: 0.82rem;
+            font-size: 0.8rem;
             color: #cfd9ff;
             line-height: 1.4;
             background: rgba(255, 255, 255, 0.04);
             padding: 8px 10px;
-            border-radius: 10px;
+            border-radius: 12px;
+        }
+        .input-row {
+            display: flex;
+            gap: 8px;
+            align-items: stretch;
+        }
+        .input-row button {
+            min-width: 120px;
+        }
+        .control-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px 12px;
+        }
+        .dual-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .slider-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
         #controls-toggle {
             position: absolute;
-            top: 20px;
-            right: 20px;
+            top: 18px;
+            right: 18px;
             z-index: 110;
             border: none;
             border-radius: 999px;
@@ -128,17 +169,29 @@
             #ui {
                 width: calc(100% - 32px);
                 left: 50%;
-                right: 16px;
+                right: auto;
                 top: auto;
-                bottom: 20px;
+                bottom: calc(20px + env(safe-area-inset-bottom, 6px));
                 transform: translateX(-50%);
+                border-radius: 20px 20px 16px 16px;
+                padding: 14px 16px 18px;
+                gap: 10px;
+                max-height: min(420px, 55vh);
+                overflow-y: auto;
             }
             #ui.collapsed {
                 transform: translate(-50%, calc(100% + 30px));
             }
+            .input-row {
+                flex-direction: column;
+            }
+            .dual-row {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
             #controls-toggle {
-                bottom: 20px;
+                position: fixed;
                 top: auto;
+                bottom: calc(20px + env(safe-area-inset-bottom, 6px));
                 right: 20px;
             }
         }
@@ -146,43 +199,50 @@
 </head>
 <body>
     <div id="ui">
-    <h3>Text Effects Studio</h3>
-        <input type="text" id="text-input" dir="rtl" placeholder="הקלד טקסט" value="שלום עולם">
-        <button id="btn-write">Render Effect</button>
+        <div class="panel-header">
+            <h3>Text Effects Studio</h3>
+            <div id="status">Loading stroke data…</div>
+        </div>
+        <div class="input-row">
+            <input type="text" id="text-input" dir="rtl" placeholder="הקלד טקסט" value="שלום עולם">
+            <button id="btn-write">Render</button>
+        </div>
 
-        <label>
-            Effect Preset
-            <select id="setting-effect">
-                <option value="neonGlow">Neon Bloom</option>
-                <option value="chromeSheen">Chrome Sheen</option>
-                <option value="holoSpectrum">Holographic Wave</option>
-                <option value="emberPulse">Molten Ember</option>
-                <option value="aquaGlass">Liquid Glass</option>
-            </select>
-        </label>
+        <div class="control-grid">
+            <label>
+                <span class="field-label">Effect Preset</span>
+                <select id="setting-effect">
+                    <option value="neonGlow">Neon Bloom</option>
+                    <option value="chromeSheen">Chrome Sheen</option>
+                    <option value="holoSpectrum">Holographic Wave</option>
+                    <option value="emberPulse">Molten Ember</option>
+                    <option value="aquaGlass">Liquid Glass</option>
+                </select>
+            </label>
 
-        <label>
-            Accent Color
-            <input type="color" id="setting-accent" value="#5cf0ff">
-        </label>
+            <label>
+                <span class="field-label">Accent Color</span>
+                <input type="color" id="setting-accent" value="#5cf0ff">
+            </label>
 
-        <label>
-            Text Size
-            <input type="number" id="setting-size" value="36" min="10" max="160" step="2">
-        </label>
+            <div class="dual-row">
+                <label>
+                    <span class="field-label">Text Size</span>
+                    <input type="number" id="setting-size" value="16" min="10" max="160" step="2">
+                </label>
+                <label>
+                    <span class="field-label">Stroke</span>
+                    <input type="number" id="setting-stroke" value="2" min="1" max="40" step="1">
+                </label>
+            </div>
 
-        <label>
-            Stroke Weight
-            <input type="number" id="setting-stroke" value="12" min="2" max="40" step="1">
-        </label>
-
-        <label>
-            Animation Speed
-            <input type="range" id="setting-speed" value="1" min="0.3" max="2" step="0.05">
-        </label>
+            <label class="slider-field">
+                <span class="field-label">Animation Speed</span>
+                <input type="range" id="setting-speed" value="1" min="0.3" max="2" step="0.05">
+            </label>
+        </div>
 
         <div id="effect-description">Layered cyan plasma lines with animated neon halos and bloom.</div>
-        <div id="status">Loading stroke data…</div>
     </div>
     <button id="controls-toggle" aria-expanded="true" type="button">Hide Controls</button>
 
