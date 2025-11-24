@@ -2,37 +2,37 @@
   {
     "path": "/threejs/demo_1/",
     "title": "Three.js Sandbox - Miami",
-    "description": "No description available.",
+    "description": "Interactive Three.js playground with a torus knot, orbit controls, and particle backdrop.",
     "category": "threejs"
   },
   {
     "path": "/threejs/script_editor/",
     "title": "Script Editor",
-    "description": "No description available.",
+    "description": "Create and refine vector stroke data for script characters with live playback and editing tools.",
     "category": "threejs"
   },
   {
     "path": "/threejs/script_font_morph/",
     "title": "Script Font Morph",
-    "description": "No description available.",
+    "description": "Animate high-density point clouds that morph between script glyphs with interactive controls.",
     "category": "threejs"
   },
   {
     "path": "/threejs/text_effects_studio/",
     "title": "Text Effects Studio",
-    "description": "No description available.",
+    "description": "Design stylized neon, chrome, and bloom-heavy text renders with realtime Three.js post-processing.",
     "category": "threejs"
   },
   {
     "path": "/threejs/text_writer/",
     "title": "Text Writer",
-    "description": "No description available.",
+    "description": "Animate stroke-by-stroke text drawing with adjustable size, stroke width, and colors.",
     "category": "threejs"
   },
   {
     "path": "/threejs/verbs_galaxy/",
     "title": "Verbs Galaxy - Roots Edition",
-    "description": "No description available.",
+    "description": "Explore 350+ verb roots in a 3D galaxy with search, audio pronunciations, and conjugation panels.",
     "category": "threejs"
   }
 ]
