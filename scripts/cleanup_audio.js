@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const VERBS_JSON_PATH = path.join(__dirname, '../public/threejs/hebrew_verbs/verbs.json');
+const VERBS_JSON_PATH = path.join(__dirname, '../public/threejs/verbs_galaxy/verbs.json');
 const AUDIO_DIR = path.join(__dirname, '../public/audio');
 const AUDIO2_DIR = path.join(__dirname, '../public/audio2');
 

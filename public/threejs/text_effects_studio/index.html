@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hebrew Text Effects Writer</title>
+    <title>Text Effects Studio</title>
     <style>
         :root {
             color-scheme: dark;
@@ -145,7 +145,7 @@
 </head>
 <body>
     <div id="ui">
-        <h3>Hebrew Text Effects</h3>
+    <h3>Text Effects Studio</h3>
         <input type="text" id="text-input" dir="rtl" placeholder="הקלד טקסט" value="שלום עולם">
         <button id="btn-write">Render Effect</button>
 
@@ -487,7 +487,7 @@
                     letterData = await res.json();
                     document.getElementById('status').textContent = 'Ready';
                 } else {
-                    const localRes = await fetch('../hebrew_script_writer/images/letters.json');
+                    const localRes = await fetch('../script_editor/images/letters.json');
                     if (localRes.ok) {
                         letterData = await localRes.json();
                         document.getElementById('status').textContent = 'Ready (Local Cache)';

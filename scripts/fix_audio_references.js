@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SOURCE_JSON_PATH = path.join(__dirname, '../data/verbs.json');
-const TARGET_JSON_PATH = path.join(__dirname, '../public/threejs/hebrew_verbs/verbs.json');
+const TARGET_JSON_PATH = path.join(__dirname, '../public/threejs/verbs_galaxy/verbs.json');
 
 function main() {
     console.log('Reading source JSON...');

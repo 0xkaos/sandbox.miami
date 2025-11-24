@@ -9,7 +9,7 @@ app.use(express.static('public'));
 
 app.get('/api/letters', (req, res) => {
     try {
-        const filePath = path.join(__dirname, 'public/threejs/hebrew_script_writer/images/letters.json');
+    const filePath = path.join(__dirname, 'public/threejs/script_editor/images/letters.json');
         if (fs.existsSync(filePath)) {
             res.sendFile(filePath);
         } else {
@@ -22,7 +22,7 @@ app.get('/api/letters', (req, res) => {
 
 app.post('/api/letters', (req, res) => {
     try {
-        const filePath = path.join(__dirname, 'public/threejs/hebrew_script_writer/images/letters.json');
+    const filePath = path.join(__dirname, 'public/threejs/script_editor/images/letters.json');
         fs.writeFileSync(filePath, JSON.stringify(req.body, null, 2));
         console.log('Saved letters.json');
         res.json({ success: true });
@@ -33,5 +33,5 @@ app.post('/api/letters', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Hebrew Script Editor running at http://localhost:${port}/threejs/hebrew_script_writer/index.html`);
+    console.log(`Script Editor running at http://localhost:${port}/threejs/script_editor/index.html`);
 });

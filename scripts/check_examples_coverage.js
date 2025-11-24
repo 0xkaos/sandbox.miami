@@ -1,4 +1,4 @@
-const verbs = require('../public/threejs/hebrew_verbs/verbs.json');
+const verbs = require('../public/threejs/verbs_galaxy/verbs.json');
 let withExamples = 0;
 let total = 0;
 for (const key in verbs) {

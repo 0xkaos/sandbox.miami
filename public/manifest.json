@@ -6,32 +6,32 @@
     "category": "threejs"
   },
   {
-    "path": "/threejs/hebrew_font_morph/",
-    "title": "hebrew_font_morph",
+    "path": "/threejs/script_editor/",
+    "title": "Script Editor",
     "description": "No description available.",
     "category": "threejs"
   },
   {
-    "path": "/threejs/hebrew_script_writer/",
-    "title": "Hebrew Script Editor",
+    "path": "/threejs/script_font_morph/",
+    "title": "Script Font Morph",
     "description": "No description available.",
     "category": "threejs"
   },
   {
-    "path": "/threejs/hebrew_text_effects/",
-    "title": "Hebrew Text Effects Writer",
+    "path": "/threejs/text_effects_studio/",
+    "title": "Text Effects Studio",
     "description": "No description available.",
     "category": "threejs"
   },
   {
-    "path": "/threejs/hebrew_text_writer/",
-    "title": "Hebrew Text Writer",
+    "path": "/threejs/text_writer/",
+    "title": "Text Writer",
     "description": "No description available.",
     "category": "threejs"
   },
   {
-    "path": "/threejs/hebrew_verbs/",
-    "title": "Hebrew Verbs Galaxy - Roots Edition",
+    "path": "/threejs/verbs_galaxy/",
+    "title": "Verbs Galaxy - Roots Edition",
     "description": "No description available.",
     "category": "threejs"
   }

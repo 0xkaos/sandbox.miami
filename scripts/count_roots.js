@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const VERBS_JSON_PATH = path.join(__dirname, '../public/threejs/hebrew_verbs/verbs.json');
+const VERBS_JSON_PATH = path.join(__dirname, '../public/threejs/verbs_galaxy/verbs.json');
 
 try {
     const data = JSON.parse(fs.readFileSync(VERBS_JSON_PATH, 'utf8'));

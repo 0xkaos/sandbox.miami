@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hebrew Text Writer</title>
+    <title>Text Writer</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; color: white; font-family: sans-serif; }
         #ui {
@@ -23,7 +23,7 @@
 </head>
 <body>
     <div id="ui">
-        <h3>Hebrew Text Writer</h3>
+    <h3>Text Writer</h3>
         <input type="text" id="text-input" placeholder="Enter Hebrew Text..." dir="rtl" value="שלום">
         <button id="btn-write">Write</button>
         
@@ -134,7 +134,7 @@
                     document.getElementById('status').textContent = "Ready";
                 } else {
                     // Fallback to local if API fails (dev mode)
-                    const localRes = await fetch('../hebrew_script_writer/images/letters.json');
+                    const localRes = await fetch('../script_editor/images/letters.json');
                     if (localRes.ok) {
                         letterData = await localRes.json();
                         document.getElementById('status').textContent = "Ready (Local Data)";
