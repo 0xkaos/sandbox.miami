@@ -53,6 +53,9 @@
             <option value="ר">ר (Resh)</option>
             <option value="ש">ש (Shin)</option>
             <option value="ת">ת (Tav)</option>
+            <option value="שלום">שלום</option>
+            <option value="אהבה">אהבה</option>
+            <option value="חיים">חיים</option>
         </select>
     </div>
 
@@ -78,8 +81,8 @@
             <input type="range" id="gravity-range" min="0" max="2" step="0.1" value="0">
         </div>
         <div class="control-row">
-            <label>Swirl Speed</label>
-            <input type="range" id="wind-range" min="-2" max="2" step="0.1" value="0">
+            <label>Swirl Noise</label>
+            <input type="range" id="wind-range" min="0" max="5" step="0.1" value="1">
         </div>
         <div class="control-row">
             <label>Swirl Strength</label>
@@ -137,6 +140,11 @@
 
             const controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
+            controls.minAzimuthAngle = -Math.PI / 3;
+            controls.maxAzimuthAngle = Math.PI / 3;
+            controls.minPolarAngle = Math.PI / 3;
+            controls.maxPolarAngle = Math.PI / 2.1;
+            controls.enablePan = false;
 
             // UI Listeners
             const select = document.getElementById('char-select');
@@ -182,7 +190,7 @@
             };
 
             updateUniform('gravity-range', 'uGravity');
-            updateUniform('wind-range', 'uWind');
+            updateUniform('wind-range', 'uNoiseDetune');
             updateUniform('noise-range', 'uNoiseStrength');
 
             // Load Fonts
@@ -220,8 +228,8 @@
             window.addEventListener('resize', onWindowResize);
         }
 
-        function getPointsFromFont(font, char, pointCount = PARTICLE_COUNT) {
-            const shapes = font.generateShapes(char, FONT_SIZE);
+        function getPointsFromFont(font, text, pointCount = PARTICLE_COUNT) {
+            const shapes = font.generateShapes(text, FONT_SIZE);
             const geometry = new THREE.ShapeGeometry(shapes);
             geometry.computeBoundingBox();
             
@@ -229,6 +237,11 @@
             const xMid = - 0.5 * ( geometry.boundingBox.max.x - geometry.boundingBox.min.x );
             const yMid = - 0.5 * ( geometry.boundingBox.max.y - geometry.boundingBox.min.y );
             geometry.translate( xMid, yMid, 0 );
+
+            const rtlRegex = /[\u0590-\u05FF]/;
+            if (rtlRegex.test(text)) {
+                geometry.scale(-1, 1, 1);
+            }
 
             // Sample points from the surface (triangles)
             const posAttribute = geometry.attributes.position;
@@ -355,7 +368,7 @@
                     uMorph: { value: 0 }, // 0 = A, 1 = B
                     uScatter: { value: 0 }, // 0 = Formed, 1 = Scattered
                     uGravity: { value: parseFloat(document.getElementById('gravity-range').value) },
-                    uWind: { value: parseFloat(document.getElementById('wind-range').value) },
+                    uNoiseDetune: { value: parseFloat(document.getElementById('wind-range').value) },
                     uNoiseStrength: { value: parseFloat(document.getElementById('noise-range').value) },
                     uColorA: { value: new THREE.Color(0x4db8ff) },
                     uColorB: { value: new THREE.Color(0xff4d4d) }
@@ -365,7 +378,7 @@
                     uniform float uMorph;
                     uniform float uScatter;
                     uniform float uGravity;
-                    uniform float uWind;
+                    uniform float uNoiseDetune;
                     uniform float uNoiseStrength;
                     
                     attribute vec3 targetA;
@@ -398,22 +411,44 @@
                         return mat2(c, -s, s, c);
                     }
 
-                    vec3 swirlField(vec3 pos, float time, float speed, float strength) {
-                        float radial = max(length(pos.xy), 0.001);
-                        float radialNorm = clamp(radial / 150.0, 0.0, 1.0);
+                    vec3 swirlField(vec3 pos, float time, float noiseDetune, float strength, float scatterMix) {
+                        float radialXY = max(length(pos.xy), 0.0001);
+                        float radialYZ = max(length(vec2(pos.y, pos.z)), 0.0001);
+                        float radialNormXY = clamp(radialXY / 150.0, 0.0, 1.0);
+                        float radialNormYZ = clamp(radialYZ / 150.0, 0.0, 1.0);
                         float jitter = hash(aRandom * 91.32) * 0.6 + 0.4;
-                        float baseAngle = atan(pos.y, pos.x);
-                        float spiralTurns = radialNorm * (TWO_PI * 2.0); // 720° from center to rim
-                        float swirlAngle = baseAngle + spiralTurns + time * speed + strength * 0.35 * sin(time * 0.6 + radial * 0.2 + aRandom * 5.0);
-                        vec2 rotated = rot2(swirlAngle) * pos.xy;
-                        vec2 tangent = radial < 0.001 ? vec2(0.0, 1.0) : normalize(vec2(-rotated.y, rotated.x));
-                        float spiral = 0.7 + 0.3 * sin(radial * 0.35 + time * 1.2 + aRandom * 3.0);
-                        vec2 swirlXY = rotated * (0.8 + 0.2 * strength) + tangent * radial * spiral * strength * jitter * 0.6;
-                        float lift = sin(time * 1.3 + radial * 0.18 + aRandom * 4.5) * strength * 25.0;
-                        float drift = cos(time * 0.7 + pos.z * 0.05 + aRandom * 2.5) * strength * 12.0;
-                        vec3 swirlPos = vec3(swirlXY, pos.z + lift + drift);
-                        float noiseGain = 10.0 * max(0.1, strength);
-                        vec3 curl = getNoise(swirlPos * 0.35 + pos, time * 0.9) * (8.0 + strength * 18.0) * noiseGain;
+
+                        // Swirl around Z axis (affecting XY plane)
+                        float baseAngleXY = atan(pos.y, pos.x);
+                        float spiralTurnsXY = radialNormXY * (TWO_PI * 2.0);
+                        float swirlAngleXY = baseAngleXY + spiralTurnsXY + time * (0.8 + 0.2 * strength);
+                        swirlAngleXY += strength * 0.35 * sin(time * 0.6 + radialXY * 0.2 + aRandom * 5.0);
+                        vec2 rotatedXY = rot2(swirlAngleXY) * pos.xy;
+
+                        // Swirl around X axis (affecting YZ plane)
+                        float baseAngleYZ = atan(pos.z, pos.y);
+                        float spiralTurnsYZ = radialNormYZ * (TWO_PI * 1.5);
+                        float swirlAngleYZ = baseAngleYZ + spiralTurnsYZ + time * (0.7 + 0.3 * strength);
+                        swirlAngleYZ += strength * 0.3 * cos(time * 0.5 + radialYZ * 0.25 + aRandom * 4.0);
+                        vec2 rotatedYZ = rot2(swirlAngleYZ) * vec2(pos.y, pos.z);
+
+                        vec2 tangentXY = radialXY < 0.001 ? vec2(0.0, 1.0) : normalize(vec2(-rotatedXY.y, rotatedXY.x));
+                        float spiralXY = 0.7 + 0.3 * sin(radialXY * 0.35 + time * 1.2 + aRandom * 3.0);
+                        vec2 swirlXY = rotatedXY * (0.8 + 0.2 * strength) + tangentXY * radialXY * spiralXY * strength * jitter * 0.5;
+
+                        float lift = sin(time * 1.3 + radialXY * 0.18 + aRandom * 4.5) * strength * 20.0;
+                        float drift = cos(time * 0.7 + pos.x * 0.05 + aRandom * 2.5) * strength * 10.0;
+
+                        vec3 swirlPos = vec3(
+                            swirlXY.x,
+                            mix(swirlXY.y, rotatedYZ.x, 0.55),
+                            rotatedYZ.y + lift + drift
+                        );
+
+                        float coherence = 1.0 - 0.6 * clamp(strength - 0.4, 0.0, 1.0);
+                        float noiseGain = mix(1.0, 12.0, clamp(noiseDetune / 5.0, 0.0, 1.0)) * (0.6 + 0.4 * (1.0 - scatterMix));
+                        float curlAmp = (4.0 + strength * 10.0) * (0.8 + 0.2 * noiseDetune);
+                        vec3 curl = getNoise(swirlPos * (0.2 + noiseDetune * 0.05) + pos * 0.15, time * 0.9) * curlAmp * noiseGain * coherence;
                         return swirlPos + curl;
                     }
 
@@ -422,15 +457,15 @@
                         vec3 formedPos = mix(targetA, targetB, uMorph);
                         
                         float swirlStrength = max(0.05, uNoiseStrength);
-                        float noiseAmp = swirlStrength * 10.0;
+                        float noiseAmp = swirlStrength * (6.0 + uNoiseDetune * 2.0);
 
                         // 2. Add some subtle motion to formed state
-                        formedPos += getNoise(formedPos, uTime * 2.0) * noiseAmp * 0.1;
+                        formedPos += getNoise(formedPos, uTime * 1.5) * noiseAmp * 0.08;
 
                         float scatterMix = smoothstep(0.0, 1.0, uScatter);
 
-                        // 3. Calculate Scatter Position with coherent swirl field
-                        vec3 swirlScatter = swirlField(scatterPos, uTime, uWind, swirlStrength);
+                        // 3. Calculate Scatter Position with coherent dual-axis swirl field
+                        vec3 swirlScatter = swirlField(scatterPos, uTime, uNoiseDetune, swirlStrength, scatterMix);
                         vec3 gravityOffset = vec3(0.0, -uGravity * 60.0, 0.0) * scatterMix;
                         vec3 noisyScatter = swirlScatter + gravityOffset;
                         
