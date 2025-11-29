@@ -6,6 +6,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/mahjong_game/",
+    "title": "Mahjong Game - Three.js",
+    "description": "No description available.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/script_editor/",
     "title": "Script Editor",
     "description": "Create and refine vector stroke data for script characters with live playback and editing tools.",

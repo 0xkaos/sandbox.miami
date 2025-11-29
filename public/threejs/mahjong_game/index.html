@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mahjong Game - Three.js</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #333; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // Game State
+        let tiles = [];
+        let selectedTile = null;
+        let raycaster;
+        let mouse;
+        let scene, camera, renderer, controls;
+
+        // Constants
+        const TILE_WIDTH = 2.5;  // Swapped for horizontal bias
+        const TILE_HEIGHT = 1.8; // Swapped for horizontal bias
+        const TILE_DEPTH = 0.5;
+        const CORNER_RADIUS = 0.25;
+
+        // Hebrew Game Data
+        const HEBREW_DATA = {
+            dots: {
+                color: '#cc0000', // Red
+                texts: ['אחת', 'שתיים', 'שלוש', 'ארבע', 'חמש', 'שש', 'שבע', 'שמונה', 'תשע']
+            },
+            bams: {
+                color: '#008800', // Green
+                texts: ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שביעי', 'שמיני', 'תשיעי']
+            },
+            craks: {
+                color: '#0000cc', // Blue
+                texts: ['אלף', 'בית', 'גימל', 'דלת', 'הא', 'וו', 'זין', 'חית', 'טית']
+            },
+            winds: {
+                color: '#000000', // Black
+                texts: ['מזרח', 'דרום', 'מערב', 'צפון']
+            },
+            dragons: {
+                colors: ['#cc0000', '#008800', '#0000cc'], // Red, Green, Blue(White)
+                texts: ['דרקון אדום', 'דרקון ירוק', 'דרקון לבן']
+            },
+            flowers: {
+                color: '#aa00aa', // Purple
+                texts: ['אביב', 'קיץ', 'סתיו', 'חורף', 'שזיף', 'סחלב', 'במבוק', 'חרצית']
+            }
+        };
+
+        init();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x2c3e50); // Blue-grey background
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 25, 20);
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.maxPolarAngle = Math.PI / 2 - 0.1; // Prevent going below table
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // Lower ambient for better contrast
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            dirLight.position.set(-20, 20, -20); // Lower angle for longer shadows
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 200; // Increased to ensure it covers the scene
+            dirLight.shadow.camera.left = -40;
+            dirLight.shadow.camera.right = 40;
+            dirLight.shadow.camera.top = 40;
+            dirLight.shadow.camera.bottom = -40;
+            dirLight.shadow.bias = -0.0005; 
+            scene.add(dirLight);
+
+            // Interaction
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            window.addEventListener('click', onMouseClick, false);
+            window.addEventListener('resize', onWindowResize, false);
+
+            // Start Game
+            startNewGame();
+
+            // Add a table surface
+            const planeGeometry = new THREE.PlaneGeometry(100, 100);
+            const planeMaterial = new THREE.MeshStandardMaterial({ 
+                map: createTableTexture(),
+                roughness: 0.8,
+                color: 0xffffff // Let texture define color
+            });
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = -Math.PI / 2;
+            plane.position.y = -TILE_DEPTH / 2 - 0.01; // Slightly below tiles
+            plane.receiveShadow = true;
+            scene.add(plane);
+
+            animate();
+        }
+
+        function startNewGame() {
+            // Clear existing tiles
+            tiles.forEach(t => scene.remove(t.mesh));
+            tiles = [];
+            selectedTile = null;
+
+            // 1. Generate Deck (144 tiles)
+            const deck = generateDeck();
+            shuffle(deck);
+
+            // 2. Generate Layout Positions
+            const positions = generateTurtleLayout();
+
+            // 3. Create Tile Meshes
+            // Cache textures to avoid recreating 144 canvases
+            const textureCache = {};
+
+            // Shared Materials
+            const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }); // Higher roughness to reduce glare
+            const backMaterial = new THREE.MeshStandardMaterial({ color: 0xeebb00, roughness: 0.7 });
+            const selectedColor = new THREE.Color(0xaaaaff); // Blueish tint for selection
+
+            positions.forEach((pos, index) => {
+                if (index >= deck.length) return;
+                
+                const tileData = deck[index];
+                const cacheKey = tileData.id; // Use unique ID for caching
+                
+                if (!textureCache[cacheKey]) {
+                    textureCache[cacheKey] = createTileTexture(tileData.text, tileData.color);
+                }
+
+                const faceMaterial = new THREE.MeshStandardMaterial({
+                    map: textureCache[cacheKey],
+                    transparent: true,
+                    roughness: 0.5, // Higher roughness to reduce glare
+                    color: 0xffffff
+                });
+
+                const mesh = createTileMesh(TILE_WIDTH, TILE_HEIGHT, TILE_DEPTH, CORNER_RADIUS, whiteMaterial, backMaterial, faceMaterial);
+                
+                mesh.position.set(pos.x, pos.y, pos.z);
+                mesh.rotation.x = -Math.PI / 2;
+                
+                // Store game data in the mesh userData
+                mesh.userData = {
+                    id: index,
+                    code: tileData.id, // Use our custom ID
+                    gridX: pos.x,
+                    gridY: pos.z,
+                    layer: pos.layer
+                };
+
+                scene.add(mesh);
+                tiles.push({
+                    mesh: mesh,
+                    data: mesh.userData,
+                    faceMaterial: faceMaterial
+                });
+            });
+        }
+
+        function generateDeck() {
+            const deck = [];
+            let idCounter = 0;
+
+            // Helper to add 4 copies
+            const addType = (text, color) => {
+                const typeId = idCounter++;
+                for(let i=0; i<4; i++) {
+                    deck.push({ id: typeId, text: text, color: color });
+                }
+            };
+
+            // 1. Dots (1-9)
+            HEBREW_DATA.dots.texts.forEach(t => addType(t, HEBREW_DATA.dots.color));
+
+            // 2. Bams (1-9)
+            HEBREW_DATA.bams.texts.forEach(t => addType(t, HEBREW_DATA.bams.color));
+
+            // 3. Craks (1-9)
+            HEBREW_DATA.craks.texts.forEach(t => addType(t, HEBREW_DATA.craks.color));
+
+            // 4. Winds
+            HEBREW_DATA.winds.texts.forEach(t => addType(t, HEBREW_DATA.winds.color));
+
+            // 5. Dragons
+            HEBREW_DATA.dragons.texts.forEach((t, i) => addType(t, HEBREW_DATA.dragons.colors[i]));
+
+            // 6. Flowers (8 tiles, 1 of each usually, but for solitaire matching we need pairs)
+            // Let's just add 1 of each of the 8 flowers/seasons. 
+            // But wait, standard solitaire matches seasons with seasons (any season matches any season).
+            // To keep logic simple (exact match), let's add 4 copies of 2 "Flower" types?
+            // Or just treat all 8 as unique pairs? 
+            // Let's add 4 copies of the first 2 flowers to reach 144 (34*4 = 136 + 8 = 144).
+            // Actually, let's just use the first 2 flowers/seasons and make 4 copies of each.
+            addType(HEBREW_DATA.flowers.texts[0], HEBREW_DATA.flowers.color); // Spring
+            addType(HEBREW_DATA.flowers.texts[1], HEBREW_DATA.flowers.color); // Summer
+
+            return deck;
+        }
+
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        function generateTurtleLayout() {
+            const positions = [];
+            const w = TILE_WIDTH;
+            const h = TILE_HEIGHT;
+            
+            // Helper to add a tile position
+            // x, y are in grid units (multiples of w, h)
+            // z is layer index (0, 1, 2...)
+            // In 3D: x -> x, y -> layer * depth, z -> y
+            const add = (gx, gy, layer) => {
+                positions.push({
+                    x: gx * w,
+                    y: layer * TILE_DEPTH + TILE_HEIGHT/2, // Adjust Y so it sits on top
+                    z: gy * h,
+                    layer: layer
+                });
+            };
+
+            // Layer 1 (Bottom, z=0)
+            // Row 1 (Top, y=-3.5): 12 tiles (-5.5 to 5.5)
+            for (let x = -5.5; x <= 5.5; x++) add(x, -3.5, 0);
+            
+            // Row 2 (y=-2.5): 8 tiles (-3.5 to 3.5)
+            for (let x = -3.5; x <= 3.5; x++) add(x, -2.5, 0);
+            
+            // Row 3 (y=-1.5): 10 tiles (-4.5 to 4.5)
+            for (let x = -4.5; x <= 4.5; x++) add(x, -1.5, 0);
+            
+            // Row 4 (y=-0.5): 12 tiles (-5.5 to 5.5)
+            for (let x = -5.5; x <= 5.5; x++) add(x, -0.5, 0);
+            
+            // Row 5 (y=0.5): 12 tiles (-5.5 to 5.5)
+            for (let x = -5.5; x <= 5.5; x++) add(x, 0.5, 0);
+            
+            // Row 6 (y=1.5): 10 tiles (-4.5 to 4.5)
+            for (let x = -4.5; x <= 4.5; x++) add(x, 1.5, 0);
+            
+            // Row 7 (y=2.5): 8 tiles (-3.5 to 3.5)
+            for (let x = -3.5; x <= 3.5; x++) add(x, 2.5, 0);
+            
+            // Row 8 (Bottom, y=3.5): 12 tiles (-5.5 to 5.5)
+            for (let x = -5.5; x <= 5.5; x++) add(x, 3.5, 0);
+
+            // Wings (vertically centered at y=0)
+            // Left Wing (1 tile) - Blocks rows 4 & 5 on left
+            add(-6.5, 0, 0); 
+            
+            // Right Wing (2 tiles) - Blocks rows 4 & 5 on right
+            add(6.5, 0, 0);
+            add(7.5, 0, 0); // Extra tile here
+
+            // Layer 2 (z=1) - 36 tiles (6x6)
+            // Centered. Range -2.5 to 2.5
+            for (let y = -2.5; y <= 2.5; y++) {
+                for (let x = -2.5; x <= 2.5; x++) {
+                    add(x, y, 1);
+                }
+            }
+
+            // Layer 3 (z=2) - 16 tiles (4x4)
+            // Range -1.5 to 1.5
+            for (let y = -1.5; y <= 1.5; y++) {
+                for (let x = -1.5; x <= 1.5; x++) {
+                    add(x, y, 2);
+                }
+            }
+
+            // Layer 4 (z=3) - 4 tiles (2x2)
+            // Range -0.5 to 0.5
+            for (let y = -0.5; y <= 0.5; y++) {
+                for (let x = -0.5; x <= 0.5; x++) {
+                    add(x, y, 3);
+                }
+            }
+
+            // Layer 5 (z=4) - 1 tile
+            add(0, 0, 4);
+
+            return positions;
+        }
+
+        function isTileFree(tile) {
+            // A tile is free if:
+            // 1. No tile is directly above it (layer + 1)
+            // 2. Left OR Right side is open
+            
+            const t = tile.data;
+            const w = TILE_WIDTH;
+            const h = TILE_HEIGHT;
+            const margin = 0.1; // Tolerance
+
+            let blockedAbove = false;
+            let blockedLeft = false;
+            let blockedRight = false;
+
+            for (const other of tiles) {
+                if (other === tile) continue;
+                const o = other.data;
+
+                // Check Above
+                if (o.layer === t.layer + 1) {
+                    // Check overlap
+                    const overlapX = Math.abs(o.gridX - t.gridX) < w - margin;
+                    const overlapY = Math.abs(o.gridY - t.gridY) < h - margin;
+                    if (overlapX && overlapY) {
+                        blockedAbove = true;
+                    }
+                }
+
+                // Check Sides (Same Layer)
+                if (o.layer === t.layer) {
+                    const overlapY = Math.abs(o.gridY - t.gridY) < h - margin;
+                    if (overlapY) {
+                        // Check Left
+                        if (Math.abs(o.gridX - (t.gridX - w)) < margin) { // Neighbor is at x - w
+                             blockedLeft = true;
+                        }
+                        // Also check for half-overlaps if any (though our grid is mostly regular)
+                        // More robust: Check if any tile is within range [x-w, x)
+                        if (o.gridX < t.gridX && o.gridX > t.gridX - w - margin) {
+                             // blockedLeft = true; // This would be for partial overlaps
+                        }
+                        
+                        // Check Right
+                        if (Math.abs(o.gridX - (t.gridX + w)) < margin) {
+                            blockedRight = true;
+                        }
+                    }
+                }
+            }
+
+            if (blockedAbove) return false;
+            return !blockedLeft || !blockedRight;
+        }
+
+        function onMouseClick(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            // Intersect with tile bodies
+            const meshes = tiles.map(t => t.mesh);
+            const intersects = raycaster.intersectObjects(meshes, true);
+
+            if (intersects.length > 0) {
+                // Find the root mesh (group)
+                let object = intersects[0].object;
+                while(object.parent && object.parent.type === 'Group') {
+                    object = object.parent;
+                }
+                
+                // Find the tile object
+                const tile = tiles.find(t => t.mesh === object);
+                if (tile) {
+                    handleTileClick(tile);
+                }
+            } else {
+                // Deselect if clicking background
+                if (selectedTile) {
+                    highlightTile(selectedTile, false);
+                    selectedTile = null;
+                }
+            }
+        }
+
+        function handleTileClick(tile) {
+            if (!isTileFree(tile)) {
+                console.log("Tile is blocked");
+                return;
+            }
+
+            if (selectedTile === tile) {
+                // Deselect
+                highlightTile(tile, false);
+                selectedTile = null;
+            } else {
+                if (selectedTile) {
+                    // Check match
+                    if (selectedTile.data.code === tile.data.code) {
+                        // Match!
+                        removeTile(selectedTile);
+                        removeTile(tile);
+                        selectedTile = null;
+                        checkWin();
+                    } else {
+                        // No match, switch selection
+                        highlightTile(selectedTile, false);
+                        selectedTile = tile;
+                        highlightTile(tile, true);
+                    }
+                } else {
+                    // Select
+                    selectedTile = tile;
+                    highlightTile(tile, true);
+                }
+            }
+        }
+
+        function highlightTile(tile, isSelected) {
+            // Change emissive color of the face or body
+            // tile.faceMaterial.emissive.setHex(isSelected ? 0x555555 : 0x000000);
+            // Or change color
+            tile.faceMaterial.color.setHex(isSelected ? 0xaaaaaa : 0xffffff);
+            
+            // Also lift it slightly?
+            if (isSelected) {
+                tile.mesh.position.y += 0.2;
+            } else {
+                tile.mesh.position.y -= 0.2;
+            }
+        }
+
+        function removeTile(tile) {
+            scene.remove(tile.mesh);
+            const index = tiles.indexOf(tile);
+            if (index > -1) {
+                tiles.splice(index, 1);
+            }
+        }
+
+        function checkWin() {
+            if (tiles.length === 0) {
+                alert("You Win!");
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function createTileMesh(width, height, depth, radius, bodyMat, backMat, faceMat) {
+            const shape = new THREE.Shape();
+            const x = -width / 2;
+            const y = -height / 2;
+            
+            shape.moveTo(x + radius, y);
+            shape.lineTo(x + width - radius, y);
+            shape.quadraticCurveTo(x + width, y, x + width, y + radius);
+            shape.lineTo(x + width, y + height - radius);
+            shape.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            shape.lineTo(x + radius, y + height);
+            shape.quadraticCurveTo(x, y + height, x, y + height - radius);
+            shape.lineTo(x, y + radius);
+            shape.quadraticCurveTo(x, y, x + radius, y);
+
+            const group = new THREE.Group();
+
+            // 1. Body (White)
+            const extrudeSettings = {
+                depth: depth,
+                bevelEnabled: false,
+                curveSegments: 12
+            };
+            const bodyGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            bodyGeo.center(); // Centers the geometry at (0,0,0)
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.castShadow = true;
+            body.receiveShadow = true;
+            group.add(body);
+
+            // 2. Face (Texture) - Beveled Cap
+            const bevelSize = 0.1;
+            const bevelThickness = 0.1;
+            const faceDepth = 0.02;
+
+            const faceSettings = {
+                depth: faceDepth,
+                bevelEnabled: true,
+                bevelThickness: bevelThickness,
+                bevelSize: bevelSize,
+                bevelOffset: -bevelSize, // Shrink base so bevel expands to original size
+                bevelSegments: 5
+            };
+
+            const faceGeo = new THREE.ExtrudeGeometry(shape, faceSettings);
+            fixUVs(faceGeo);
+            const face = new THREE.Mesh(faceGeo, faceMat);
+            // Align the base of the bevel (widest part) with the top of the body
+            // Base of front bevel is at Z = faceDepth
+            face.position.z = depth / 2 - faceDepth; 
+            face.receiveShadow = true;
+            face.castShadow = true;
+            group.add(face);
+
+            // 3. Back (Yellow)
+            const backGeo = new THREE.ShapeGeometry(shape, 12);
+            fixUVs(backGeo); // Not strictly needed for color, but good practice
+            const back = new THREE.Mesh(backGeo, backMat);
+            back.position.z = -depth / 2 - 0.001; // Slightly behind
+            back.rotation.y = Math.PI; // Flip it to face outwards
+            back.receiveShadow = true;
+            group.add(back);
+
+            return group;
+        }
+
+        function fixUVs(geometry) {
+            geometry.computeBoundingBox();
+            const max = geometry.boundingBox.max;
+            const min = geometry.boundingBox.min;
+            const offset = new THREE.Vector2(0 - min.x, 0 - min.y);
+            const range = new THREE.Vector2(max.x - min.x, max.y - min.y);
+            
+            const uvAttribute = geometry.attributes.uv;
+            for (let i = 0; i < uvAttribute.count; i++) {
+                const u = (uvAttribute.getX(i) + offset.x) / range.x;
+                const v = (uvAttribute.getY(i) + offset.y) / range.y;
+                uvAttribute.setXY(i, u, v);
+            }
+            uvAttribute.needsUpdate = true;
+        }
+
+        function createTileTexture(text, color) {
+            const canvas = document.createElement('canvas');
+            // Match aspect ratio of the tile (2.5 width, 1.8 height) -> 1.38
+            // 512 width -> 370 height
+            const width = 400;
+            const height = 280;
+            canvas.width = width;
+            canvas.height = height;
+            
+            const ctx = canvas.getContext('2d');
+            
+            // Fill background white
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw text
+            // Use a standard font that supports Hebrew
+            ctx.font = `bold 80px Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = color;
+            
+            // Handle multi-word text (like "דרקון אדום")
+            // Split by space and draw lines?
+            const words = text.split(' ');
+            if (words.length > 1) {
+                const lineHeight = 90;
+                const startY = height / 2 - ((words.length - 1) * lineHeight) / 2;
+                words.forEach((word, i) => {
+                    ctx.fillText(word, width / 2, startY + i * lineHeight);
+                });
+            } else {
+                // Scale font for single words if they are long?
+                // Hebrew words can be short.
+                ctx.font = `bold 100px Arial, sans-serif`;
+                ctx.fillText(text, width / 2, height / 2);
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            return texture;
+        }
+
+        function createTableTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            
+            // Base color - Blue/Grey
+            ctx.fillStyle = '#34495e'; 
+            ctx.fillRect(0, 0, 512, 512);
+            
+            // Noise/Texture
+            for (let i = 0; i < 80000; i++) {
+                ctx.fillStyle = Math.random() > 0.5 ? '#2c3e50' : '#4a6278';
+                ctx.globalAlpha = 0.05;
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                const size = Math.random() * 3 + 1;
+                ctx.fillRect(x, y, size, size);
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(8, 8);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            return texture;
+        }
+    </script>
+</body>
+</html>
