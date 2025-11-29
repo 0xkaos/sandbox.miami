@@ -1,5 +1,11 @@
 [
   {
+    "path": "/threejs/attractor_viewer/",
+    "title": "Chaotic Attractor Viewer (GPGPU)",
+    "description": "No description available.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/demo_1/",
     "title": "Three.js Sandbox - Miami",
     "description": "Interactive Three.js playground with a torus knot, orbit controls, and particle backdrop.",

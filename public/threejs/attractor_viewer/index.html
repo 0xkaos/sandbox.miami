@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chaotic Attractor Viewer (GPGPU)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: #ccc; font-family: monospace; }
+        #ui-container { position: absolute; top: 10px; right: 10px; }
+        #status { position: absolute; bottom: 10px; left: 10px; pointer-events: none; text-shadow: 0 0 2px #000; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <div id="status">Initializing GPGPU...</div>
+    
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+            "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from "three";
+        import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+        import { GPUComputationRenderer } from "three/addons/misc/GPUComputationRenderer.js";
+        import GUI from "lil-gui";
+
+        // --- Configuration ---
+        const CONFIG = {
+            textureSize: 1024, // 1024x1024 = 1M points
+            opacity: 0.1,
+            size: 0.05,
+            color: "#00ffff",
+            
+            // Visuals
+            focus: 10.0,
+            aperture: 0.0,
+
+            // Simulation
+            speed: 1.0,
+            
+            // Export
+            exportFps: 60,
+            exportDuration: 5,
+            isExporting: false
+        };
+
+        // --- Attractor Shaders ---
+        const SHADERS = {
+            clifford: `
+                uniform float a;
+                uniform float b;
+                uniform float c;
+                uniform float d;
+                uniform float e;
+                uniform float f;
+                uniform float seed;
+                
+                float rand(vec2 co){
+                    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+                }
+                
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / resolution.xy;
+                    vec4 pos = texture2D(texturePosition, uv);
+                    
+                    // 3D Clifford (Projected Z)
+                    // Restores the classic 2D XY shape while extruding into Z
+                    // x_{n+1} = sin(a * y) + c * cos(a * x)
+                    // y_{n+1} = sin(b * x) + d * cos(b * y)
+                    // z_{n+1} = sin(e * x) + f * cos(e * z)
+                    
+                    float nx = sin(a * pos.y) + c * cos(a * pos.x);
+                    float ny = sin(b * pos.x) + d * cos(b * pos.y);
+                    float nz = sin(e * pos.x) + f * cos(e * pos.z);
+                    
+                    // Add tiny noise to prevent total collapse (entropy injection)
+                    vec3 noise = vec3(
+                        rand(uv + seed) - 0.5,
+                        rand(uv + seed + 1.1) - 0.5,
+                        rand(uv + seed + 2.2) - 0.5
+                    ) * 0.002;
+                    
+                    gl_FragColor = vec4(vec3(nx, ny, nz) + noise, 1.0);
+                }
+            `,
+            bedhead: `
+                uniform float a;
+                uniform float b;
+                uniform float seed;
+                
+                float rand(vec2 co){
+                    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+                }
+                
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / resolution.xy;
+                    vec4 pos = texture2D(texturePosition, uv);
+                    
+                    // 3D Bedhead (Experimental Extension)
+                    // x' = sin(x*y/b)*y + cos(a*x-z)
+                    // y' = z + sin(y)/b
+                    // z' = x + sin(z)/b
+                    
+                    float nx = sin(pos.x * pos.y / b) * pos.y + cos(a * pos.x - pos.z);
+                    float ny = pos.z + sin(pos.y) / b;
+                    float nz = pos.x + sin(pos.z) / b;
+                    
+                    // Add tiny noise
+                    vec3 noise = vec3(
+                        rand(uv + seed) - 0.5,
+                        rand(uv + seed + 1.1) - 0.5,
+                        rand(uv + seed + 2.2) - 0.5
+                    ) * 0.002;
+                    
+                    gl_FragColor = vec4(vec3(nx, ny, nz) + noise, 1.0);
+                }
+            `,
+            thomas: `
+                uniform float b;
+                uniform float dt;
+                
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / resolution.xy;
+                    vec4 pos = texture2D(texturePosition, uv);
+                    
+                    // Thomas Attractor (Cyclically Symmetric)
+                    // dx/dt = sin(y) - b*x
+                    // dy/dt = sin(z) - b*y
+                    // dz/dt = sin(x) - b*z
+                    
+                    float dx = sin(pos.y) - b * pos.x;
+                    float dy = sin(pos.z) - b * pos.y;
+                    float dz = sin(pos.x) - b * pos.z;
+                    
+                    vec3 next = pos.xyz + vec3(dx, dy, dz) * dt;
+                    
+                    gl_FragColor = vec4(next, 1.0);
+                }
+            `,
+            aizawa: `
+                uniform float a;
+                uniform float b;
+                uniform float c;
+                uniform float d;
+                uniform float e;
+                uniform float f;
+                uniform float dt;
+
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / resolution.xy;
+                    vec4 pos = texture2D(texturePosition, uv);
+                    
+                    float x = pos.x;
+                    float y = pos.y;
+                    float z = pos.z;
+                    
+                    // Aizawa Attractor
+                    // dx = (z - b) * x - d * y
+                    // dy = d * x + (z - b) * y
+                    // dz = c + a * z - (z^3 / 3) - (x^2 + y^2) * (1 + e * z) + f * z * x^3
+                    
+                    float dx = (z - b) * x - d * y;
+                    float dy = d * x + (z - b) * y;
+                    float dz = c + a * z - (z * z * z / 3.0) - (x * x + y * y) * (1.0 + e * z) + f * z * x * x * x;
+                    
+                    vec3 next = pos.xyz + vec3(dx, dy, dz) * dt;
+                    gl_FragColor = vec4(next, 1.0);
+                }
+            `,
+            lorenz: `
+                uniform float sigma;
+                uniform float rho;
+                uniform float beta;
+                uniform float dt;
+
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / resolution.xy;
+                    vec4 pos = texture2D(texturePosition, uv);
+                    
+                    float x = pos.x;
+                    float y = pos.y;
+                    float z = pos.z;
+                    
+                    // Lorenz Attractor
+                    // dx = sigma * (y - x)
+                    // dy = x * (rho - z) - y
+                    // dz = x * y - beta * z
+                    
+                    float dx = sigma * (y - x);
+                    float dy = x * (rho - z) - y;
+                    float dz = x * y - beta * z;
+                    
+                    vec3 next = pos.xyz + vec3(dx, dy, dz) * dt;
+                    gl_FragColor = vec4(next, 1.0);
+                }
+            `,
+            halvorsen: `
+                uniform float a;
+                uniform float dt;
+                uniform float seed;
+
+                float rand(vec2 co){
+                    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+                }
+
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / resolution.xy;
+                    vec4 pos = texture2D(texturePosition, uv);
+                    
+                    float x = pos.x;
+                    float y = pos.y;
+                    float z = pos.z;
+                    
+                    // Halvorsen Attractor
+                    // dx = -a*x - 4*y - 4*z - y^2
+                    // dy = -a*y - 4*z - 4*x - z^2
+                    // dz = -a*z - 4*x - 4*y - x^2
+                    
+                    float dx = -a*x - 4.0*y - 4.0*z - y*y;
+                    float dy = -a*y - 4.0*z - 4.0*x - z*z;
+                    float dz = -a*z - 4.0*x - 4.0*y - x*x;
+                    
+                    vec3 next = pos.xyz + vec3(dx, dy, dz) * dt;
+                    
+                    // Reset particles that escape to maintain density
+                    if (length(next) > 20.0) {
+                        vec3 noise = vec3(
+                            rand(uv + seed) - 0.5,
+                            rand(uv + seed + 1.1) - 0.5,
+                            rand(uv + seed + 2.2) - 0.5
+                        ) * 2.0;
+                        next = noise;
+                    }
+                    
+                    gl_FragColor = vec4(next, 1.0);
+                }
+            `
+        };
+
+        const ATTRACTORS = {
+            clifford: {
+                defaults: { a: 1.5, b: -1.8, c: 1.6, d: 0.9, e: 1.0, f: 0.5 },
+                ranges: { a: [-3, 3], b: [-3, 3], c: [-3, 3], d: [-3, 3], e: [-3, 3], f: [-3, 3] },
+                shader: SHADERS.clifford,
+                is3D: true,
+                renderScale: 1.0
+            },
+            bedhead: {
+                defaults: { a: 1, b: 1 },
+                ranges: { a: [-1, 1], b: [-1, 1] },
+                shader: SHADERS.bedhead,
+                is3D: true,
+                renderScale: 1.0
+            },
+            thomas: {
+                defaults: { b: 0.208186 },
+                ranges: { b: [0, 1] },
+                shader: SHADERS.thomas,
+                is3D: true,
+                scale: 0.5,
+                renderScale: 1.0
+            },
+            aizawa: {
+                defaults: { a: 0.95, b: 0.7, c: 0.6, d: 3.5, e: 0.25, f: 0.1 },
+                ranges: { a: [0, 1], b: [0, 1], c: [0, 1], d: [0, 5], e: [0, 1], f: [0, 1] },
+                shader: SHADERS.aizawa,
+                is3D: true,
+                scale: 2.0,
+                renderScale: 1.0
+            },
+            lorenz: {
+                defaults: { sigma: 10.0, rho: 28.0, beta: 2.6666 },
+                ranges: { sigma: [0, 50], rho: [0, 100], beta: [0, 10] },
+                shader: SHADERS.lorenz,
+                is3D: true,
+                scale: 1.0,
+                renderScale: 0.03 // Lorenz is big (~50 units), scale down to fit view
+            },
+            halvorsen: {
+                defaults: { a: 1.4 },
+                ranges: { a: [0, 5] },
+                shader: SHADERS.halvorsen,
+                is3D: true,
+                scale: 1.0,
+                renderScale: 0.5
+            }
+        };
+
+        // --- Global State ---
+        let scene, camera, renderer, controls, gui;
+        let gpuCompute, positionVariable;
+        let pointsMesh, uniforms;
+        let currentAttractorName = "clifford";
+        let params = { ...ATTRACTORS.clifford.defaults };
+        let oscillators = [];
+        let time = 0;
+        let colormapTexture, colormapNames;
+        let colormapConfig = {
+            name: 'viridis',
+            mode: 0, // 0: Solid, 1: Velocity, 2: Position, 3: Index
+            scale: 1.0,
+            offset: 0.0
+        };
+
+        // --- Initialization ---
+        init();
+
+        async function loadColormaps() {
+            try {
+                const response = await fetch('colormaps.json');
+                const data = await response.json();
+                colormapNames = Object.keys(data);
+                const width = 256;
+                const height = colormapNames.length;
+                const size = width * height * 4;
+                const pixelData = new Uint8Array(size);
+
+                colormapNames.forEach((name, rowIndex) => {
+                    const colors = data[name];
+                    for (let i = 0; i < width; i++) {
+                        const color = colors[i];
+                        const stride = (rowIndex * width + i) * 4;
+                        pixelData[stride] = Math.floor(color[0] * 255);
+                        pixelData[stride + 1] = Math.floor(color[1] * 255);
+                        pixelData[stride + 2] = Math.floor(color[2] * 255);
+                        pixelData[stride + 3] = 255;
+                    }
+                });
+
+                colormapTexture = new THREE.DataTexture(pixelData, width, height, THREE.RGBAFormat);
+                colormapTexture.needsUpdate = true;
+                colormapTexture.minFilter = THREE.LinearFilter;
+                colormapTexture.magFilter = THREE.LinearFilter;
+                return true;
+            } catch (e) {
+                console.error("Failed to load colormaps", e);
+                return false;
+            }
+        }
+
+        async function init() {
+            await loadColormaps();
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 1000);
+            camera.position.set(0, 0, 10);
+
+            renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            // GPGPU Setup
+            initGPGPU();
+
+            // Visuals Setup
+            if (!pointsMesh) initPoints();
+
+            // GUI
+            if (!gui) initGUI();
+
+            window.addEventListener("resize", onWindowResize);
+            
+            animate();
+        }
+
+        function initGPGPU() {
+            if (gpuCompute) {
+                // Dispose old render targets
+                if (positionVariable && positionVariable.renderTargets) {
+                    positionVariable.renderTargets.forEach(rt => rt.dispose());
+                }
+            }
+            
+            gpuCompute = new GPUComputationRenderer(CONFIG.textureSize, CONFIG.textureSize, renderer);
+
+            if ( renderer.capabilities.isWebGL2 === false ) {
+                gpuCompute.setDataType( THREE.HalfFloatType );
+            }
+
+            const dtPosition = gpuCompute.createTexture();
+            fillTexture(dtPosition);
+
+            positionVariable = gpuCompute.addVariable("texturePosition", ATTRACTORS[currentAttractorName].shader, dtPosition);
+            gpuCompute.setVariableDependencies(positionVariable, [positionVariable]);
+
+            // Add uniforms
+            const attractor = ATTRACTORS[currentAttractorName];
+            for(let key in attractor.defaults) {
+                positionVariable.material.uniforms[key] = { value: params[key] };
+            }
+            // Add dt for ODEs
+            positionVariable.material.uniforms['dt'] = { value: 0.016 };
+            // Add seed for noise
+            positionVariable.material.uniforms['seed'] = { value: Math.random() * 100.0 };
+
+            const error = gpuCompute.init();
+            if (error !== null) {
+                console.error(error);
+            }
+        }
+
+        function fillTexture(texture) {
+            const arr = texture.image.data;
+            const is3D = ATTRACTORS[currentAttractorName].is3D;
+            const scale = ATTRACTORS[currentAttractorName].scale || 1.0;
+            
+            for (let i = 0; i < arr.length; i += 4) {
+                if (is3D) {
+                    // 3D Cloud
+                    arr[i] = (Math.random() - 0.5) * 4 * scale;
+                    arr[i + 1] = (Math.random() - 0.5) * 4 * scale;
+                    arr[i + 2] = (Math.random() - 0.5) * 4 * scale;
+                } else {
+                    // 2D Plane
+                    arr[i] = (Math.random() - 0.5) * 4;
+                    arr[i + 1] = (Math.random() - 0.5) * 4;
+                    arr[i + 2] = 0;
+                }
+                arr[i + 3] = 1;
+            }
+        }
+
+        function initPoints() {
+            if (pointsMesh) {
+                scene.remove(pointsMesh);
+                pointsMesh.geometry.dispose();
+                pointsMesh.material.dispose();
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(CONFIG.textureSize * CONFIG.textureSize * 3);
+            const uvs = new Float32Array(CONFIG.textureSize * CONFIG.textureSize * 2);
+            
+            let p = 0;
+            for (let j = 0; j < CONFIG.textureSize; j++) {
+                for (let i = 0; i < CONFIG.textureSize; i++) {
+                    uvs[p * 2] = i / (CONFIG.textureSize - 1);
+                    uvs[p * 2 + 1] = j / (CONFIG.textureSize - 1);
+                    positions[p * 3] = 0;
+                    positions[p * 3 + 1] = 0;
+                    positions[p * 3 + 2] = 0;
+                    p++;
+                }
+            }
+
+            geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+
+            // Calculate initial colormap row
+            let row = 0.5;
+            if (colormapNames && colormapNames.length > 0) {
+                const idx = colormapNames.indexOf(colormapConfig.name);
+                if (idx >= 0) row = (idx + 0.5) / colormapNames.length;
+            }
+
+            uniforms = {
+                texturePosition: { value: null },
+                texturePrevPosition: { value: null },
+                color: { value: new THREE.Color(CONFIG.color) },
+                opacity: { value: CONFIG.opacity },
+                size: { value: CONFIG.size },
+                focus: { value: CONFIG.focus },
+                aperture: { value: CONFIG.aperture },
+                screenHeight: { value: window.innerHeight },
+                renderScale: { value: 1.0 },
+                
+                // Coloring
+                colormapTexture: { value: colormapTexture },
+                colormapRow: { value: row },
+                colorMode: { value: colormapConfig.mode },
+                colorScale: { value: colormapConfig.scale },
+                colorOffset: { value: colormapConfig.offset }
+            };
+
+            const material = new THREE.ShaderMaterial({
+                uniforms: uniforms,
+                vertexShader: `
+                    uniform sampler2D texturePosition;
+                    uniform sampler2D texturePrevPosition;
+                    uniform float size;
+                    uniform float focus;
+                    uniform float aperture;
+                    uniform float screenHeight;
+                    uniform float renderScale;
+                    
+                    uniform int colorMode;
+                    uniform float colorScale;
+                    uniform float colorOffset;
+                    
+                    varying float vAlpha;
+                    varying float vColorVal;
+                    
+                    void main() {
+                        vec4 pos = texture2D(texturePosition, uv);
+                        vec4 prevPos = texture2D(texturePrevPosition, uv);
+                        vec4 mvPosition = modelViewMatrix * vec4(pos.xyz * renderScale, 1.0);
+                        
+                        // Color Value Calculation
+                        if (colorMode == 1) {
+                            // Velocity (Speed)
+                            float speed = distance(pos.xyz, prevPos.xyz);
+                            // Speed is usually small per frame, so we scale it up
+                            vColorVal = speed * colorScale + colorOffset;
+                        } else if (colorMode == 2) {
+                            // Position (Radius)
+                            float dist = length(pos.xyz);
+                            vColorVal = dist * colorScale + colorOffset;
+                        } else if (colorMode == 3) {
+                            // Index (UV)
+                            vColorVal = uv.x * colorScale + colorOffset;
+                        } else {
+                            vColorVal = 0.0;
+                        }
+                        
+                        // Depth of Field Calculation
+                        float dist = -mvPosition.z;
+                        float coc = abs(dist - focus) * aperture;
+                        
+                        gl_PointSize = (size + coc) * (300.0 / dist);
+                        
+                        // Fade out blurred points slightly
+                        vAlpha = 1.0 / (1.0 + coc * 10.0);
+                        
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: `
+                    uniform vec3 color;
+                    uniform float opacity;
+                    uniform sampler2D colormapTexture;
+                    uniform float colormapRow;
+                    uniform int colorMode;
+                    
+                    varying float vAlpha;
+                    varying float vColorVal;
+                    
+                    void main() {
+                        vec2 coord = gl_PointCoord - vec2(0.5);
+                        float dist = length(coord);
+                        if(dist > 0.5) discard;
+                        
+                        float strength = 1.0 - (dist * 2.0);
+                        strength = pow(strength, 2.0);
+                        
+                        vec3 finalColor = color;
+                        if (colorMode > 0) {
+                            float c = clamp(vColorVal, 0.0, 1.0);
+                            finalColor = texture2D(colormapTexture, vec2(c, colormapRow)).rgb;
+                        }
+                        
+                        gl_FragColor = vec4(finalColor, opacity * strength * vAlpha);
+                    }
+                `,
+                transparent: true,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+
+            pointsMesh = new THREE.Points(geometry, material);
+            scene.add(pointsMesh);
+        }
+
+        function initGUI() {
+            gui = new GUI({ title: "GPGPU Attractor" });
+            
+            const simFolder = gui.addFolder("Simulation");
+            
+            // Resolution / Particle Count
+            const resolutions = {
+                'Low (250k)': 512,
+                'Medium (1M)': 1024,
+                'High (4M)': 2048
+            };
+            
+            simFolder.add(CONFIG, 'textureSize', resolutions).name('Particle Count').onChange(val => {
+                CONFIG.textureSize = parseInt(val);
+                initGPGPU();
+                initPoints();
+            });
+
+            simFolder.add(CONFIG, "speed", 0, 5).name("Speed");
+            
+            // Attractor Selector
+            const attractorNames = Object.keys(ATTRACTORS);
+            simFolder.add({ attractor: currentAttractorName }, 'attractor', attractorNames).name('Type').onChange(name => {
+                currentAttractorName = name;
+                params = { ...ATTRACTORS[name].defaults };
+                
+                // Update render scale
+                uniforms.renderScale.value = ATTRACTORS[name].renderScale || 1.0;
+                
+                initGPGPU();
+                
+                // Rebuild Param GUI
+                // Note: lil-gui doesn't have easy folder clearing, so we destroy and recreate the whole GUI or just that folder.
+                // For simplicity, let's just reload the page or try to manage folders.
+                // Let's try to manage folders.
+                paramFolder.destroy();
+                paramFolder = gui.addFolder("Parameters");
+                setupParamGUI(paramFolder);
+                
+                // Reset Oscillators
+                oscillators = [];
+                oscFolder.destroy();
+                oscFolder = gui.addFolder("Oscillators");
+                oscFolder.add({ add: () => addOscillator(oscFolder) }, "add").name("Add Oscillator");
+            });
+
+            simFolder.add({ reset: () => {
+                const dtPosition = gpuCompute.createTexture();
+                fillTexture(dtPosition);
+                gpuCompute.renderTexture(dtPosition, positionVariable.renderTargets[0]);
+                gpuCompute.renderTexture(dtPosition, positionVariable.renderTargets[1]);
+            }}, "reset").name("Reset Particles");
+
+            const visFolder = gui.addFolder("Visuals");
+            visFolder.addColor(CONFIG, "color").onChange(c => uniforms.color.value.set(c));
+            visFolder.add(CONFIG, "opacity", 0.01, 1.0).onChange(v => uniforms.opacity.value = v);
+            visFolder.add(CONFIG, "size", 0.01, 0.1).onChange(v => uniforms.size.value = v);
+            visFolder.add(CONFIG, "focus", 0.1, 50.0).onChange(v => uniforms.focus.value = v).name("Focus Dist");
+            visFolder.add(CONFIG, "aperture", 0.0, 5.0).onChange(v => uniforms.aperture.value = v).name("Aperture (Blur)");
+
+            const colorFolder = gui.addFolder("Coloring");
+            if (colormapNames && colormapNames.length > 0) {
+                colorFolder.add(colormapConfig, 'name', colormapNames).name('Colormap').onChange(name => {
+                    const idx = colormapNames.indexOf(name);
+                    if (idx >= 0) {
+                        uniforms.colormapRow.value = (idx + 0.5) / colormapNames.length;
+                    }
+                });
+            }
+            colorFolder.add(colormapConfig, 'mode', { 'Solid': 0, 'Velocity': 1, 'Position': 2, 'Index': 3 }).name('Mode').onChange(v => {
+                uniforms.colorMode.value = parseInt(v);
+            });
+            colorFolder.add(colormapConfig, 'scale', 0.01, 5.0).name('Scale').onChange(v => {
+                uniforms.colorScale.value = v;
+            });
+            colorFolder.add(colormapConfig, 'offset', -5.0, 5.0).name('Offset').onChange(v => {
+                uniforms.colorOffset.value = v;
+            });
+
+            let paramFolder = gui.addFolder("Parameters");
+            setupParamGUI(paramFolder);
+
+            let oscFolder = gui.addFolder("Oscillators");
+            oscFolder.add({ add: () => addOscillator(oscFolder) }, "add").name("Add Oscillator");
+            
+            const exportFolder = gui.addFolder("Export");
+            exportFolder.add(CONFIG, "exportDuration", 1, 60, 1).name("Duration (s)");
+            exportFolder.add({ start: startExport }, "start").name("Record Video (WebM)");
+        }
+
+        function setupParamGUI(folder) {
+            const attractor = ATTRACTORS[currentAttractorName];
+            for (const key in attractor.defaults) {
+                const range = attractor.ranges[key];
+                folder.add(params, key, range[0], range[1]).listen().name(key);
+            }
+        }
+
+        function addOscillator(folder) {
+            const osc = {
+                id: Math.random().toString(36).substr(2, 9),
+                targetParam: Object.keys(params)[0],
+                type: "sin",
+                amp: 0.5,
+                freq: 0.5,
+                phase: 0,
+                base: params[Object.keys(params)[0]]
+            };
+            oscillators.push(osc);
+            
+            const sub = folder.addFolder(`Osc ${oscillators.length}`);
+            sub.add(osc, "targetParam", Object.keys(params));
+            sub.add(osc, "type", ["sin", "cos"]);
+            sub.add(osc, "amp", 0, 5);
+            sub.add(osc, "freq", 0, 5);
+            sub.add(osc, "phase", 0, Math.PI * 2);
+            sub.add({ remove: () => {
+                oscillators = oscillators.filter(o => o.id !== osc.id);
+                sub.destroy();
+            }}, "remove");
+        }
+
+        function updateParameters(dt) {
+            // Update Oscillators
+            oscillators.forEach(osc => {
+                if (params.hasOwnProperty(osc.targetParam)) {
+                    const t = time * osc.freq + osc.phase;
+                    let val = 0;
+                    if (osc.type === "sin") val = Math.sin(t);
+                    if (osc.type === "cos") val = Math.cos(t);
+                    params[osc.targetParam] = osc.base + val * osc.amp;
+                }
+            });
+
+            // Update Shader Uniforms
+            const uniforms = positionVariable.material.uniforms;
+            for(let key in params) {
+                if(uniforms[key]) uniforms[key].value = params[key];
+            }
+            if(uniforms['dt']) uniforms['dt'].value = dt;
+            if(uniforms['seed']) uniforms['seed'].value = time;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const dt = 0.016 * CONFIG.speed;
+            time += dt;
+            
+            updateParameters(dt);
+            
+            gpuCompute.compute();
+            
+            uniforms.texturePosition.value = gpuCompute.getCurrentRenderTarget(positionVariable).texture;
+            uniforms.texturePrevPosition.value = gpuCompute.getAlternateRenderTarget(positionVariable).texture;
+            
+            controls.update();
+            renderer.render(scene, camera);
+            
+            document.getElementById("status").textContent = `Points: ${CONFIG.textureSize*CONFIG.textureSize} | Time: ${time.toFixed(2)}`;
+        }
+
+        function startExport() {
+            CONFIG.isExporting = true;
+            const prevWidth = window.innerWidth;
+            const prevHeight = window.innerHeight;
+            
+            // Force 1920x1080 (16:9) for export
+            const exportWidth = 1920;
+            const exportHeight = 1080;
+            
+            renderer.setSize(exportWidth, exportHeight);
+            camera.aspect = exportWidth / exportHeight;
+            camera.updateProjectionMatrix();
+            
+            const stream = renderer.domElement.captureStream(60);
+            const mimeType = MediaRecorder.isTypeSupported("video/webm; codecs=vp9") ? "video/webm; codecs=vp9" : "video/webm";
+            const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 25000000 });
+            const chunks = [];
+            
+            recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
+            recorder.onstop = () => {
+                CONFIG.isExporting = false;
+                
+                // Restore original size
+                renderer.setSize(prevWidth, prevHeight);
+                camera.aspect = prevWidth / prevHeight;
+                camera.updateProjectionMatrix();
+                
+                const blob = new Blob(chunks, { type: mimeType });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "attractor.webm";
+                a.click();
+            };
+            
+            recorder.start();
+            setTimeout(() => recorder.stop(), CONFIG.exportDuration * 1000);
+        }
+
+        function onWindowResize() {
+            if (CONFIG.isExporting) return;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
