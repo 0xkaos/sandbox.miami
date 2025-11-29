@@ -87,7 +87,12 @@
         </div>
 
         <div id="save-area">
-            <button id="btn-save">Save / Download</button>
+            <div class="row" style="margin-bottom: 10px;">
+                <button id="btn-download" style="width: 100%;">Download JSON</button>
+            </div>
+            <div class="row">
+                <button id="btn-save" style="width: 100%;">Save to Cloud (Admin)</button>
+            </div>
         </div>
         
         <div id="status">Ready</div>
@@ -286,6 +291,7 @@
             document.getElementById('char-start').onchange = updateBoundaries;
             document.getElementById('char-width').onchange = updateBoundaries;
 
+            document.getElementById('btn-download').onclick = handleDownload;
             document.getElementById('btn-save').onclick = handleSave;
 
             window.addEventListener('resize', onWindowResize);
@@ -560,6 +566,9 @@
         async function handleSave() {
             if (!currentChar) return;
 
+            const password = prompt("Enter admin password to save to cloud:");
+            if (!password) return;
+
             // Update library with current strokes
             const strokesData = strokes.map(s => s.points.map(p => [parseFloat(p.x.toFixed(1)), parseFloat(p.y.toFixed(1))]));
             const width = parseFloat(document.getElementById('char-width').value);
@@ -586,7 +595,10 @@
             try {
                 let response = await fetch('/api/letters', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-Admin-Password': password
+                    },
                     body: partialPayload
                 });
 
@@ -596,11 +608,19 @@
                     return;
                 }
 
+                if (response.status === 401 || response.status === 403) {
+                    alert("Incorrect password.");
+                    return;
+                }
+
                 // If partial update failed with a client/server error, try full replace
                 console.warn('Partial save failed, trying full store save:', response.status);
                 response = await fetch('/api/letters', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-Admin-Password': password
+                    },
                     body: json
                 });
 
@@ -613,10 +633,27 @@
                 throw new Error('Server returned ' + response.status);
             } catch (err) {
                 console.warn("Cloud save failed:", err);
-                // Fallback: download a local copy
-                downloadJSON(json, 'letters.json');
-                document.getElementById('status').textContent = "Cloud save failed. Downloaded file instead.";
+                alert("Cloud save failed: " + err.message);
             }
+        }
+
+        function handleDownload() {
+            if (!currentChar) return;
+            
+            // Update library with current strokes before downloading
+            const strokesData = strokes.map(s => s.points.map(p => [parseFloat(p.x.toFixed(1)), parseFloat(p.y.toFixed(1))]));
+            const width = parseFloat(document.getElementById('char-width').value);
+            const startX = parseFloat(document.getElementById('char-start').value);
+            
+            const charData = {
+                strokes: strokesData,
+                width: width,
+                startX: startX
+            };
+            library[currentChar] = charData;
+
+            const json = JSON.stringify(library, null, 2);
+            downloadJSON(json, 'letters.json');
         }
 
         function downloadJSON(content, fileName) {
