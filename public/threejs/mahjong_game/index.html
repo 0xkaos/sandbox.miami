@@ -82,7 +82,22 @@
 
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
-            controls.maxPolarAngle = Math.PI / 2 - 0.1; // Prevent going below table
+            controls.dampingFactor = 0.05;
+            controls.rotateSpeed = 0.2; // Slower rotation for smoother feel in small range
+            
+            // Restrict to top-down view with limited freedom
+            // Vertical (Polar): 0 (Top) to 15 degrees (PI/12)
+            controls.minPolarAngle = 0; 
+            controls.maxPolarAngle = Math.PI / 6; // 30 degrees
+
+            // Horizontal (Azimuth): +/- 15 degrees from 0
+            controls.minAzimuthAngle = -Math.PI / 12;
+            controls.maxAzimuthAngle = Math.PI / 12;
+
+            // Set initial camera position to be top-down-ish
+            camera.position.set(0, 35, 5); // High Y, small Z to look down
+            controls.target.set(0, 0, 0);
+            controls.update();
 
             // Lights
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // Lower ambient for better contrast
