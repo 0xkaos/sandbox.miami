@@ -19,7 +19,8 @@
         "imports": {
             "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
             "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
-            "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+            "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.min.js",
+            "mp4-muxer": "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.0/build/mp4-muxer.mjs"
         }
     }
     </script>
@@ -29,6 +30,7 @@
         import { OrbitControls } from "three/addons/controls/OrbitControls.js";
         import { GPUComputationRenderer } from "three/addons/misc/GPUComputationRenderer.js";
         import GUI from "lil-gui";
+        import * as Mp4Muxer from "mp4-muxer";
 
         // --- Configuration ---
         const CONFIG = {
@@ -47,7 +49,12 @@
             // Export
             exportFps: 60,
             exportDuration: 5,
-            isExporting: false
+            isExporting: false,
+            rotateDuringExport: false,
+            rotationSpeedX: 0.0,
+            rotationSpeedY: 10.0,
+            rotationSpeedZ: 0.0,
+            motionSmoothing: true
         };
 
         // --- Attractor Shaders ---
@@ -300,6 +307,8 @@
         let params = { ...ATTRACTORS.clifford.defaults };
         let oscillators = [];
         let time = 0;
+        let muxer, videoEncoder;
+        let exportFrameCount = 0;
         let colormapTexture, colormapNames;
         let colormapConfig = {
             name: 'viridis',
@@ -659,7 +668,12 @@
             
             const exportFolder = gui.addFolder("Export");
             exportFolder.add(CONFIG, "exportDuration", 1, 60, 1).name("Duration (s)");
-            exportFolder.add({ start: startExport }, "start").name("Record Video (WebM)");
+            exportFolder.add(CONFIG, "rotateDuringExport").name("Rotate on Record");
+            exportFolder.add(CONFIG, "rotationSpeedX", -90, 90).name("Rot X (deg/s)");
+            exportFolder.add(CONFIG, "rotationSpeedY", -90, 90).name("Rot Y (deg/s)");
+            exportFolder.add(CONFIG, "rotationSpeedZ", -90, 90).name("Rot Z (deg/s)");
+            exportFolder.add(CONFIG, "motionSmoothing").name("Motion Smoothing");
+            exportFolder.add({ start: startExport }, "start").name("Record Video (MP4)");
         }
 
         function setupParamGUI(folder) {
@@ -728,49 +742,134 @@
             uniforms.texturePosition.value = gpuCompute.getCurrentRenderTarget(positionVariable).texture;
             uniforms.texturePrevPosition.value = gpuCompute.getAlternateRenderTarget(positionVariable).texture;
             
+            // Rotation during export
+            if (CONFIG.rotateDuringExport && CONFIG.isExporting && pointsMesh) {
+                const rotDt = 1.0 / CONFIG.exportFps; // Fixed step for smooth video rotation
+                const rad = Math.PI / 180 * rotDt;
+                pointsMesh.rotation.x += CONFIG.rotationSpeedX * rad;
+                pointsMesh.rotation.y += CONFIG.rotationSpeedY * rad;
+                pointsMesh.rotation.z += CONFIG.rotationSpeedZ * rad;
+            }
+
+            controls.enableDamping = CONFIG.motionSmoothing;
             controls.update();
             renderer.render(scene, camera);
+            
+            // Export Frame
+            if (CONFIG.isExporting && videoEncoder && muxer && videoEncoder.state === "configured") {
+                try {
+                    const microsPerFrame = 1000000 / CONFIG.exportFps;
+                    const frame = new VideoFrame(renderer.domElement, { 
+                        timestamp: Math.round(exportFrameCount * microsPerFrame),
+                        duration: Math.round(microsPerFrame)
+                    });
+                    
+                    videoEncoder.encode(frame, { keyFrame: exportFrameCount % 60 === 0 });
+                    frame.close();
+                    
+                    exportFrameCount++;
+                    
+                    const totalFrames = CONFIG.exportDuration * CONFIG.exportFps;
+                    if (exportFrameCount >= totalFrames) {
+                        stopExport();
+                    }
+                } catch (e) {
+                    console.error("Encoding error:", e);
+                    stopExport();
+                }
+            }
             
             document.getElementById("status").textContent = `Points: ${CONFIG.textureSize*CONFIG.textureSize} | Time: ${time.toFixed(2)}`;
         }
 
-        function startExport() {
-            CONFIG.isExporting = true;
-            const prevWidth = window.innerWidth;
-            const prevHeight = window.innerHeight;
+        async function startExport() {
+            if (CONFIG.isExporting) return;
             
-            // Force 1920x1080 (16:9) for export
+            // Reset state immediately
+            exportFrameCount = 0;
+            
             const exportWidth = 1920;
             const exportHeight = 1080;
             
-            renderer.setSize(exportWidth, exportHeight);
-            camera.aspect = exportWidth / exportHeight;
-            camera.updateProjectionMatrix();
-            
-            const stream = renderer.domElement.captureStream(60);
-            const mimeType = MediaRecorder.isTypeSupported("video/webm; codecs=vp9") ? "video/webm; codecs=vp9" : "video/webm";
-            const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 25000000 });
-            const chunks = [];
-            
-            recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
-            recorder.onstop = () => {
-                CONFIG.isExporting = false;
+            // Use Baseline Profile (avc1.42001f) to avoid B-frames and timestamp issues
+            const config = {
+                codec: 'avc1.42001f', 
+                width: exportWidth,
+                height: exportHeight,
+                bitrate: 15_000_000, 
+                framerate: CONFIG.exportFps
+            };
+
+            try {
+                const support = await VideoEncoder.isConfigSupported(config);
+                if (!support.supported) {
+                    console.warn("Baseline profile not supported, trying Main...");
+                    config.codec = 'avc1.4d002a'; // Fallback to Main
+                    const supportMain = await VideoEncoder.isConfigSupported(config);
+                    if (!supportMain.supported) {
+                        alert("H.264 encoding is not supported by your browser.");
+                        return;
+                    }
+                }
+
+                CONFIG.isExporting = true;
                 
-                // Restore original size
-                renderer.setSize(prevWidth, prevHeight);
-                camera.aspect = prevWidth / prevHeight;
+                // Resize for recording
+                renderer.setSize(exportWidth, exportHeight);
+                camera.aspect = exportWidth / exportHeight;
                 camera.updateProjectionMatrix();
                 
-                const blob = new Blob(chunks, { type: mimeType });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = "attractor.webm";
-                a.click();
-            };
+                // Initialize Muxer
+                muxer = new Mp4Muxer.Muxer({
+                    target: new Mp4Muxer.ArrayBufferTarget(),
+                    video: {
+                        codec: 'avc',
+                        width: exportWidth,
+                        height: exportHeight
+                    },
+                    fastStart: 'in-memory'
+                });
+
+                // Initialize VideoEncoder
+                videoEncoder = new VideoEncoder({
+                    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+                    error: e => {
+                        console.error("VideoEncoder error:", e);
+                        stopExport();
+                    }
+                });
+
+                await videoEncoder.configure(config);
+                console.log("Export started with codec:", config.codec);
+
+            } catch (e) {
+                console.error("Failed to start export:", e);
+                CONFIG.isExporting = false;
+                onWindowResize();
+            }
+        }
+
+        async function stopExport() {
+            CONFIG.isExporting = false;
             
-            recorder.start();
-            setTimeout(() => recorder.stop(), CONFIG.exportDuration * 1000);
+            await videoEncoder.flush();
+            muxer.finalize();
+            
+            const { buffer } = muxer.target;
+            const blob = new Blob([buffer], { type: 'video/mp4' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "attractor.mp4";
+            a.click();
+            
+            // Restore original size
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            
+            videoEncoder = null;
+            muxer = null;
         }
 
         function onWindowResize() {
