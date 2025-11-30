@@ -58,10 +58,6 @@
             color: "#00ffff",
             speed: 1.0,
             
-            // Visuals
-            focus: 10.0,
-            aperture: 0.0,
-
             // Camera
             rotationSpeed: 0.2,
             autoRotate: true,
@@ -76,97 +72,6 @@
 
         // --- Shaders ---
         const SHADERS = {
-            clifford: `
-                uniform float a;
-                uniform float b;
-                uniform float c;
-                uniform float d;
-                uniform float e;
-                uniform float f;
-                uniform float seed;
-                
-                float rand(vec2 co){
-                    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
-                }
-                
-                void main() {
-                    vec2 uv = gl_FragCoord.xy / resolution.xy;
-                    vec4 pos = texture2D(texturePosition, uv);
-                    
-                    float nx = sin(a * pos.y) + c * cos(a * pos.x);
-                    float ny = sin(b * pos.x) + d * cos(b * pos.y);
-                    float nz = sin(e * pos.x) + f * cos(e * pos.z);
-                    
-                    vec3 noise = vec3(
-                        rand(uv + seed) - 0.5,
-                        rand(uv + seed + 1.1) - 0.5,
-                        rand(uv + seed + 2.2) - 0.5
-                    ) * 0.002;
-                    
-                    gl_FragColor = vec4(vec3(nx, ny, nz) + noise, 1.0);
-                }
-            `,
-            bedhead: `
-                uniform float a;
-                uniform float b;
-                uniform float seed;
-                
-                float rand(vec2 co){
-                    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
-                }
-                
-                void main() {
-                    vec2 uv = gl_FragCoord.xy / resolution.xy;
-                    vec4 pos = texture2D(texturePosition, uv);
-                    
-                    float nx = sin(pos.x * pos.y / b) * pos.y + cos(a * pos.x - pos.z);
-                    float ny = pos.z + sin(pos.y) / b;
-                    float nz = pos.x + sin(pos.z) / b;
-                    
-                    vec3 noise = vec3(
-                        rand(uv + seed) - 0.5,
-                        rand(uv + seed + 1.1) - 0.5,
-                        rand(uv + seed + 2.2) - 0.5
-                    ) * 0.002;
-                    
-                    gl_FragColor = vec4(vec3(nx, ny, nz) + noise, 1.0);
-                }
-            `,
-            halvorsen: `
-                uniform float a;
-                uniform float dt;
-                uniform float seed;
-
-                float rand(vec2 co){
-                    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
-                }
-
-                void main() {
-                    vec2 uv = gl_FragCoord.xy / resolution.xy;
-                    vec4 pos = texture2D(texturePosition, uv);
-                    
-                    float x = pos.x;
-                    float y = pos.y;
-                    float z = pos.z;
-                    
-                    float dx = -a*x - 4.0*y - 4.0*z - y*y;
-                    float dy = -a*y - 4.0*z - 4.0*x - z*z;
-                    float dz = -a*z - 4.0*x - 4.0*y - x*x;
-                    
-                    vec3 next = pos.xyz + vec3(dx, dy, dz) * dt;
-                    
-                    if (length(next) > 20.0) {
-                        vec3 noise = vec3(
-                            rand(uv + seed) - 0.5,
-                            rand(uv + seed + 1.1) - 0.5,
-                            rand(uv + seed + 2.2) - 0.5
-                        ) * 2.0;
-                        next = noise;
-                    }
-                    
-                    gl_FragColor = vec4(next, 1.0);
-                }
-            `,
             thomas: `
                 uniform float b;
                 uniform float dt;
@@ -218,27 +123,6 @@
         };
 
         const ATTRACTORS = {
-            clifford: {
-                defaults: { a: 1.5, b: -1.8, c: 1.6, d: 0.9, e: 1.0, f: 0.5 },
-                ranges: { a: [-3, 3], b: [-3, 3], c: [-3, 3], d: [-3, 3], e: [-3, 3], f: [-3, 3] },
-                shader: SHADERS.clifford,
-                scale: 1.0,
-                dt: 1.0
-            },
-            bedhead: {
-                defaults: { a: 1, b: 1 },
-                ranges: { a: [-1, 1], b: [-1, 1] },
-                shader: SHADERS.bedhead,
-                scale: 1.0,
-                dt: 1.0
-            },
-            halvorsen: {
-                defaults: { a: 1.4 },
-                ranges: { a: [0, 5] },
-                shader: SHADERS.halvorsen,
-                scale: 0.5,
-                dt: 0.01
-            },
             thomas: {
                 defaults: { b: 0.208186 },
                 ranges: { b: [0, 1] },
@@ -269,77 +153,9 @@
         let gui;
         let attractorParams = {};
         let isExporting = false;
-        let oscillators = [];
-        let time = 0;
-        let colormapTexture, colormapNames;
-        let colormapConfig = {
-            name: 'viridis',
-            mode: 0, // 0: Solid, 1: Velocity, 2: Position, 3: Index
-            scale: 1.0,
-            offset: 0.0
-        };
 
         // --- Initialization ---
-        async function loadColormaps() {
-            try {
-                const response = await fetch('colormaps.json');
-                const data = await response.json();
-                colormapNames = Object.keys(data);
-                const width = 256;
-                const height = colormapNames.length;
-                const size = width * height * 4;
-                const pixelData = new Uint8Array(size);
-
-                colormapNames.forEach((name, rowIndex) => {
-                    const colors = data[name];
-                    for (let i = 0; i < width; i++) {
-                        const color = colors[i];
-                        const stride = (rowIndex * width + i) * 4;
-                        pixelData[stride] = Math.floor(color[0] * 255);
-                        pixelData[stride + 1] = Math.floor(color[1] * 255);
-                        pixelData[stride + 2] = Math.floor(color[2] * 255);
-                        pixelData[stride + 3] = 255;
-                    }
-                });
-
-                colormapTexture = new THREE.DataTexture(pixelData, width, height, THREE.RGBAFormat);
-                colormapTexture.needsUpdate = true;
-                colormapTexture.minFilter = THREE.LinearFilter;
-                colormapTexture.magFilter = THREE.LinearFilter;
-                return true;
-            } catch (e) {
-                console.error("Failed to load colormaps", e);
-                return false;
-            }
-        }
-
-        function addOscillator(folder) {
-            const osc = {
-                id: Math.random().toString(36).substr(2, 9),
-                targetParam: Object.keys(attractorParams)[0],
-                type: "sin",
-                amp: 0.5,
-                freq: 0.5,
-                phase: 0,
-                base: attractorParams[Object.keys(attractorParams)[0]]
-            };
-            oscillators.push(osc);
-            
-            const sub = folder.addFolder(`Osc ${oscillators.length}`);
-            sub.add(osc, "targetParam", Object.keys(attractorParams));
-            sub.add(osc, "type", ["sin", "cos"]);
-            sub.add(osc, "amp", 0, 5);
-            sub.add(osc, "freq", 0, 5);
-            sub.add(osc, "phase", 0, Math.PI * 2);
-            sub.add({ remove: () => {
-                oscillators = oscillators.filter(o => o.id !== osc.id);
-                sub.destroy();
-            }}, "remove");
-        }
-
-        async function init() {
-            await loadColormaps();
-
+        function init() {
             const container = document.createElement('div');
             document.body.appendChild(container);
 
@@ -377,57 +193,15 @@
             document.getElementById('status').innerText = "Ready.";
         }
 
-        function resetParticles() {
-            if (!gpuCompute || !positionVariable) return;
-            const dtPosition = gpuCompute.createTexture();
-            fillTexture(dtPosition, CONFIG.attractor);
-            gpuCompute.renderTexture(dtPosition, positionVariable.renderTargets[0]);
-            gpuCompute.renderTexture(dtPosition, positionVariable.renderTargets[1]);
-            time = 0;
-        }
-
         function setupGui() {
             const mainFolder = gui.addFolder("General");
             mainFolder.add(CONFIG, 'attractor', Object.keys(ATTRACTORS)).onChange(changeAttractor);
-            mainFolder.add({ reset: resetParticles }, 'reset').name("Reset Simulation");
+            mainFolder.addColor(CONFIG, 'color').onChange(v => { if(material) material.color.set(v); });
+            mainFolder.add(CONFIG, 'opacity', 0.01, 1.0).onChange(v => { if(material) material.opacity = v; });
+            mainFolder.add(CONFIG, 'pointSize', 0.01, 0.5).onChange(v => { if(material) material.size = v; });
             mainFolder.add(CONFIG, 'speed', 0, 5);
             mainFolder.add(CONFIG, 'autoRotate');
             mainFolder.add(CONFIG, 'rotationSpeed', 0, 2);
-
-            const visFolder = gui.addFolder("Visuals & Particles");
-            
-            // Resolution / Particle Count
-            const resolutions = {
-                'Low (250k)': 512,
-                'Medium (1M)': 1024,
-                'High (4M)': 2048
-            };
-            visFolder.add(CONFIG, 'particleCount', resolutions).name('Particle Count').onChange(val => {
-                CONFIG.particleCount = parseInt(val);
-                changeAttractor(CONFIG.attractor);
-            });
-
-            visFolder.addColor(CONFIG, 'color').onChange(v => { if(material) material.uniforms.color.value.set(v); });
-            visFolder.add(CONFIG, 'opacity', 0.01, 1.0).onChange(v => { if(material) material.uniforms.opacity.value = v; });
-            visFolder.add(CONFIG, 'pointSize', 0.01, 0.5).onChange(v => { if(material) material.uniforms.size.value = v; });
-            visFolder.add(CONFIG, 'focus', 0.1, 50.0).onChange(v => { if(material) material.uniforms.focus.value = v; }).name("Focus Dist");
-            visFolder.add(CONFIG, 'aperture', 0.0, 0.5).onChange(v => { if(material) material.uniforms.aperture.value = v; }).name("Aperture (Blur)");
-
-            const colorFolder = gui.addFolder("Coloring");
-            // We need to wait for colormaps to load to populate the dropdown, or update it later.
-            // Since init calls loadColormaps before setupGui (wait, init calls setupGui), 
-            // actually init calls setupGui BEFORE loadColormaps finishes because loadColormaps is async and init awaits it?
-            // No, init is async and awaits loadColormaps. So colormapNames should be available.
-            
-            if (colormapNames && colormapNames.length > 0) {
-                colorFolder.add(colormapConfig, 'name', colormapNames).name('Colormap');
-            }
-            colorFolder.add(colormapConfig, 'mode', { 'Solid': 0, 'Velocity': 1, 'Position': 2, 'Index': 3 }).name('Mode');
-            colorFolder.add(colormapConfig, 'scale', 0.01, 5.0).name('Scale');
-            colorFolder.add(colormapConfig, 'offset', -5.0, 5.0).name('Offset');
-
-            gui.folders_oscillators = gui.addFolder("Oscillators");
-            gui.folders_oscillators.add({ add: () => addOscillator(gui.folders_oscillators) }, "add").name("Add Oscillator");
 
             const exportFolder = gui.addFolder("Export Video");
             exportFolder.add(CONFIG, 'exportWidth', [720, 1080, 1920, 2160, 3840]);
@@ -474,14 +248,6 @@
                 });
             }
 
-            // Reset Oscillators
-            oscillators = [];
-            if (gui.folders_oscillators) {
-                gui.folders_oscillators.destroy();
-                gui.folders_oscillators = gui.addFolder("Oscillators");
-                gui.folders_oscillators.add({ add: () => addOscillator(gui.folders_oscillators) }, "add").name("Add Oscillator");
-            }
-
             const error = gpuCompute.init();
             if (error !== null) {
                 console.error(error);
@@ -510,106 +276,37 @@
 
             // Material
             // We need a custom shader material to read from the GPGPU texture
-            
-            // Calculate initial colormap row
-            let row = 0.5;
-            if (colormapNames && colormapNames.length > 0) {
-                const idx = colormapNames.indexOf(colormapConfig.name);
-                if (idx >= 0) row = (idx + 0.5) / colormapNames.length;
-            }
-
             const uniformsMat = {
                 texturePosition: { value: null },
-                texturePrevPosition: { value: null },
                 color: { value: new THREE.Color(CONFIG.color) },
                 opacity: { value: CONFIG.opacity },
                 size: { value: CONFIG.pointSize },
-                scale: { value: def.scale || 1.0 },
-                focus: { value: CONFIG.focus },
-                aperture: { value: CONFIG.aperture },
-                
-                // Coloring
-                colormapTexture: { value: colormapTexture },
-                colormapRow: { value: row },
-                colorMode: { value: colormapConfig.mode },
-                colorScale: { value: colormapConfig.scale },
-                colorOffset: { value: colormapConfig.offset }
+                scale: { value: def.scale || 1.0 }
             };
 
             material = new THREE.ShaderMaterial({
                 uniforms: uniformsMat,
                 vertexShader: `
                     uniform sampler2D texturePosition;
-                    uniform sampler2D texturePrevPosition;
                     uniform float size;
                     uniform float scale;
-                    uniform float focus;
-                    uniform float aperture;
-                    
-                    uniform int colorMode;
-                    uniform float colorScale;
-                    uniform float colorOffset;
-                    
-                    varying float vColorVal;
-                    varying float vAlpha;
-                    
+                    varying vec3 vPos;
                     void main() {
                         vec4 pos = texture2D(texturePosition, uv);
-                        vec4 prevPos = texture2D(texturePrevPosition, uv);
+                        vPos = pos.xyz;
                         vec4 mvPosition = modelViewMatrix * vec4(pos.xyz * scale, 1.0);
-                        
-                        // Color Value Calculation
-                        if (colorMode == 1) {
-                            // Velocity (Speed)
-                            float speed = distance(pos.xyz, prevPos.xyz);
-                            vColorVal = speed * colorScale + colorOffset;
-                        } else if (colorMode == 2) {
-                            // Position (Radius)
-                            float dist = length(pos.xyz);
-                            vColorVal = dist * colorScale + colorOffset;
-                        } else if (colorMode == 3) {
-                            // Index (UV)
-                            vColorVal = uv.x * colorScale + colorOffset;
-                        } else {
-                            vColorVal = 0.0;
-                        }
-                        
-                        // Depth of Field Calculation
-                        float dist = -mvPosition.z;
-                        float coc = abs(dist - focus) * aperture;
-                        
-                        // Fade out blurred points more aggressively
-                        vAlpha = 1.0 / (1.0 + coc * 20.0);
-                        
-                        gl_PointSize = (size + coc) * (300.0 / dist);
+                        gl_PointSize = size * (300.0 / -mvPosition.z);
                         gl_Position = projectionMatrix * mvPosition;
                     }
                 `,
                 fragmentShader: `
                     uniform vec3 color;
                     uniform float opacity;
-                    uniform sampler2D colormapTexture;
-                    uniform float colormapRow;
-                    uniform int colorMode;
-                    
-                    varying float vColorVal;
-                    varying float vAlpha;
-                    
                     void main() {
+                        // Circular particle
                         vec2 coord = gl_PointCoord - vec2(0.5);
-                        float dist = length(coord);
-                        if(dist > 0.5) discard;
-                        
-                        float strength = 1.0 - (dist * 2.0);
-                        strength = pow(strength, 2.0);
-                        
-                        vec3 finalColor = color;
-                        if (colorMode > 0) {
-                            float c = clamp(vColorVal, 0.0, 1.0);
-                            finalColor = texture2D(colormapTexture, vec2(c, colormapRow)).rgb;
-                        }
-                        
-                        gl_FragColor = vec4(finalColor, opacity * strength * vAlpha);
+                        if(length(coord) > 0.5) discard;
+                        gl_FragColor = vec4(color, opacity);
                     }
                 `,
                 transparent: true,
@@ -624,13 +321,11 @@
         function fillTexture(texture, name) {
             const data = texture.image.data;
             const def = ATTRACTORS[name];
-            const scale = (def.scale || 1.0) * 4.0; // Match index.html logic roughly (4 * scale)
-
-            // Initialize with random noise
+            // Initialize with random noise or specific start
             for (let i = 0; i < data.length; i += 4) {
-                data[i] = (Math.random() - 0.5) * scale;
-                data[i + 1] = (Math.random() - 0.5) * scale;
-                data[i + 2] = (Math.random() - 0.5) * scale;
+                data[i] = (Math.random() - 0.5) * 10;
+                data[i + 1] = (Math.random() - 0.5) * 10;
+                data[i + 2] = (Math.random() - 0.5) * 10;
                 data[i + 3] = 1;
             }
         }
@@ -649,56 +344,21 @@
             render();
         }
 
-        function updateParameters(dt) {
-            // Update Oscillators
-            oscillators.forEach(osc => {
-                if (attractorParams.hasOwnProperty(osc.targetParam)) {
-                    const t = time * osc.freq + osc.phase;
-                    let val = 0;
-                    if (osc.type === "sin") val = Math.sin(t);
-                    if (osc.type === "cos") val = Math.cos(t);
-                    attractorParams[osc.targetParam] = osc.base + val * osc.amp;
-                }
-            });
-
-            // Update Shader Uniforms
-            const uniforms = positionVariable.material.uniforms;
-            for(let key in attractorParams) {
-                if(uniforms[key]) uniforms[key].value = attractorParams[key];
-            }
-            if(uniforms['dt']) uniforms['dt'].value = dt;
-            if(uniforms['seed']) uniforms['seed'].value = time;
-        }
-
         function render() {
             if (!gpuCompute) return;
 
-            const dt = 0.016 * CONFIG.speed;
-            time += dt;
-
-            updateParameters(dt);
+            // Update Uniforms
+            const def = ATTRACTORS[CONFIG.attractor];
+            positionVariable.material.uniforms.dt.value = def.dt * CONFIG.speed;
 
             // Compute
             gpuCompute.compute();
 
             // Update Material
             material.uniforms.texturePosition.value = gpuCompute.getCurrentRenderTarget(positionVariable).texture;
-            material.uniforms.texturePrevPosition.value = gpuCompute.getAlternateRenderTarget(positionVariable).texture;
-            
             material.uniforms.color.value.set(CONFIG.color);
             material.uniforms.opacity.value = CONFIG.opacity;
             material.uniforms.size.value = CONFIG.pointSize;
-            material.uniforms.focus.value = CONFIG.focus;
-            material.uniforms.aperture.value = CONFIG.aperture;
-
-            // Colormap Uniforms
-            if (colormapNames && colormapNames.length > 0) {
-                 const idx = colormapNames.indexOf(colormapConfig.name);
-                 if (idx >= 0) material.uniforms.colormapRow.value = (idx + 0.5) / colormapNames.length;
-            }
-            material.uniforms.colorMode.value = colormapConfig.mode;
-            material.uniforms.colorScale.value = colormapConfig.scale;
-            material.uniforms.colorOffset.value = colormapConfig.offset;
 
             // Rotate
             if (CONFIG.autoRotate) {
@@ -778,22 +438,10 @@
                     await new Promise(r => setTimeout(r, 0));
 
                     // Step Simulation
-                    const dt = (1 / fps) * CONFIG.speed;
-                    time += dt;
-                    updateParameters(dt);
-                    
+                    const def = ATTRACTORS[CONFIG.attractor];
+                    positionVariable.material.uniforms.dt.value = def.dt * CONFIG.speed;
                     gpuCompute.compute();
                     material.uniforms.texturePosition.value = gpuCompute.getCurrentRenderTarget(positionVariable).texture;
-                    material.uniforms.texturePrevPosition.value = gpuCompute.getAlternateRenderTarget(positionVariable).texture;
-                    
-                    // Colormap Uniforms
-                    if (colormapNames && colormapNames.length > 0) {
-                        const idx = colormapNames.indexOf(colormapConfig.name);
-                        if (idx >= 0) material.uniforms.colormapRow.value = (idx + 0.5) / colormapNames.length;
-                    }
-                    material.uniforms.colorMode.value = colormapConfig.mode;
-                    material.uniforms.colorScale.value = colormapConfig.scale;
-                    material.uniforms.colorOffset.value = colormapConfig.offset;
                     
                     // Rotate
                     if (CONFIG.autoRotate) {

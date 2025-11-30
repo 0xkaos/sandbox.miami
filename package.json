@@ -26,6 +26,8 @@
     "url": "https://github.com/0xkaos/sandbox.miami.git"
   },
   "devDependencies": {
+    "@ffmpeg/core": "^0.12.4",
+    "@ffmpeg/ffmpeg": "^0.12.4",
     "wrangler": "^4.50.0"
   }
 }
