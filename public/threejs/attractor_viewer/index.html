@@ -37,7 +37,8 @@
             "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
             "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
             "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.esm.min.js",
-            "mp4-muxer": "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.0/build/mp4-muxer.mjs"
+            "mp4-muxer": "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.0/build/mp4-muxer.mjs",
+            "tone": "https://cdn.jsdelivr.net/npm/tone@14.7.77/+esm"
         }
     }
     </script>
@@ -48,6 +49,7 @@
         import { GPUComputationRenderer } from "three/addons/misc/GPUComputationRenderer.js";
         import GUI from "lil-gui";
         import * as Mp4Muxer from "mp4-muxer";
+        import { AudioEngine, bufferToWave } from "./audio.js";
 
         // --- Configuration & State ---
         const CONFIG = {
@@ -65,6 +67,12 @@
             // Camera
             rotationSpeed: 0.2,
             autoRotate: true,
+
+            // Audio
+            audioEnabled: false,
+            audioVolume: -10,
+            audioBpm: 60,
+            audioPattern: "Ethereal",
 
             // Export
             exportWidth: 1080,
@@ -278,6 +286,7 @@
             scale: 1.0,
             offset: 0.0
         };
+        let audioEngine;
 
         // --- Initialization ---
         async function loadColormaps() {
@@ -428,6 +437,37 @@
 
             gui.folders_oscillators = gui.addFolder("Oscillators");
             gui.folders_oscillators.add({ add: () => addOscillator(gui.folders_oscillators) }, "add").name("Add Oscillator");
+
+            const audioFolder = gui.addFolder("Audio (Tone.js)");
+            audioFolder.add(CONFIG, 'audioEnabled').name("Enable Audio").onChange(async v => {
+                if (v) {
+                    if (!audioEngine) {
+                        audioEngine = new AudioEngine();
+                        await audioEngine.init();
+                    }
+                    audioEngine.start();
+                } else {
+                    if (audioEngine) audioEngine.stop();
+                }
+            });
+            audioFolder.add(CONFIG, 'audioVolume', -60, 0).name("Master Vol (dB)").onChange(v => {
+                if(audioEngine) audioEngine.setMasterVolume(v);
+            });
+            audioFolder.add(CONFIG, 'audioBpm', 30, 200).name("BPM").onChange(v => {
+                if(audioEngine) audioEngine.setParam('bpm', v);
+            });
+            audioFolder.add(CONFIG, 'audioPattern', ["Ethereal", "Dark Space", "Mystery", "Drone"]).name("Pattern").onChange(v => {
+                if(audioEngine) audioEngine.setPattern(v);
+            });
+            
+            const instFolder = audioFolder.addFolder("Instruments");
+            instFolder.add({ pad: -12 }, 'pad', -60, 0).onChange(v => audioEngine && audioEngine.setVolume('pad', v));
+            instFolder.add({ keys: -10 }, 'keys', -60, 0).onChange(v => audioEngine && audioEngine.setVolume('keys', v));
+            instFolder.add({ bass: -8 }, 'bass', -60, 0).onChange(v => audioEngine && audioEngine.setVolume('bass', v));
+            
+            const fxFolder = audioFolder.addFolder("Effects");
+            fxFolder.add({ reverb: 0.5 }, 'reverb', 0, 1).onChange(v => audioEngine && audioEngine.setParam('reverb', v));
+            fxFolder.add({ delay: 0.3 }, 'delay', 0, 1).onChange(v => audioEngine && audioEngine.setParam('delay', v));
 
             const exportFolder = gui.addFolder("Export Video");
             exportFolder.add(CONFIG, 'exportWidth', [720, 1080, 1920, 2160, 3840]);
@@ -839,10 +879,33 @@
 
                 // Load single-threaded core to avoid SharedArrayBuffer issues
                 // We load the WASM from CDN because it exceeds Cloudflare Workers 25MB limit
+                // Added ?v=cachebust to force reload after browser crash
                 await ffmpeg.load({
                     coreURL: "/vendor/ffmpeg/ffmpeg-core.js",
-                    wasmURL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm"
+                    wasmURL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm?v=cachebust_1"
                 });
+
+                // --- Audio Rendering ---
+                let audioFile = null;
+                if (CONFIG.audioEnabled && audioEngine) {
+                    statusText.innerText = "Rendering Audio...";
+                    // Render offline audio
+                    const audioBuffer = await audioEngine.renderOffline(duration);
+                    
+                    // Convert to WAV
+                    // We need to import bufferToWave from audio.js or define it here.
+                    // Since it's exported from audio.js, we can use it if we imported it.
+                    // But index.html imports AudioEngine, not bufferToWave.
+                    // Let's assume we update the import or just copy the helper here for simplicity if needed,
+                    // but better to import it.
+                    
+                    // Wait, we need to update the import statement at the top first.
+                    // Let's assume we will update the import to: import { AudioEngine, bufferToWave } from "./audio.js";
+                    
+                    const wavData = bufferToWave(audioBuffer, audioBuffer.length);
+                    await ffmpeg.writeFile('audio.wav', new Uint8Array(wavData));
+                    audioFile = 'audio.wav';
+                }
 
                 statusText.innerText = "Remuxing Video...";
                 await ffmpeg.writeFile('input.mp4', new Uint8Array(muxer.target.buffer));
@@ -859,8 +922,22 @@
                     // Extract raw stream first, then mux it back.
                     
                     await ffmpeg.exec(['-i', 'input.mp4', '-c', 'copy', '-bsf:v', 'h264_mp4toannexb', 'temp.h264']);
-                    // When muxing from raw h264, we MUST specify the framerate, otherwise it defaults to 25fps or garbage
-                    await ffmpeg.exec(['-r', fps.toString(), '-i', 'temp.h264', '-c', 'copy', '-movflags', '+faststart', 'output.mp4']);
+                    
+                    // Mux back to MP4
+                    const args = ['-r', fps.toString(), '-i', 'temp.h264'];
+                    
+                    if (audioFile) {
+                        args.push('-i', audioFile);
+                        // Map video from 0:0 and audio from 1:0
+                        // Use aac for audio
+                        args.push('-c:v', 'copy', '-c:a', 'aac', '-shortest');
+                    } else {
+                        args.push('-c', 'copy');
+                    }
+                    
+                    args.push('-movflags', '+faststart', 'output.mp4');
+                    
+                    await ffmpeg.exec(args);
                     
                 } catch (e) {
                     // Ignore Aborted() error if output exists, it's a known ffmpeg.wasm quirk
