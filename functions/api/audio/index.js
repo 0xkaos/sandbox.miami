@@ -28,25 +28,33 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPost(context) {
-    if (!context.env.BUCKET) {
-        return new Response("R2 Bucket 'BUCKET' not bound.", { status: 503 });
-    }
-
-    // Password Protection
-    const password = context.request.headers.get('x-admin-password');
-    const correctPassword = context.env.ADMIN_PASSWORD || "admin"; // Default to "admin" if env var not set
-    
-    if (password !== correctPassword) {
-        return new Response("Unauthorized", { status: 401 });
-    }
-
     try {
+        if (!context.env.BUCKET) {
+            console.error("R2 Bucket 'BUCKET' not bound in environment.");
+            return new Response("R2 Bucket 'BUCKET' not bound.", { status: 503 });
+        }
+
+        // Password Protection
+        const password = context.request.headers.get('x-admin-password');
+        const correctPassword = context.env.ADMIN_PASSWORD || "admin"; // Default to "admin" if env var not set
+        
+        if (password !== correctPassword) {
+            console.warn(`Unauthorized access attempt. Got: '${password}'`);
+            return new Response("Unauthorized", { status: 401 });
+        }
+
         const contentType = (context.request.headers.get('content-type') || '').toLowerCase();
         if (!contentType.includes('application/json')) {
             return new Response(JSON.stringify({ error: 'Content-Type must be application/json' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
         }
 
-        const body = await context.request.json();
+        let body;
+        try {
+            body = await context.request.json();
+        } catch (e) {
+            console.error("Failed to parse JSON body:", e);
+            return new Response(JSON.stringify({ error: 'Invalid JSON payload' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
 
         // Partial Update: { pattern: "Name", data: { ... } }
         if (body && typeof body === 'object' && body.pattern && body.data) {
@@ -78,8 +86,10 @@ export async function onRequestPost(context) {
             return new Response(JSON.stringify({ ok: true, replaced: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
 
-        return new Response(JSON.stringify({ error: 'Invalid JSON payload' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: 'Invalid JSON payload structure' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+
     } catch (err) {
-        return new Response(JSON.stringify({ error: 'Error saving to R2', detail: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        console.error("Server Error in onRequestPost:", err);
+        return new Response(JSON.stringify({ error: 'Error saving to R2', detail: err.message, stack: err.stack }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     }
 }
