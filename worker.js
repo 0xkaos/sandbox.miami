@@ -66,6 +66,100 @@ export default {
       return new Response("Method not allowed", { status: 405 });
     }
 
+    // API Endpoint: /api/audio
+    if (url.pathname === '/api/audio') {
+      if (!env.BUCKET) {
+        return new Response(JSON.stringify({ error: "R2 Bucket 'BUCKET' not bound." }), { 
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      // GET
+      if (request.method === 'GET') {
+        try {
+          const object = await env.BUCKET.get('audio.json');
+          
+          if (object === null) {
+            return new Response(JSON.stringify({}, null, 2), {
+                headers: { 'Content-Type': 'application/json' }
+            });
+          }
+
+          const headers = new Headers();
+          object.writeHttpMetadata(headers);
+          headers.set('etag', object.httpEtag);
+          headers.set('Content-Type', 'application/json');
+
+          return new Response(object.body, { headers });
+        } catch (err) {
+          return new Response(JSON.stringify({ error: "Error reading from R2", detail: err.message }), { 
+              status: 500,
+              headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+      // POST
+      if (request.method === 'POST') {
+        try {
+            // Password Protection
+            const password = request.headers.get('x-admin-password');
+            const correctPassword = env.ADMIN_PASSWORD || "admin";
+            
+            if (password !== correctPassword) {
+                return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+                    status: 401,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+
+            let body;
+            try {
+                body = await request.json();
+            } catch (e) {
+                return new Response(JSON.stringify({ error: 'Invalid JSON payload' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+            }
+
+            // Partial Update
+            if (body && typeof body === 'object' && body.pattern && body.data) {
+                const existing = await env.BUCKET.get('audio.json');
+                let store = {};
+                if (existing !== null) {
+                    const txt = await new Response(existing.body).text();
+                    try { store = JSON.parse(txt); } catch (e) { store = {}; }
+                }
+
+                store[body.pattern] = body.data;
+
+                const json = JSON.stringify(store, null, 2);
+                await env.BUCKET.put('audio.json', json, {
+                    httpMetadata: { contentType: 'application/json' }
+                });
+
+                return new Response(JSON.stringify({ ok: true, updated: body.pattern }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            }
+
+            // Full Replacement
+            if (body && typeof body === 'object') {
+                const json = JSON.stringify(body, null, 2);
+                await env.BUCKET.put('audio.json', json, {
+                    httpMetadata: { contentType: 'application/json' }
+                });
+
+                return new Response(JSON.stringify({ ok: true, replaced: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            }
+
+            return new Response(JSON.stringify({ error: 'Invalid JSON payload structure' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+
+        } catch (err) {
+            return new Response(JSON.stringify({ error: 'Error saving to R2', detail: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        }
+      }
+
+      return new Response("Method not allowed", { status: 405 });
+    }
+
     // 4. Serve Static Assets (default behavior)
     return env.ASSETS.fetch(request);
   }
