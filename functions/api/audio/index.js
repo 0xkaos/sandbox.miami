@@ -1,7 +1,10 @@
 export async function onRequestGet(context) {
     // Check if the bucket is bound
     if (!context.env.BUCKET) {
-        return new Response("R2 Bucket 'BUCKET' not bound. Check Cloudflare Dashboard > Settings > Functions.", { status: 503 });
+        return new Response(JSON.stringify({ error: "R2 Bucket 'BUCKET' not bound." }), { 
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+        });
     }
 
     try {
@@ -23,7 +26,10 @@ export async function onRequestGet(context) {
             headers,
         });
     } catch (err) {
-        return new Response("Error reading from R2: " + err.message, { status: 500 });
+        return new Response(JSON.stringify({ error: "Error reading from R2", detail: err.message }), { 
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+        });
     }
 }
 
@@ -31,7 +37,10 @@ export async function onRequestPost(context) {
     try {
         if (!context.env.BUCKET) {
             console.error("R2 Bucket 'BUCKET' not bound in environment.");
-            return new Response("R2 Bucket 'BUCKET' not bound.", { status: 503 });
+            return new Response(JSON.stringify({ error: "R2 Bucket 'BUCKET' not bound." }), { 
+                status: 503,
+                headers: { 'Content-Type': 'application/json' }
+            });
         }
 
         // Password Protection
@@ -40,7 +49,10 @@ export async function onRequestPost(context) {
         
         if (password !== correctPassword) {
             console.warn(`Unauthorized access attempt. Got: '${password}'`);
-            return new Response("Unauthorized", { status: 401 });
+            return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+                status: 401,
+                headers: { 'Content-Type': 'application/json' }
+            });
         }
 
         const contentType = (context.request.headers.get('content-type') || '').toLowerCase();

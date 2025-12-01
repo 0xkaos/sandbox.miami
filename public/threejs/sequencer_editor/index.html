@@ -366,7 +366,14 @@
                 if (res.ok) {
                     setStatus("Saved successfully!");
                 } else {
-                    const errData = await res.json();
+                    const text = await res.text();
+                    let errData = {};
+                    try {
+                        errData = JSON.parse(text);
+                    } catch (e) {
+                        errData = { error: text };
+                    }
+                    
                     setStatus("Save failed: " + (errData.error || res.statusText) + (errData.detail ? " - " + errData.detail : ""));
                     console.error("Save failed details:", errData);
                 }
