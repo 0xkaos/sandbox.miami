@@ -62,6 +62,20 @@ export class AudioEngine {
         await Tone.start();
         Tone.Transport.bpm.value = this.bpm;
         
+        // Load Patterns from Cloud
+        try {
+            const res = await fetch('/api/audio');
+            if (res.ok) {
+                const cloudPatterns = await res.json();
+                if (Object.keys(cloudPatterns).length > 0) {
+                    this.patterns = cloudPatterns;
+                    console.log("Loaded patterns from cloud:", Object.keys(this.patterns));
+                }
+            }
+        } catch (e) {
+            console.warn("Failed to load cloud patterns, using defaults", e);
+        }
+        
         // Setup Realtime Graph
         this.realtimeInstruments = this.createGraph(Tone.Destination);
         this.isReady = true;
@@ -113,10 +127,58 @@ export class AudioEngine {
         }).connect(limiter);
         bass.volume.value = this.params.vol.bass;
 
-        return { pad, keys, bass, reverb, delay, limiter };
+        // 4. Attractor Synth (Shadow Simulation)
+        const attractorSynth = new Tone.DuoSynth({
+            vibratoAmount: 0.5,
+            vibratoRate: 5,
+            harmonicity: 1.5,
+            voice0: {
+                volume: -10,
+                portamento: 0,
+                oscillator: { type: "sine" },
+                filterEnvelope: { attack: 0.01, decay: 0, sustain: 1, release: 0.5 },
+                envelope: { attack: 0.01, decay: 0, sustain: 1, release: 0.5 }
+            },
+            voice1: {
+                volume: -10,
+                portamento: 0,
+                oscillator: { type: "triangle" },
+                filterEnvelope: { attack: 0.01, decay: 0, sustain: 1, release: 0.5 },
+                envelope: { attack: 0.01, decay: 0, sustain: 1, release: 0.5 }
+            }
+        }).connect(reverb);
+        attractorSynth.volume.value = -60; // Start silent, user enables it
+
+        return { pad, keys, bass, attractorSynth, reverb, delay, limiter };
     }
 
-    scheduleEvents(instruments, transport) {
+    updateAttractorState(x, y, z) {
+        if (!this.realtimeInstruments || !this.realtimeInstruments.attractorSynth) return;
+        
+        const synth = this.realtimeInstruments.attractorSynth;
+        
+        // Safety check
+        if (isNaN(x) || isNaN(y) || isNaN(z)) return;
+
+        // Map X to Frequency (Pitch)
+        // Scale roughly -20 to 20 -> 100Hz to 800Hz
+        const freq = 200 + (Math.abs(x) * 20);
+        
+        // Use frequency.rampTo instead of setNote for continuous updates
+        // Clamp frequency to safe range
+        const safeFreq = Math.max(20, Math.min(20000, freq));
+        synth.frequency.rampTo(safeFreq, 0.1);
+        
+        // Map Y to Harmonicity
+        const harm = 0.5 + (Math.abs(y) * 0.1);
+        synth.harmonicity.rampTo(harm, 0.1);
+        
+        // Map Z to Vibrato Rate
+        const vib = 1 + (Math.abs(z) * 0.5);
+        synth.vibratoRate.rampTo(vib, 0.1);
+    }
+
+    scheduleEvents(instruments, transport, trajectoryData) {
         const pattern = this.patterns[this.currentPatternName];
         const chords = pattern.chords;
         const bassNotes = pattern.bass;
@@ -156,6 +218,33 @@ export class AudioEngine {
             }
         }, "8n").start(0);
 
+        // 3. Attractor Automation (Offline Only)
+        if (trajectoryData && instruments.attractorSynth) {
+            // trajectoryData is array of { time, x, y, z }
+            // We need to schedule automation
+            const synth = instruments.attractorSynth;
+            
+            // Trigger attack at start
+            synth.triggerAttack(200, 0);
+            
+            trajectoryData.forEach(point => {
+                const t = point.time;
+                const x = point.x;
+                const y = point.y;
+                const z = point.z;
+                
+                const freq = 200 + (Math.abs(x) * 20);
+                const harm = 0.5 + (Math.abs(y) * 0.1);
+                const vib = 1 + (Math.abs(z) * 0.5);
+                
+                synth.frequency.setValueAtTime(freq, t);
+                synth.harmonicity.setValueAtTime(harm, t);
+                synth.vibratoRate.setValueAtTime(vib, t);
+            });
+            
+            // Release at end (handled by duration usually, but good to be safe)
+        }
+
         return [chordLoop, arpLoop];
     }
 
@@ -168,6 +257,12 @@ export class AudioEngine {
         // Dispose old loops
         this.realtimeLoops.forEach(l => l.dispose());
         
+        // Trigger Attractor Synth for Realtime
+        if (this.realtimeInstruments.attractorSynth) {
+            this.realtimeInstruments.attractorSynth.triggerRelease(); // Reset
+            this.realtimeInstruments.attractorSynth.triggerAttack(200);
+        }
+
         this.realtimeLoops = this.scheduleEvents(this.realtimeInstruments, Tone.Transport);
         Tone.Transport.start();
         this.isPlaying = true;
@@ -175,6 +270,9 @@ export class AudioEngine {
 
     stop() {
         Tone.Transport.stop();
+        if (this.realtimeInstruments && this.realtimeInstruments.attractorSynth) {
+            this.realtimeInstruments.attractorSynth.triggerRelease();
+        }
         this.isPlaying = false;
     }
 
@@ -216,14 +314,26 @@ export class AudioEngine {
         Tone.Destination.volume.rampTo(db, 0.1);
     }
     
-    async renderOffline(duration) {
+    async renderOffline(duration, trajectoryData) {
         // Tone.Offline returns a Promise<AudioBuffer>
         const buffer = await Tone.Offline(({ transport, destination }) => {
              // We need to set BPM on this transport
              transport.bpm.value = this.bpm;
              
              const instruments = this.createGraph(destination);
-             this.scheduleEvents(instruments, transport);
+             
+             // Set volumes
+             instruments.pad.volume.value = this.params.vol.pad;
+             instruments.keys.volume.value = this.params.vol.keys;
+             instruments.bass.volume.value = this.params.vol.bass;
+             // Attractor synth volume needs to be set if we want it audible
+             // We'll assume the user set it in UI, so we use the stored param if we had one
+             // But we didn't store attractor volume in params.vol yet.
+             // Let's add it to params.vol default or just read from realtime if available?
+             // Better to use a stored value.
+             instruments.attractorSynth.volume.value = this.params.vol.attractor || -60;
+
+             this.scheduleEvents(instruments, transport, trajectoryData);
              
              transport.start();
         }, duration);

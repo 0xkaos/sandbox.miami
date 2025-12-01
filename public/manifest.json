@@ -30,6 +30,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/sequencer_editor/",
+    "title": "Audio Sequencer Editor",
+    "description": "No description available.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/text_effects_studio/",
     "title": "Text Effects Studio",
     "description": "Design stylized neon, chrome, and bloom-heavy text renders with realtime Three.js post-processing.",

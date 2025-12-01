@@ -49,7 +49,7 @@
         import { GPUComputationRenderer } from "three/addons/misc/GPUComputationRenderer.js";
         import GUI from "lil-gui";
         import * as Mp4Muxer from "mp4-muxer";
-        import { AudioEngine, bufferToWave } from "./audio.js";
+        import { AudioEngine, bufferToWave } from "./audio.js?v=3";
 
         // --- Configuration & State ---
         const CONFIG = {
@@ -222,6 +222,70 @@
                     vec3 next = pos.xyz + vec3(dx, dy, dz) * dt;
                     gl_FragColor = vec4(next, 1.0);
                 }
+            `,
+            dadras: `
+                uniform float a;
+                uniform float b;
+                uniform float c;
+                uniform float d;
+                uniform float e;
+                uniform float dt;
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / resolution.xy;
+                    vec4 pos = texture2D(texturePosition, uv);
+                    float x = pos.x; float y = pos.y; float z = pos.z;
+                    float dx = y - a * x + b * y * z;
+                    float dy = c * y - x * z + z;
+                    float dz = d * x * y - e * z;
+                    vec3 next = pos.xyz + vec3(dx, dy, dz) * dt;
+                    gl_FragColor = vec4(next, 1.0);
+                }
+            `,
+            rabinovich_fabrikant: `
+                uniform float alpha;
+                uniform float gamma;
+                uniform float dt;
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / resolution.xy;
+                    vec4 pos = texture2D(texturePosition, uv);
+                    float x = pos.x; float y = pos.y; float z = pos.z;
+                    float dx = y * (z - 1.0 + x * x) + gamma * x;
+                    float dy = x * (3.0 * z + 1.0 - x * x) + gamma * y;
+                    float dz = -2.0 * z * (alpha + x * y);
+                    vec3 next = pos.xyz + vec3(dx, dy, dz) * dt;
+                    gl_FragColor = vec4(next, 1.0);
+                }
+            `,
+            sprott: `
+                uniform float a;
+                uniform float b;
+                uniform float dt;
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / resolution.xy;
+                    vec4 pos = texture2D(texturePosition, uv);
+                    float x = pos.x; float y = pos.y; float z = pos.z;
+                    float dx = y + a * x * y + x * z;
+                    float dy = 1.0 - b * x * x + y * z;
+                    float dz = x - x * x - y * y;
+                    vec3 next = pos.xyz + vec3(dx, dy, dz) * dt;
+                    gl_FragColor = vec4(next, 1.0);
+                }
+            `,
+            four_wing: `
+                uniform float a;
+                uniform float b;
+                uniform float c;
+                uniform float dt;
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / resolution.xy;
+                    vec4 pos = texture2D(texturePosition, uv);
+                    float x = pos.x; float y = pos.y; float z = pos.z;
+                    float dx = a * x + y * z;
+                    float dy = b * x + c * y - x * z;
+                    float dz = -z - x * y;
+                    vec3 next = pos.xyz + vec3(dx, dy, dz) * dt;
+                    gl_FragColor = vec4(next, 1.0);
+                }
             `
         };
 
@@ -267,6 +331,34 @@
                 shader: SHADERS.lorenz,
                 scale: 1.0,
                 dt: 0.005
+            },
+            dadras: {
+                defaults: { a: 3, b: 2.7, c: 1.7, d: 2, e: 9 },
+                ranges: { a: [0, 5], b: [0, 5], c: [0, 5], d: [0, 5], e: [0, 15] },
+                shader: SHADERS.dadras,
+                scale: 0.5,
+                dt: 0.01
+            },
+            rabinovich_fabrikant: {
+                defaults: { alpha: 0.14, gamma: 0.10 },
+                ranges: { alpha: [0, 1], gamma: [0, 1] },
+                shader: SHADERS.rabinovich_fabrikant,
+                scale: 1.0,
+                dt: 0.01
+            },
+            sprott: {
+                defaults: { a: 2.07, b: 1.79 },
+                ranges: { a: [0, 5], b: [0, 5] },
+                shader: SHADERS.sprott,
+                scale: 1.0,
+                dt: 0.01
+            },
+            four_wing: {
+                defaults: { a: 0.2, b: 0.01, c: -0.4 },
+                ranges: { a: [-1, 1], b: [-1, 1], c: [-1, 1] },
+                shader: SHADERS.four_wing,
+                scale: 1.0,
+                dt: 0.05
             }
         };
 
@@ -287,6 +379,99 @@
             offset: 0.0
         };
         let audioEngine;
+        
+        // Shadow Simulation State
+        let shadowPos = { x: 0.1, y: 0.1, z: 0.1 };
+
+        // --- JS Attractor Math (for Shadow Simulation) ---
+        const ATTRACTOR_MATH = {
+            clifford: (p, params) => {
+                const nx = Math.sin(params.a * p.y) + params.c * Math.cos(params.a * p.x);
+                const ny = Math.sin(params.b * p.x) + params.d * Math.cos(params.b * p.y);
+                const nz = Math.sin(params.e * p.x) + params.f * Math.cos(params.e * p.z);
+                return { x: nx, y: ny, z: nz }; // Clifford is a map, not flow, but we treat it as next pos
+            },
+            bedhead: (p, params) => {
+                const nx = Math.sin(p.x * p.y / params.b) * p.y + Math.cos(params.a * p.x - p.z);
+                const ny = p.z + Math.sin(p.y) / params.b;
+                const nz = p.x + Math.sin(p.z) / params.b;
+                return { x: nx, y: ny, z: nz };
+            },
+            halvorsen: (p, params, dt) => {
+                const dx = -params.a * p.x - 4 * p.y - 4 * p.z - p.y * p.y;
+                const dy = -params.a * p.y - 4 * p.z - 4 * p.x - p.z * p.z;
+                const dz = -params.a * p.z - 4 * p.x - 4 * p.y - p.x * p.x;
+                return { x: p.x + dx * dt, y: p.y + dy * dt, z: p.z + dz * dt };
+            },
+            thomas: (p, params, dt) => {
+                const dx = Math.sin(p.y) - params.b * p.x;
+                const dy = Math.sin(p.z) - params.b * p.y;
+                const dz = Math.sin(p.x) - params.b * p.z;
+                return { x: p.x + dx * dt, y: p.y + dy * dt, z: p.z + dz * dt };
+            },
+            aizawa: (p, params, dt) => {
+                const x = p.x, y = p.y, z = p.z;
+                const dx = (z - params.b) * x - params.d * y;
+                const dy = params.d * x + (z - params.b) * y;
+                const dz = params.c + params.a * z - (z * z * z / 3.0) - (x * x + y * y) * (1.0 + params.e * z) + params.f * z * x * x * x;
+                return { x: x + dx * dt, y: y + dy * dt, z: z + dz * dt };
+            },
+            lorenz: (p, params, dt) => {
+                const dx = params.sigma * (p.y - p.x);
+                const dy = p.x * (params.rho - p.z) - p.y;
+                const dz = p.x * p.y - params.beta * p.z;
+                return { x: p.x + dx * dt, y: p.y + dy * dt, z: p.z + dz * dt };
+            },
+            dadras: (p, params, dt) => {
+                const dx = p.y - params.a * p.x + params.b * p.y * p.z;
+                const dy = params.c * p.y - p.x * p.z + p.z;
+                const dz = params.d * p.x * p.y - params.e * p.z;
+                return { x: p.x + dx * dt, y: p.y + dy * dt, z: p.z + dz * dt };
+            },
+            rabinovich_fabrikant: (p, params, dt) => {
+                const dx = p.y * (p.z - 1 + p.x * p.x) + params.gamma * p.x;
+                const dy = p.x * (3 * p.z + 1 - p.x * p.x) + params.gamma * p.y;
+                const dz = -2 * p.z * (params.alpha + p.x * p.y);
+                return { x: p.x + dx * dt, y: p.y + dy * dt, z: p.z + dz * dt };
+            },
+            sprott: (p, params, dt) => {
+                const dx = p.y + params.a * p.x * p.y + p.x * p.z;
+                const dy = 1 - params.b * p.x * p.x + p.y * p.z;
+                const dz = p.x - p.x * p.x - p.y * p.y;
+                return { x: p.x + dx * dt, y: p.y + dy * dt, z: p.z + dz * dt };
+            },
+            four_wing: (p, params, dt) => {
+                const dx = params.a * p.x + p.y * p.z;
+                const dy = params.b * p.x + params.c * p.y - p.x * p.z;
+                const dz = -p.z - p.x * p.y;
+                return { x: p.x + dx * dt, y: p.y + dy * dt, z: p.z + dz * dt };
+            }
+        };
+
+        function stepShadowSimulation(dt) {
+            const func = ATTRACTOR_MATH[CONFIG.attractor];
+            if (!func) return;
+            
+            // Some attractors are maps (Clifford, Bedhead) and ignore dt in the math, 
+            // but we might want to interpolate or just step them.
+            // For maps, the "dt" concept is just "next iteration".
+            // But our shader uses mix() or just sets position.
+            // The shader for Clifford/Bedhead just calculates position from previous? 
+            // Actually the shader for Clifford/Bedhead uses texturePosition as input but the math is:
+            // new_pos = f(old_pos).
+            // So it is iterative.
+            
+            // We need to handle the scale factor used in the shader?
+            // The shader uses `pos` from texture.
+            // Our JS math should operate in the same coordinate space.
+            
+            shadowPos = func(shadowPos, attractorParams, dt);
+            
+            // Check for NaN or Infinity (explosion)
+            if (!isFinite(shadowPos.x) || !isFinite(shadowPos.y) || !isFinite(shadowPos.z)) {
+                shadowPos = { x: 0.1, y: 0.1, z: 0.1 };
+            }
+        }
 
         // --- Initialization ---
         async function loadColormaps() {
@@ -464,6 +649,13 @@
             instFolder.add({ pad: -12 }, 'pad', -60, 0).onChange(v => audioEngine && audioEngine.setVolume('pad', v));
             instFolder.add({ keys: -10 }, 'keys', -60, 0).onChange(v => audioEngine && audioEngine.setVolume('keys', v));
             instFolder.add({ bass: -8 }, 'bass', -60, 0).onChange(v => audioEngine && audioEngine.setVolume('bass', v));
+            instFolder.add({ attractor: -60 }, 'attractor', -60, 0).name("Attractor Synth").onChange(v => {
+                if(audioEngine) {
+                    audioEngine.setVolume('attractorSynth', v);
+                    // Store for export
+                    audioEngine.params.vol.attractor = v;
+                }
+            });
             
             const fxFolder = audioFolder.addFolder("Effects");
             fxFolder.add({ reverb: 0.5 }, 'reverb', 0, 1).onChange(v => audioEngine && audioEngine.setParam('reverb', v));
@@ -602,7 +794,8 @@
                         if (colorMode == 1) {
                             // Velocity (Speed)
                             float speed = distance(pos.xyz, prevPos.xyz);
-                            vColorVal = speed * colorScale + colorOffset;
+                            // Use sqrt to make it more sensitive to lower velocities
+                            vColorVal = sqrt(speed) * colorScale + colorOffset;
                         } else if (colorMode == 2) {
                             // Position (Radius)
                             float dist = length(pos.xyz);
@@ -717,6 +910,18 @@
             time += dt;
 
             updateParameters(dt);
+            
+            // Step Shadow Simulation
+            stepShadowSimulation(dt);
+            
+            // Update Audio
+            if (CONFIG.audioEnabled && audioEngine) {
+                try {
+                    audioEngine.updateAttractorState(shadowPos.x, shadowPos.y, shadowPos.z);
+                } catch (e) {
+                    console.warn("Audio update error:", e);
+                }
+            }
 
             // Compute
             gpuCompute.compute();
@@ -806,6 +1011,7 @@
 
             // 3. Render Loop
             const totalFrames = duration * fps;
+            const trajectoryData = []; // Capture audio automation data
             
             try {
                 for (let i = 0; i < totalFrames; i++) {
@@ -821,6 +1027,18 @@
                     const dt = (1 / fps) * CONFIG.speed;
                     time += dt;
                     updateParameters(dt);
+                    
+                    // Step Shadow Simulation for Audio Sync
+                    stepShadowSimulation(dt);
+                    
+                    // Record Trajectory
+                    // Use the time relative to the start of the video (i / fps) for the audio scheduler
+                    trajectoryData.push({
+                        time: i / fps,
+                        x: shadowPos.x,
+                        y: shadowPos.y,
+                        z: shadowPos.z
+                    });
                     
                     gpuCompute.compute();
                     material.uniforms.texturePosition.value = gpuCompute.getCurrentRenderTarget(positionVariable).texture;
@@ -889,18 +1107,8 @@
                 let audioFile = null;
                 if (CONFIG.audioEnabled && audioEngine) {
                     statusText.innerText = "Rendering Audio...";
-                    // Render offline audio
-                    const audioBuffer = await audioEngine.renderOffline(duration);
-                    
-                    // Convert to WAV
-                    // We need to import bufferToWave from audio.js or define it here.
-                    // Since it's exported from audio.js, we can use it if we imported it.
-                    // But index.html imports AudioEngine, not bufferToWave.
-                    // Let's assume we update the import or just copy the helper here for simplicity if needed,
-                    // but better to import it.
-                    
-                    // Wait, we need to update the import statement at the top first.
-                    // Let's assume we will update the import to: import { AudioEngine, bufferToWave } from "./audio.js";
+                    // Render offline audio with captured trajectory
+                    const audioBuffer = await audioEngine.renderOffline(duration, trajectoryData);
                     
                     const wavData = bufferToWave(audioBuffer, audioBuffer.length);
                     await ffmpeg.writeFile('audio.wav', new Uint8Array(wavData));
