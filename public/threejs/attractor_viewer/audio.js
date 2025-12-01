@@ -1,11 +1,41 @@
 import * as Tone from 'tone';
 
+const DEFAULT_SYNTHS = {
+    pad: {
+        vol: -12,
+        osc: "fatsawtooth",
+        env: { attack: 2, decay: 3, sustain: 0.8, release: 5 }
+    },
+    keys: {
+        vol: -10,
+        osc: "triangle",
+        env: { attack: 0.02, decay: 0.3, sustain: 0.1, release: 1.5 }
+    },
+    bass: {
+        vol: -8,
+        osc: "square",
+        env: { attack: 0.1, decay: 0.5, sustain: 0.4, release: 2 }
+    },
+    attractor: {
+        vol: -60,
+        osc0: "sine",
+        osc1: "triangle",
+        env: { attack: 0.1, decay: 0.1, sustain: 1, release: 1 },
+        mappings: {
+            x: { param: "frequency", min: 100, max: 800 },
+            y: { param: "harmonicity", min: 0.5, max: 2.0 },
+            z: { param: "vibratoRate", min: 1, max: 10 }
+        }
+    }
+};
+
 export class AudioEngine {
     constructor() {
         this.isReady = false;
         this.isPlaying = false;
         this.bpm = 60;
         this.currentPatternName = "Ethereal";
+        this.synthConfig = JSON.parse(JSON.stringify(DEFAULT_SYNTHS));
         
         // Realtime instances
         this.realtimeInstruments = null;
@@ -86,6 +116,8 @@ export class AudioEngine {
     }
 
     createGraph(destination) {
+        const cfg = this.synthConfig;
+
         // --- Master Effects ---
         const limiter = new Tone.Limiter(-1).connect(destination);
         
@@ -107,28 +139,28 @@ export class AudioEngine {
         const pad = new Tone.PolySynth(Tone.FMSynth, {
             harmonicity: 0.5,
             modulationIndex: 1.2,
-            oscillator: { type: "fatsawtooth" },
-            envelope: { attack: 2, decay: 3, sustain: 0.8, release: 5 },
+            oscillator: { type: cfg.pad.osc },
+            envelope: cfg.pad.env,
             modulation: { type: "sine" },
             modulationEnvelope: { attack: 1, decay: 3, sustain: 0.8, release: 5 }
         }).connect(reverb);
-        pad.volume.value = this.params.vol.pad;
+        pad.volume.value = cfg.pad.vol;
 
         // 2. Keys (Melody/Arp)
         const keys = new Tone.PolySynth(Tone.Synth, {
-            oscillator: { type: "triangle" },
-            envelope: { attack: 0.02, decay: 0.3, sustain: 0.1, release: 1.5 }
+            oscillator: { type: cfg.keys.osc },
+            envelope: cfg.keys.env
         }).connect(delay);
-        keys.volume.value = this.params.vol.keys;
+        keys.volume.value = cfg.keys.vol;
 
         // 3. Bass (Grounding)
         const bass = new Tone.MonoSynth({
-            oscillator: { type: "square" },
+            oscillator: { type: cfg.bass.osc },
             filter: { Q: 2, type: "lowpass", rolloff: -24 },
-            envelope: { attack: 0.1, decay: 0.5, sustain: 0.4, release: 2 },
+            envelope: cfg.bass.env,
             filterEnvelope: { attack: 0.01, decay: 0.5, sustain: 0.2, release: 2, baseFrequency: 50, octaves: 2 }
         }).connect(limiter);
-        bass.volume.value = this.params.vol.bass;
+        bass.volume.value = cfg.bass.vol;
 
         // 4. Attractor Synth (Shadow Simulation)
         const attractorSynth = new Tone.DuoSynth({
@@ -138,16 +170,16 @@ export class AudioEngine {
             voice0: {
                 volume: -10,
                 portamento: 0,
-                oscillator: { type: "sine" },
+                oscillator: { type: cfg.attractor.osc0 },
                 filterEnvelope: { attack: 0.01, decay: 0, sustain: 1, release: 0.5 },
-                envelope: { attack: 0.01, decay: 0, sustain: 1, release: 0.5 }
+                envelope: cfg.attractor.env
             },
             voice1: {
                 volume: -10,
                 portamento: 0,
-                oscillator: { type: "triangle" },
+                oscillator: { type: cfg.attractor.osc1 },
                 filterEnvelope: { attack: 0.01, decay: 0, sustain: 1, release: 0.5 },
-                envelope: { attack: 0.01, decay: 0, sustain: 1, release: 0.5 }
+                envelope: cfg.attractor.env
             }
         }).connect(reverb);
         attractorSynth.volume.value = -60; // Start silent, user enables it
@@ -159,26 +191,29 @@ export class AudioEngine {
         if (!this.realtimeInstruments || !this.realtimeInstruments.attractorSynth) return;
         
         const synth = this.realtimeInstruments.attractorSynth;
+        const mappings = this.synthConfig.attractor.mappings;
         
         // Safety check
         if (isNaN(x) || isNaN(y) || isNaN(z)) return;
 
-        // Map X to Frequency (Pitch)
-        // Scale roughly -20 to 20 -> 100Hz to 800Hz
-        const freq = 200 + (Math.abs(x) * 20);
-        
-        // Use frequency.rampTo instead of setNote for continuous updates
-        // Clamp frequency to safe range
-        const safeFreq = Math.max(20, Math.min(20000, freq));
-        synth.frequency.rampTo(safeFreq, 0.1);
-        
-        // Map Y to Harmonicity
-        const harm = 0.5 + (Math.abs(y) * 0.1);
-        synth.harmonicity.rampTo(harm, 0.1);
-        
-        // Map Z to Vibrato Rate
-        const vib = 1 + (Math.abs(z) * 0.5);
-        synth.vibratoRate.rampTo(vib, 0.1);
+        ['x', 'y', 'z'].forEach(axis => {
+            const map = mappings[axis];
+            const val = (axis === 'x') ? x : (axis === 'y') ? y : z;
+            const absVal = Math.abs(val);
+            
+            // Map 0..20 to min..max (approximate range of attractors)
+            const norm = Math.min(1, absVal / 20); 
+            const target = map.min + (map.max - map.min) * norm;
+            
+            if (map.param === 'frequency') {
+                const safeFreq = Math.max(20, Math.min(20000, target));
+                synth.frequency.rampTo(safeFreq, 0.1);
+            }
+            if (map.param === 'harmonicity') synth.harmonicity.rampTo(target, 0.1);
+            if (map.param === 'vibratoRate') synth.vibratoRate.rampTo(target, 0.1);
+            if (map.param === 'vibratoAmount') synth.vibratoAmount.rampTo(target, 0.1);
+            if (map.param === 'volume') synth.volume.rampTo(target, 0.1);
+        });
     }
 
     scheduleEvents(instruments, transport, trajectoryData) {
@@ -188,14 +223,6 @@ export class AudioEngine {
         
         // 1. Chord Loop (Pad) - Slow changes
         const chordLoop = new Tone.Loop(time => {
-            // Get current measure index
-            // Note: In Offline context, transport.position might be different format or we need to calculate from seconds
-            // But Tone.Loop handles 'time' correctly relative to transport
-            
-            // We need a way to track measure index that works in both contexts
-            // Tone.Transport.position is a string "BAR:BEAT:SIXTEENTH"
-            // transport.position is what we should use
-            
             const pos = transport.position.toString().split(":");
             const i = Math.floor(parseFloat(pos[0])) % chords.length;
             const chord = chords[i];
@@ -223,29 +250,28 @@ export class AudioEngine {
 
         // 3. Attractor Automation (Offline Only)
         if (trajectoryData && instruments.attractorSynth) {
-            // trajectoryData is array of { time, x, y, z }
-            // We need to schedule automation
             const synth = instruments.attractorSynth;
+            const mappings = this.synthConfig.attractor.mappings;
             
-            // Trigger attack at start
             synth.triggerAttack(200, 0);
             
             trajectoryData.forEach(point => {
                 const t = point.time;
-                const x = point.x;
-                const y = point.y;
-                const z = point.z;
                 
-                const freq = 200 + (Math.abs(x) * 20);
-                const harm = 0.5 + (Math.abs(y) * 0.1);
-                const vib = 1 + (Math.abs(z) * 0.5);
-                
-                synth.frequency.setValueAtTime(freq, t);
-                synth.harmonicity.setValueAtTime(harm, t);
-                synth.vibratoRate.setValueAtTime(vib, t);
+                ['x', 'y', 'z'].forEach(axis => {
+                    const map = mappings[axis];
+                    const val = (axis === 'x') ? point.x : (axis === 'y') ? point.y : point.z;
+                    const absVal = Math.abs(val);
+                    const norm = Math.min(1, absVal / 20); 
+                    const target = map.min + (map.max - map.min) * norm;
+                    
+                    if (map.param === 'frequency') synth.frequency.setValueAtTime(Math.max(20, target), t);
+                    if (map.param === 'harmonicity') synth.harmonicity.setValueAtTime(target, t);
+                    if (map.param === 'vibratoRate') synth.vibratoRate.setValueAtTime(target, t);
+                    if (map.param === 'vibratoAmount') synth.vibratoAmount.setValueAtTime(target, t);
+                    if (map.param === 'volume') synth.volume.setValueAtTime(target, t);
+                });
             });
-            
-            // Release at end (handled by duration usually, but good to be safe)
         }
 
         return [chordLoop, arpLoop];
@@ -282,10 +308,52 @@ export class AudioEngine {
     setPattern(name) {
         if (this.patterns[name]) {
             this.currentPatternName = name;
+            
+            // Update Config
+            if (this.patterns[name].synths) {
+                this.synthConfig = this.patterns[name].synths;
+            } else {
+                this.synthConfig = JSON.parse(JSON.stringify(DEFAULT_SYNTHS));
+            }
+            
+            // Apply to running instruments
+            if (this.realtimeInstruments) {
+                this.updateSynthParams(this.realtimeInstruments);
+            }
+
             if (this.isPlaying) {
                 this.start(); // Restart to apply pattern
             }
         }
+    }
+    
+    updateSynthParams(instruments) {
+        const cfg = this.synthConfig;
+        
+        // Pad
+        instruments.pad.set({
+            oscillator: { type: cfg.pad.osc },
+            envelope: cfg.pad.env
+        });
+        instruments.pad.volume.rampTo(cfg.pad.vol, 0.1);
+        
+        // Keys
+        instruments.keys.set({
+            oscillator: { type: cfg.keys.osc },
+            envelope: cfg.keys.env
+        });
+        instruments.keys.volume.rampTo(cfg.keys.vol, 0.1);
+        
+        // Bass
+        instruments.bass.set({
+            oscillator: { type: cfg.bass.osc },
+            envelope: cfg.bass.env
+        });
+        instruments.bass.volume.rampTo(cfg.bass.vol, 0.1);
+        
+        // Attractor
+        instruments.attractorSynth.voice0.set({ oscillator: { type: cfg.attractor.osc0 }, envelope: cfg.attractor.env });
+        instruments.attractorSynth.voice1.set({ oscillator: { type: cfg.attractor.osc1 }, envelope: cfg.attractor.env });
     }
 
     setVolume(instrument, db) {

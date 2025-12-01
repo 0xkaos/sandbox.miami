@@ -21,6 +21,13 @@
         header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; }
         h2 { margin: 0; }
         
+        /* Tabs */
+        .tabs { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid #333; }
+        .tab { padding: 8px 16px; cursor: pointer; background: #222; border: 1px solid #333; border-bottom: none; border-radius: 4px 4px 0 0; color: #888; }
+        .tab.active { background: #333; color: #fff; font-weight: bold; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
         /* Controls */
         .controls { display: flex; gap: 10px; align-items: center; }
         button { background: #333; color: white; border: 1px solid #555; padding: 8px 12px; cursor: pointer; border-radius: 4px; }
@@ -28,6 +35,15 @@
         button.primary { background: #0066cc; border-color: #0055aa; }
         button.primary:hover { background: #0077dd; }
         button.danger { background: #cc3333; border-color: #aa2222; }
+        
+        /* Synth UI */
+        .synth-section { background: #1a1a1a; padding: 15px; border-radius: 4px; margin-bottom: 15px; border: 1px solid #333; }
+        .synth-section h4 { margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 5px; color: #00ffff; }
+        .param-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+        .param-group { display: flex; flex-direction: column; gap: 5px; }
+        .param-group label { font-size: 0.8em; color: #aaa; }
+        .param-group input[type="range"] { width: 100%; }
+        .param-group select { background: #222; color: #fff; border: 1px solid #444; padding: 4px; }
         
         /* Sequencer Grid */
         #sequencer-ui { display: flex; flex-direction: column; gap: 10px; }
@@ -63,12 +79,37 @@
         <div id="editor-container" style="display:none;">
             <div class="controls" style="margin-bottom: 10px;">
                 <label>Name: <input type="text" id="pattern-name-input" style="width: 200px;"></label>
-                <button id="btn-add-step">Add Step</button>
                 <button id="btn-delete-pattern" class="danger">Delete Pattern</button>
             </div>
             
-            <div id="sequencer-ui">
-                <!-- Steps go here -->
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('sequencer')">Sequencer</div>
+                <div class="tab" onclick="switchTab('synth')">Synth Design</div>
+            </div>
+            
+            <div id="tab-sequencer" class="tab-content active">
+                <div class="controls" style="margin-bottom: 10px;">
+                    <button id="btn-add-step">Add Step</button>
+                </div>
+                <div id="sequencer-ui">
+                    <!-- Steps go here -->
+                </div>
+            </div>
+
+            <div id="tab-synth" class="tab-content">
+                <div class="controls" style="margin-bottom: 15px;">
+                    <label>Instrument: 
+                        <select id="synth-select" onchange="renderSynthParams()">
+                            <option value="pad">Pad (Chords)</option>
+                            <option value="keys">Keys (Arp)</option>
+                            <option value="bass">Bass</option>
+                            <option value="attractor">Attractor Voice</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="synth-ui">
+                    <!-- Synth Params go here -->
+                </div>
             </div>
         </div>
     </div>
@@ -92,8 +133,39 @@
         let isPlaying = false;
         let sequence = null;
         
+        // Default Synth Configs
+        const DEFAULT_SYNTHS = {
+            pad: {
+                vol: -12,
+                osc: "fatsawtooth",
+                env: { attack: 2, decay: 3, sustain: 0.8, release: 5 }
+            },
+            keys: {
+                vol: -10,
+                osc: "triangle",
+                env: { attack: 0.02, decay: 0.3, sustain: 0.1, release: 1.5 }
+            },
+            bass: {
+                vol: -8,
+                osc: "square",
+                env: { attack: 0.1, decay: 0.5, sustain: 0.4, release: 2 }
+            },
+            attractor: {
+                vol: -60,
+                osc0: "sine",
+                osc1: "triangle",
+                env: { attack: 0.1, decay: 0.1, sustain: 1, release: 1 },
+                mappings: {
+                    x: { param: "frequency", min: 100, max: 800 },
+                    y: { param: "harmonicity", min: 0.5, max: 2.0 },
+                    z: { param: "vibratoRate", min: 1, max: 10 }
+                }
+            }
+        };
+
         // Audio
-        let synth, bassSynth;
+        let pad, keys, bass, attractor;
+        let reverb, delay;
 
         // DOM
         const ui = {
@@ -102,8 +174,118 @@
             title: document.getElementById('current-pattern-name'),
             nameInput: document.getElementById('pattern-name-input'),
             steps: document.getElementById('sequencer-ui'),
+            synthUi: document.getElementById('synth-ui'),
+            synthSelect: document.getElementById('synth-select'),
             status: document.getElementById('status-bar')
         };
+
+        window.switchTab = function(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            // Find tab by text content (hacky but works for simple setup)
+            const tabs = document.querySelectorAll('.tab');
+            if(tabName === 'sequencer') tabs[0].classList.add('active');
+            if(tabName === 'synth') tabs[1].classList.add('active');
+            
+            document.getElementById('tab-' + tabName).classList.add('active');
+            
+            if(tabName === 'synth') renderSynthParams();
+        };
+
+        window.renderSynthParams = function() {
+            const inst = ui.synthSelect.value;
+            const data = patterns[currentPatternId];
+            if (!data.synths) data.synths = JSON.parse(JSON.stringify(DEFAULT_SYNTHS));
+            const config = data.synths[inst];
+            
+            let html = `<div class="synth-section"><h4>${inst.toUpperCase()} Settings</h4><div class="param-grid">`;
+            
+            // Volume
+            html += createRangeInput(inst, 'vol', 'Volume (dB)', config.vol, -60, 0, 1);
+            
+            // Oscillators
+            if (inst === 'attractor') {
+                html += createSelectInput(inst, 'osc0', 'Voice 0 Osc', config.osc0, ['sine', 'square', 'triangle', 'sawtooth']);
+                html += createSelectInput(inst, 'osc1', 'Voice 1 Osc', config.osc1, ['sine', 'square', 'triangle', 'sawtooth']);
+            } else {
+                html += createSelectInput(inst, 'osc', 'Oscillator', config.osc, ['sine', 'square', 'triangle', 'sawtooth', 'fatsawtooth', 'fatsquare']);
+            }
+            
+            html += `</div></div>`;
+            
+            // Envelope
+            html += `<div class="synth-section"><h4>Envelope (ADSR)</h4><div class="param-grid">`;
+            html += createRangeInput(inst, 'env.attack', 'Attack (s)', config.env.attack, 0, 5, 0.01);
+            html += createRangeInput(inst, 'env.decay', 'Decay (s)', config.env.decay, 0, 5, 0.01);
+            html += createRangeInput(inst, 'env.sustain', 'Sustain (0-1)', config.env.sustain, 0, 1, 0.01);
+            html += createRangeInput(inst, 'env.release', 'Release (s)', config.env.release, 0, 10, 0.01);
+            html += `</div></div>`;
+            
+            // Attractor Mappings
+            if (inst === 'attractor') {
+                html += `<div class="synth-section"><h4>Chaos Mappings</h4>`;
+                ['x', 'y', 'z'].forEach(axis => {
+                    const map = config.mappings[axis];
+                    html += `<div style="margin-bottom: 10px; border-top: 1px solid #333; padding-top: 5px;">
+                        <strong>Axis ${axis.toUpperCase()} -> </strong>
+                        <select onchange="updateMapping('${axis}', 'param', this.value)">
+                            <option value="frequency" ${map.param === 'frequency' ? 'selected' : ''}>Frequency (Pitch)</option>
+                            <option value="harmonicity" ${map.param === 'harmonicity' ? 'selected' : ''}>Harmonicity (Timbre)</option>
+                            <option value="vibratoRate" ${map.param === 'vibratoRate' ? 'selected' : ''}>Vibrato Rate</option>
+                            <option value="vibratoAmount" ${map.param === 'vibratoAmount' ? 'selected' : ''}>Vibrato Depth</option>
+                            <option value="volume" ${map.param === 'volume' ? 'selected' : ''}>Volume</option>
+                        </select>
+                        <div class="param-grid" style="margin-top: 5px;">
+                            <div class="param-group"><label>Min</label><input type="number" value="${map.min}" onchange="updateMapping('${axis}', 'min', this.value)"></div>
+                            <div class="param-group"><label>Max</label><input type="number" value="${map.max}" onchange="updateMapping('${axis}', 'max', this.value)"></div>
+                        </div>
+                    </div>`;
+                });
+                html += `</div>`;
+            }
+            
+            ui.synthUi.innerHTML = html;
+        };
+
+        window.updateSynthParam = function(inst, path, value) {
+            const data = patterns[currentPatternId];
+            let target = data.synths[inst];
+            
+            if (path.includes('.')) {
+                const parts = path.split('.');
+                target = target[parts[0]];
+                target[parts[1]] = parseFloat(value);
+            } else {
+                if (path.startsWith('osc')) target[path] = value; // String
+                else target[path] = parseFloat(value); // Number
+            }
+            
+            updateRealtimeSynths();
+        };
+
+        window.updateMapping = function(axis, field, value) {
+            const data = patterns[currentPatternId];
+            const map = data.synths.attractor.mappings[axis];
+            if (field === 'param') map.param = value;
+            else map[field] = parseFloat(value);
+        };
+
+        function createRangeInput(inst, path, label, val, min, max, step) {
+            return `<div class="param-group">
+                <label>${label}: <span id="val-${inst}-${path.replace('.','-')}">${val}</span></label>
+                <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" 
+                    oninput="document.getElementById('val-${inst}-${path.replace('.','-')}').innerText = this.value; updateSynthParam('${inst}', '${path}', this.value)">
+            </div>`;
+        }
+
+        function createSelectInput(inst, path, label, val, options) {
+            let opts = options.map(o => `<option value="${o}" ${o === val ? 'selected' : ''}>${o}</option>`).join('');
+            return `<div class="param-group">
+                <label>${label}</label>
+                <select onchange="updateSynthParam('${inst}', '${path}', this.value)">${opts}</select>
+            </div>`;
+        }
 
         async function init() {
             setStatus("Loading patterns...");
@@ -115,14 +297,52 @@
         }
 
         function setupAudio() {
-            synth = new Tone.PolySynth(Tone.Synth).toDestination();
-            synth.volume.value = -10;
+            // Effects
+            reverb = new Tone.Reverb({ decay: 4, wet: 0.5 }).toDestination();
+            delay = new Tone.PingPongDelay({ delayTime: "8n.", feedback: 0.3, wet: 0.3 }).connect(reverb);
+
+            // Instruments
+            pad = new Tone.PolySynth(Tone.FMSynth).connect(reverb);
+            keys = new Tone.PolySynth(Tone.Synth).connect(delay);
+            bass = new Tone.MonoSynth().toDestination();
+            attractor = new Tone.DuoSynth().connect(reverb);
             
-            bassSynth = new Tone.MonoSynth({
-                oscillator: { type: "square" },
-                filter: { Q: 2, type: "lowpass", rolloff: -24 }
-            }).toDestination();
-            bassSynth.volume.value = -10;
+            // Initial volumes
+            pad.volume.value = -12;
+            keys.volume.value = -10;
+            bass.volume.value = -8;
+            attractor.volume.value = -60;
+        }
+
+        function updateRealtimeSynths() {
+            if (!currentPatternId) return;
+            const config = patterns[currentPatternId].synths;
+            if (!config) return;
+
+            // Pad
+            pad.set({
+                oscillator: { type: config.pad.osc },
+                envelope: config.pad.env
+            });
+            pad.volume.rampTo(config.pad.vol, 0.1);
+
+            // Keys
+            keys.set({
+                oscillator: { type: config.keys.osc },
+                envelope: config.keys.env
+            });
+            keys.volume.rampTo(config.keys.vol, 0.1);
+
+            // Bass
+            bass.set({
+                oscillator: { type: config.bass.osc },
+                envelope: config.bass.env
+            });
+            bass.volume.rampTo(config.bass.vol, 0.1);
+            
+            // Attractor
+            attractor.voice0.set({ oscillator: { type: config.attractor.osc0 }, envelope: config.attractor.env });
+            attractor.voice1.set({ oscillator: { type: config.attractor.osc1 }, envelope: config.attractor.env });
         }
 
         function setupEvents() {
@@ -191,6 +411,14 @@
             ui.editor.style.display = 'block';
             ui.title.innerText = id;
             ui.nameInput.value = id;
+            
+            // Ensure synths exist
+            if (!patterns[id].synths) {
+                patterns[id].synths = JSON.parse(JSON.stringify(DEFAULT_SYNTHS));
+            }
+            
+            // Reset to sequencer tab
+            switchTab('sequencer');
             renderSteps();
         }
 
@@ -284,7 +512,8 @@
             const name = "Pattern " + (Object.keys(patterns).length + 1);
             patterns[name] = {
                 chords: [["C3", "E3", "G3"]],
-                bass: ["C2"]
+                bass: ["C2"],
+                synths: JSON.parse(JSON.stringify(DEFAULT_SYNTHS))
             };
             selectPattern(name);
         }
@@ -305,9 +534,11 @@
             stopPattern();
             
             if (!currentPatternId) return;
+            updateRealtimeSynths(); // Ensure latest settings
+
             const data = patterns[currentPatternId];
             const chords = data.chords;
-            const bass = data.bass;
+            const bassNotes = data.bass;
             
             let index = 0;
             
@@ -315,10 +546,17 @@
                 const i = index % chords.length;
                 
                 if (chords[i] && chords[i].length > 0) {
-                    synth.triggerAttackRelease(chords[i], "1m", time);
+                    pad.triggerAttackRelease(chords[i], "1m", time);
+                    
+                    // Simple Arp for Keys
+                    if (Math.random() > 0.3) {
+                        const note = chords[i][Math.floor(Math.random() * chords[i].length)];
+                        const highNote = Tone.Frequency(note).transpose(12);
+                        keys.triggerAttackRelease(highNote, "16n", time);
+                    }
                 }
-                if (bass[i]) {
-                    bassSynth.triggerAttackRelease(bass[i], "1m", time);
+                if (bassNotes[i]) {
+                    bass.triggerAttackRelease(bassNotes[i], "1m", time);
                 }
                 
                 // Highlight UI
