@@ -557,7 +557,12 @@
 
             // GUI
             gui = new GUI({ title: "Attractor Settings" });
-            setupGui();
+            
+            // Pre-load audio engine to get patterns
+            audioEngine = new AudioEngine();
+            const patternNames = await audioEngine.loadPatterns();
+            
+            setupGui(patternNames);
 
             // Initial Setup
             changeAttractor(CONFIG.attractor);
@@ -580,7 +585,7 @@
             time = 0;
         }
 
-        function setupGui() {
+        function setupGui(loadedPatterns) {
             const mainFolder = gui.addFolder("General");
             mainFolder.add(CONFIG, 'attractor', Object.keys(ATTRACTORS)).onChange(changeAttractor);
             mainFolder.add({ reset: resetParticles }, 'reset').name("Reset Simulation");
@@ -625,24 +630,14 @@
 
             const audioFolder = gui.addFolder("Audio (Tone.js)");
             let patternController;
+            
+            // Use loaded patterns if available, else defaults
+            const patternList = loadedPatterns && loadedPatterns.length > 0 ? loadedPatterns : ["Ethereal", "Dark Space", "Mystery", "Drone"];
 
             audioFolder.add(CONFIG, 'audioEnabled').name("Enable Audio").onChange(async v => {
                 if (v) {
-                    if (!audioEngine) {
-                        audioEngine = new AudioEngine();
+                    if (!audioEngine.isReady) {
                         await audioEngine.init();
-                        
-                        // Update Pattern List from Cloud
-                        const newPatterns = Object.keys(audioEngine.patterns);
-                        if (newPatterns.length > 0 && patternController) {
-                            patternController.options(newPatterns);
-                            
-                            if (!newPatterns.includes(CONFIG.audioPattern)) {
-                                CONFIG.audioPattern = newPatterns[0];
-                                patternController.updateDisplay();
-                            }
-                            audioEngine.setPattern(CONFIG.audioPattern);
-                        }
                     }
                     audioEngine.start();
                 } else {
@@ -655,7 +650,7 @@
             audioFolder.add(CONFIG, 'audioBpm', 30, 200).name("BPM").onChange(v => {
                 if(audioEngine) audioEngine.setParam('bpm', v);
             });
-            patternController = audioFolder.add(CONFIG, 'audioPattern', ["Ethereal", "Dark Space", "Mystery", "Drone"]).name("Pattern").onChange(v => {
+            patternController = audioFolder.add(CONFIG, 'audioPattern', patternList).name("Pattern").onChange(v => {
                 if(audioEngine) audioEngine.setPattern(v);
             });
             

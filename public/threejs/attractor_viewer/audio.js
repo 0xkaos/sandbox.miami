@@ -58,11 +58,7 @@ export class AudioEngine {
         };
     }
 
-    async init() {
-        await Tone.start();
-        Tone.Transport.bpm.value = this.bpm;
-        
-        // Load Patterns from Cloud
+    async loadPatterns() {
         try {
             const res = await fetch('/api/audio');
             if (res.ok) {
@@ -70,11 +66,18 @@ export class AudioEngine {
                 if (Object.keys(cloudPatterns).length > 0) {
                     this.patterns = cloudPatterns;
                     console.log("Loaded patterns from cloud:", Object.keys(this.patterns));
+                    return Object.keys(this.patterns);
                 }
             }
         } catch (e) {
             console.warn("Failed to load cloud patterns, using defaults", e);
         }
+        return Object.keys(this.patterns);
+    }
+
+    async init() {
+        await Tone.start();
+        Tone.Transport.bpm.value = this.bpm;
         
         // Setup Realtime Graph
         this.realtimeInstruments = this.createGraph(Tone.Destination);
