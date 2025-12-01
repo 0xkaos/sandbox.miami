@@ -624,11 +624,25 @@
             gui.folders_oscillators.add({ add: () => addOscillator(gui.folders_oscillators) }, "add").name("Add Oscillator");
 
             const audioFolder = gui.addFolder("Audio (Tone.js)");
+            let patternController;
+
             audioFolder.add(CONFIG, 'audioEnabled').name("Enable Audio").onChange(async v => {
                 if (v) {
                     if (!audioEngine) {
                         audioEngine = new AudioEngine();
                         await audioEngine.init();
+                        
+                        // Update Pattern List from Cloud
+                        const newPatterns = Object.keys(audioEngine.patterns);
+                        if (newPatterns.length > 0 && patternController) {
+                            patternController.options(newPatterns);
+                            
+                            if (!newPatterns.includes(CONFIG.audioPattern)) {
+                                CONFIG.audioPattern = newPatterns[0];
+                                patternController.updateDisplay();
+                            }
+                            audioEngine.setPattern(CONFIG.audioPattern);
+                        }
                     }
                     audioEngine.start();
                 } else {
@@ -641,7 +655,7 @@
             audioFolder.add(CONFIG, 'audioBpm', 30, 200).name("BPM").onChange(v => {
                 if(audioEngine) audioEngine.setParam('bpm', v);
             });
-            audioFolder.add(CONFIG, 'audioPattern', ["Ethereal", "Dark Space", "Mystery", "Drone"]).name("Pattern").onChange(v => {
+            patternController = audioFolder.add(CONFIG, 'audioPattern', ["Ethereal", "Dark Space", "Mystery", "Drone"]).name("Pattern").onChange(v => {
                 if(audioEngine) audioEngine.setPattern(v);
             });
             
