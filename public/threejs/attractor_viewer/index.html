@@ -634,6 +634,19 @@
             // Use loaded patterns if available, else defaults
             const patternList = loadedPatterns && loadedPatterns.length > 0 ? loadedPatterns : ["Ethereal", "Dark Space", "Mystery", "Drone"];
 
+            audioFolder.add({ reload: async () => {
+                if(audioEngine) {
+                    const newPatterns = await audioEngine.loadPatterns();
+                    // Update Dropdown
+                    if(patternController) {
+                        patternController.options(newPatterns);
+                    }
+                    // Refresh current pattern settings
+                    audioEngine.setPattern(CONFIG.audioPattern);
+                    console.log("Patterns reloaded");
+                }
+            }}, 'reload').name("Reload Patterns");
+
             audioFolder.add(CONFIG, 'audioEnabled').name("Enable Audio").onChange(async v => {
                 if (v) {
                     if (!audioEngine.isReady) {

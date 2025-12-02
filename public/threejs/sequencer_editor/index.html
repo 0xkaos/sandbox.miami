@@ -70,8 +70,6 @@
         <header>
             <h2 id="current-pattern-name">Select a Pattern</h2>
             <div class="controls">
-                <button id="btn-play">▶ Play</button>
-                <button id="btn-stop">■ Stop</button>
                 <button id="btn-save" class="primary">Save to Cloud</button>
             </div>
         </header>
@@ -116,22 +114,11 @@
 
     <div id="status-bar">Ready</div>
 
-    <script type="importmap">
-    {
-        "imports": {
-            "tone": "https://cdn.jsdelivr.net/npm/tone@14.7.77/+esm"
-        }
-    }
-    </script>
-
     <script type="module">
-        import * as Tone from "tone";
-
         // State
         let patterns = {};
         let currentPatternId = null;
-        let isPlaying = false;
-        let sequence = null;
+        let sessionPassword = null;
         
         // Default Synth Configs
         const DEFAULT_SYNTHS = {
@@ -164,8 +151,7 @@
         };
 
         // Audio
-        let pad, keys, bass, attractor;
-        let reverb, delay;
+        // Removed local player as per request
 
         // DOM
         const ui = {
@@ -260,8 +246,6 @@
                 if (path.startsWith('osc')) target[path] = value; // String
                 else target[path] = parseFloat(value); // Number
             }
-            
-            updateRealtimeSynths();
         };
 
         window.updateMapping = function(axis, field, value) {
@@ -288,67 +272,22 @@
         }
 
         async function init() {
+            // Session Password Protection
+            while (!sessionPassword) {
+                const input = prompt("Enter admin password to access Editor:");
+                if (input) sessionPassword = input;
+                else alert("Password required.");
+            }
+
             setStatus("Loading patterns...");
             await loadPatterns();
-            setupAudio();
             setupEvents();
             renderList();
             setStatus("Ready");
         }
 
-        function setupAudio() {
-            // Effects
-            reverb = new Tone.Reverb({ decay: 4, wet: 0.5 }).toDestination();
-            delay = new Tone.PingPongDelay({ delayTime: "8n.", feedback: 0.3, wet: 0.3 }).connect(reverb);
-
-            // Instruments
-            pad = new Tone.PolySynth(Tone.FMSynth).connect(reverb);
-            keys = new Tone.PolySynth(Tone.Synth).connect(delay);
-            bass = new Tone.MonoSynth().toDestination();
-            attractor = new Tone.DuoSynth().connect(reverb);
-            
-            // Initial volumes
-            pad.volume.value = -12;
-            keys.volume.value = -10;
-            bass.volume.value = -8;
-            attractor.volume.value = -60;
-        }
-
-        function updateRealtimeSynths() {
-            if (!currentPatternId) return;
-            const config = patterns[currentPatternId].synths;
-            if (!config) return;
-
-            // Pad
-            pad.set({
-                oscillator: { type: config.pad.osc },
-                envelope: config.pad.env
-            });
-            pad.volume.rampTo(config.pad.vol, 0.1);
-
-            // Keys
-            keys.set({
-                oscillator: { type: config.keys.osc },
-                envelope: config.keys.env
-            });
-            keys.volume.rampTo(config.keys.vol, 0.1);
-
-            // Bass
-            bass.set({
-                oscillator: { type: config.bass.osc },
-                envelope: config.bass.env
-            });
-            bass.volume.rampTo(config.bass.vol, 0.1);
-            
-            // Attractor
-            attractor.voice0.set({ oscillator: { type: config.attractor.osc0 }, envelope: config.attractor.env });
-            attractor.voice1.set({ oscillator: { type: config.attractor.osc1 }, envelope: config.attractor.env });
-        }
-
         function setupEvents() {
             document.getElementById('btn-new-pattern').onclick = createNewPattern;
-            document.getElementById('btn-play').onclick = playPattern;
-            document.getElementById('btn-stop').onclick = stopPattern;
             document.getElementById('btn-save').onclick = saveToCloud;
             document.getElementById('btn-add-step').onclick = addStep;
             document.getElementById('btn-delete-pattern').onclick = deletePattern;
@@ -529,64 +468,11 @@
             }
         }
 
-        async function playPattern() {
-            await Tone.start();
-            stopPattern();
-            
-            if (!currentPatternId) return;
-            updateRealtimeSynths(); // Ensure latest settings
-
-            const data = patterns[currentPatternId];
-            const chords = data.chords;
-            const bassNotes = data.bass;
-            
-            let index = 0;
-            
-            sequence = new Tone.Loop(time => {
-                const i = index % chords.length;
-                
-                if (chords[i] && chords[i].length > 0) {
-                    pad.triggerAttackRelease(chords[i], "1m", time);
-                    
-                    // Simple Arp for Keys
-                    if (Math.random() > 0.3) {
-                        const note = chords[i][Math.floor(Math.random() * chords[i].length)];
-                        const highNote = Tone.Frequency(note).transpose(12);
-                        keys.triggerAttackRelease(highNote, "16n", time);
-                    }
-                }
-                if (bassNotes[i]) {
-                    bass.triggerAttackRelease(bassNotes[i], "1m", time);
-                }
-                
-                // Highlight UI
-                const rows = document.querySelectorAll('.step-row');
-                rows.forEach(r => r.style.borderColor = '#333');
-                if (rows[i]) rows[i].style.borderColor = '#00ffff';
-                
-                index++;
-            }, "1m").start(0);
-            
-            Tone.Transport.start();
-            isPlaying = true;
-        }
-
-        function stopPattern() {
-            Tone.Transport.stop();
-            Tone.Transport.cancel(); // Clears loops
-            if (sequence) {
-                sequence.dispose();
-                sequence = null;
-            }
-            isPlaying = false;
-            // Reset UI highlights
-            const rows = document.querySelectorAll('.step-row');
-            rows.forEach(r => r.style.borderColor = '#333');
-        }
-
         async function saveToCloud() {
-            const password = prompt("Enter admin password:");
-            if (!password) return;
+            if (!sessionPassword) {
+                sessionPassword = prompt("Enter admin password:");
+                if (!sessionPassword) return;
+            }
             
             setStatus("Saving...");
             
@@ -596,7 +482,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Admin-Password': password
+                        'X-Admin-Password': sessionPassword
                     },
                     body: JSON.stringify(patterns)
                 });
@@ -614,6 +500,9 @@
                     
                     setStatus("Save failed: " + (errData.error || res.statusText) + (errData.detail ? " - " + errData.detail : ""));
                     console.error("Save failed details:", errData);
+                    
+                    // If unauthorized, maybe clear password
+                    if (res.status === 401) sessionPassword = null;
                 }
             } catch (e) {
                 setStatus("Save error: " + e.message);
