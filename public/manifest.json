@@ -18,6 +18,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/neural_field/",
+    "title": "Neural Tide - Connected Field",
+    "description": "Immersive neural lattice of connected particles with sinusoidal undulations, interactive attraction, and bloom.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/script_editor/",
     "title": "Script Editor",
     "description": "Create and refine vector stroke data for script characters with live playback and editing tools.",

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neural Tide - Connected Field</title>
+  <meta name="description" content="Immersive neural lattice of connected particles with sinusoidal undulations, interactive attraction, and bloom." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Archivo+Black&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-1: #050a12;
+      --bg-2: #03040a;
+      --panel: rgba(7, 12, 22, 0.64);
+      --text: #d9e9ff;
+      --muted: #9bb3d4;
+      --accent: #59f5ff;
+      --accent-2: #f8d06a;
+      --stroke: rgba(255, 255, 255, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: "Space Grotesk", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(89, 245, 255, 0.06), transparent 28%),
+        radial-gradient(circle at 80% 10%, rgba(248, 208, 106, 0.08), transparent 30%),
+        linear-gradient(120deg, var(--bg-1), var(--bg-2));
+      color: var(--text);
+      overflow: hidden;
+      min-height: 100vh;
+    }
+
+    canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.05), transparent 40%),
+        linear-gradient(160deg, rgba(10, 18, 32, 0.9), rgba(2, 4, 12, 0.9));
+    }
+
+    .ui {
+      position: fixed;
+      top: 18px;
+      left: 18px;
+      max-width: 360px;
+      padding: 18px 20px;
+      border: 1px solid var(--stroke);
+      background: linear-gradient(145deg, rgba(7, 12, 22, 0.75), rgba(7, 12, 22, 0.35));
+      backdrop-filter: blur(8px);
+      border-radius: 14px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(89, 245, 255, 0.08);
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .badge {
+      font-family: "Archivo Black", "Space Grotesk", sans-serif;
+      letter-spacing: 0.16em;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    h1 {
+      font-family: "Archivo Black", "Space Grotesk", sans-serif;
+      font-size: 1.7rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      line-height: 1.1;
+    }
+
+    p {
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 0.98rem;
+      margin-bottom: 12px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    button {
+      pointer-events: auto;
+      cursor: pointer;
+      border: 1px solid var(--stroke);
+      background: rgba(89, 245, 255, 0.12);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      border-color: rgba(89, 245, 255, 0.7);
+      box-shadow: 0 10px 30px rgba(89, 245, 255, 0.22);
+    }
+
+    button.active {
+      border-color: rgba(248, 208, 106, 0.8);
+      box-shadow: 0 0 0 1px rgba(248, 208, 106, 0.35), 0 14px 40px rgba(248, 208, 106, 0.25);
+      background: rgba(248, 208, 106, 0.2);
+    }
+
+    .hints {
+      margin-top: 10px;
+      font-size: 0.82rem;
+      color: rgba(217, 233, 255, 0.7);
+      letter-spacing: 0.02em;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: rgba(217, 233, 255, 0.8);
+      margin-top: 6px;
+    }
+
+    .status::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 14px rgba(89, 245, 255, 0.7);
+    }
+
+    @media (max-width: 640px) {
+      .ui {
+        right: 12px;
+        max-width: none;
+        width: calc(100% - 24px);
+      }
+
+      h1 {
+        font-size: 1.4rem;
+      }
+
+      .controls {
+        flex-wrap: wrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div class="ui">
+    <div class="row">
+      <span class="badge">three.js sketch</span>
+      <span class="status">Field live</span>
+    </div>
+    <h1>Neural Tide</h1>
+    <p>
+      Connected particle field breathing in complex sinusoidal waves. Orbit to inspect the lattice,
+      move to disturb the neural fabric, and pulse to surge the bloom.
+    </p>
+    <div class="controls">
+      <button id="pulse">Pulse</button>
+      <button id="palette">Shuffle Palette</button>
+    </div>
+    <div class="hints">Drag to orbit • Scroll to zoom • Move cursor to attract filaments</div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import { EffectComposer } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+
+    const canvas = document.getElementById('scene');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x03060d, 0.008);
+
+    const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 500);
+    camera.position.set(0, 26, 90);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 26;
+    controls.maxDistance = 150;
+
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.9, 0.8, 0.45);
+    composer.addPass(bloom);
+
+    const palettes = [
+      {
+        name: 'cyber tide',
+        nodes: '#7df3ff',
+        links: '#56c4ff',
+        accent: '#f8d06a',
+        bg1: '#050a12',
+        bg2: '#03040a'
+      },
+      {
+        name: 'infra coral',
+        nodes: '#ff9fb6',
+        links: '#ff6b6b',
+        accent: '#ffd166',
+        bg1: '#15060b',
+        bg2: '#0b0412'
+      },
+      {
+        name: 'aurora mint',
+        nodes: '#9bf6ff',
+        links: '#5efc9a',
+        accent: '#f1fa8c',
+        bg1: '#041510',
+        bg2: '#031b14'
+      }
+    ];
+
+    let paletteIndex = 0;
+    const setPalette = (index) => {
+      paletteIndex = index % palettes.length;
+      const p = palettes[paletteIndex];
+      document.documentElement.style.setProperty('--bg-1', p.bg1);
+      document.documentElement.style.setProperty('--bg-2', p.bg2);
+      document.documentElement.style.setProperty('--accent', p.nodes);
+      document.documentElement.style.setProperty('--accent-2', p.accent);
+      document.body.style.background = `radial-gradient(circle at 20% 20%, ${p.nodes}22, transparent 28%),\
+        radial-gradient(circle at 80% 10%, ${p.accent}22, transparent 30%),\
+        linear-gradient(120deg, ${p.bg1}, ${p.bg2})`;
+      nodeMaterial.uniforms.colorA.value.set(p.nodes);
+      nodeMaterial.uniforms.colorB.value.set(p.accent);
+      lineMaterial.uniforms.uColor.value.set(p.links);
+    };
+
+    const NODE_COUNT = 320;
+    const CONNECTION_DISTANCE = 20;
+    const MAX_CONNECTIONS = 6;
+    const FIELD_RADIUS = 56;
+
+    const positions = new Float32Array(NODE_COUNT * 3);
+    const offsets = new Float32Array(NODE_COUNT * 3);
+    const intensities = new Float32Array(NODE_COUNT);
+    const connectionCounts = new Uint16Array(NODE_COUNT);
+
+    const tmpVec = new THREE.Vector3();
+
+    function seedField() {
+      for (let i = 0; i < NODE_COUNT; i++) {
+        const i3 = i * 3;
+        const r = Math.cbrt(Math.random()) * FIELD_RADIUS * 0.72;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        positions[i3] = r * Math.sin(phi) * Math.cos(theta);
+        positions[i3 + 1] = r * Math.cos(phi) * 0.7;
+        positions[i3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+        offsets[i3] = Math.random() * Math.PI * 2;
+        offsets[i3 + 1] = Math.random() * Math.PI * 2;
+        offsets[i3 + 2] = Math.random() * Math.PI * 2;
+        intensities[i] = 0.5 + Math.random() * 0.8;
+      }
+    }
+
+    seedField();
+
+    const nodeGeometry = new THREE.BufferGeometry();
+    nodeGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const nodeMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        size: { value: 10 * renderer.getPixelRatio() },
+        colorA: { value: new THREE.Color(palettes[0].nodes) },
+        colorB: { value: new THREE.Color(palettes[0].accent) },
+        time: { value: 0 }
+      },
+      vertexShader: /* glsl */`
+        uniform float size;
+        uniform float time;
+        attribute vec3 position;
+        varying float vStrength;
+        void main() {
+          float radial = clamp(length(position) / ${FIELD_RADIUS.toFixed(1)}, 0.0, 1.0);
+          vStrength = 1.0 - radial;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = size * (1.0 / -mvPosition.z) * (0.9 + 0.3 * sin(time + radial * 6.0));
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: /* glsl */`
+        precision mediump float;
+        varying float vStrength;
+        uniform vec3 colorA;
+        uniform vec3 colorB;
+        void main() {
+          vec2 uv = gl_PointCoord - 0.5;
+          float d = length(uv);
+          float alpha = smoothstep(0.45, 0.02, d);
+          vec3 col = mix(colorB, colorA, vStrength);
+          gl_FragColor = vec4(col, alpha * vStrength);
+        }
+      `
+    });
+
+    const nodes = new THREE.Points(nodeGeometry, nodeMaterial);
+    scene.add(nodes);
+
+    const maxSegments = NODE_COUNT * MAX_CONNECTIONS;
+    const linePositions = new Float32Array(maxSegments * 6);
+    const lineColors = new Float32Array(maxSegments * 6);
+    const lineGeometry = new THREE.BufferGeometry();
+    lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3).setUsage(THREE.DynamicDrawUsage));
+    lineGeometry.setAttribute('color', new THREE.BufferAttribute(lineColors, 3).setUsage(THREE.DynamicDrawUsage));
+
+    const lineMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        uColor: { value: new THREE.Color(palettes[0].links) }
+      },
+      vertexShader: /* glsl */`
+        uniform vec3 uColor;
+        attribute vec3 color;
+        varying float vAlpha;
+        varying vec3 vColor;
+        void main() {
+          float depthFade = clamp(1.0 - (position.z * 0.005), 0.25, 1.0);
+          vAlpha = color.r * depthFade;
+          vColor = uColor;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */`
+        precision mediump float;
+        varying float vAlpha;
+        varying vec3 vColor;
+        void main() {
+          gl_FragColor = vec4(vColor, 0.55 * vAlpha);
+        }
+      `
+    });
+
+    const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
+    scene.add(lines);
+
+    const pointer = new THREE.Vector2(0, 0);
+    const pointerWorld = new THREE.Vector3();
+    const rayCaster = new THREE.Raycaster();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    const influence = new THREE.Vector3();
+
+    function updatePointer(event) {
+      const x = event.clientX / window.innerWidth;
+      const y = event.clientY / window.innerHeight;
+      pointer.set(x * 2 - 1, -(y * 2 - 1));
+    }
+
+    window.addEventListener('pointermove', updatePointer);
+
+    function pointerToWorldPlane() {
+      rayCaster.setFromCamera(pointer, camera);
+      rayCaster.ray.intersectPlane(plane, pointerWorld);
+    }
+
+    let pulse = false;
+    const pulseBtn = document.getElementById('pulse');
+    pulseBtn.addEventListener('click', () => {
+      pulse = !pulse;
+      pulseBtn.classList.toggle('active', pulse);
+    });
+
+    const paletteBtn = document.getElementById('palette');
+    paletteBtn.addEventListener('click', () => {
+      setPalette(paletteIndex + 1);
+    });
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      const dt = clock.getDelta();
+      const t = clock.elapsedTime;
+      nodeMaterial.uniforms.time.value = t;
+
+      pointerToWorldPlane();
+
+      connectionCounts.fill(0);
+      let segmentIndex = 0;
+
+      for (let i = 0; i < NODE_COUNT; i++) {
+        const i3 = i * 3;
+        const posX = positions[i3];
+        const posY = positions[i3 + 1];
+        const posZ = positions[i3 + 2];
+        const radial = Math.max(0.2, Math.min(1.0, Math.sqrt(posX * posX + posY * posY + posZ * posZ) / FIELD_RADIUS));
+
+        const swirl = Math.sin(t * 0.3 + intensities[i] * 2.4) * 0.16;
+        const sinY = Math.sin(t * 1.35 + offsets[i3 + 1]) * (1.2 + radial * 0.6);
+        const sinX = Math.cos(t * 0.9 + offsets[i3]) * 0.9;
+        const sinZ = Math.sin(t * 1.1 + offsets[i3 + 2]) * 0.9;
+
+        let x = posX + sinX * 0.04 * (pulse ? 2.0 : 1.0);
+        let y = posY + sinY * 0.06 * (pulse ? 1.6 : 1.0);
+        let z = posZ + sinZ * 0.04 * (pulse ? 1.6 : 1.0);
+
+        const cosS = Math.cos(swirl);
+        const sinS = Math.sin(swirl);
+        const rx = x * cosS - z * sinS;
+        const rz = x * sinS + z * cosS;
+        x = rx;
+        z = rz;
+
+        tmpVec.set(x, y, z);
+        influence.copy(pointerWorld).sub(tmpVec);
+        const dist = influence.length();
+        if (dist < 26) {
+          const pull = (1 - dist / 26) * 0.18;
+          influence.normalize().multiplyScalar(pull);
+          tmpVec.add(influence);
+        }
+
+        const len = tmpVec.length();
+        if (len > FIELD_RADIUS) {
+          tmpVec.multiplyScalar(0.96);
+        }
+
+        positions[i3] = tmpVec.x;
+        positions[i3 + 1] = tmpVec.y;
+        positions[i3 + 2] = tmpVec.z;
+      }
+
+      nodeGeometry.attributes.position.needsUpdate = true;
+
+      for (let i = 0; i < NODE_COUNT; i++) {
+        for (let j = i + 1; j < NODE_COUNT; j++) {
+          if (connectionCounts[i] >= MAX_CONNECTIONS || connectionCounts[j] >= MAX_CONNECTIONS) continue;
+          const i3 = i * 3;
+          const j3 = j * 3;
+          const dx = positions[i3] - positions[j3];
+          const dy = positions[i3 + 1] - positions[j3 + 1];
+          const dz = positions[i3 + 2] - positions[j3 + 2];
+          const distSq = dx * dx + dy * dy + dz * dz;
+          if (distSq > CONNECTION_DISTANCE * CONNECTION_DISTANCE) continue;
+
+          const dist = Math.sqrt(distSq);
+          const alpha = 1 - dist / CONNECTION_DISTANCE;
+          const pOffset = pulse ? (0.18 * Math.sin(clock.elapsedTime * 3 + i * 0.2 + j * 0.3)) : 0;
+          const strength = Math.max(0, Math.min(1, alpha + pOffset));
+
+          const lp = segmentIndex * 6;
+          linePositions[lp] = positions[i3];
+          linePositions[lp + 1] = positions[i3 + 1];
+          linePositions[lp + 2] = positions[i3 + 2];
+          linePositions[lp + 3] = positions[j3];
+          linePositions[lp + 4] = positions[j3 + 1];
+          linePositions[lp + 5] = positions[j3 + 2];
+
+          lineColors[lp] = strength;
+          lineColors[lp + 1] = strength;
+          lineColors[lp + 2] = strength;
+          lineColors[lp + 3] = strength;
+          lineColors[lp + 4] = strength;
+          lineColors[lp + 5] = strength;
+
+          segmentIndex++;
+          connectionCounts[i]++;
+          connectionCounts[j]++;
+          if (segmentIndex >= maxSegments) break;
+        }
+      }
+
+      lineGeometry.setDrawRange(0, segmentIndex * 2);
+      lineGeometry.attributes.position.needsUpdate = true;
+      lineGeometry.attributes.color.needsUpdate = true;
+
+      controls.update();
+      bloom.strength = pulse ? 1.1 + Math.sin(t * 2.6) * 0.35 : 0.85;
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+
+    setPalette(0);
+    animate();
+
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+      composer.setSize(w, h);
+      nodeMaterial.uniforms.size.value = 10 * renderer.getPixelRatio();
+      bloom.setSize(w, h);
+    });
+  </script>
+</body>
+</html>
