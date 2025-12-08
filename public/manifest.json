@@ -20,7 +20,7 @@
   {
     "path": "/threejs/neural_network_particles/",
     "title": "Neural Network Particles",
-    "description": "No description available.",
+    "description": "Interactive connected particle field with complex sinusoidal undulation and neural network aesthetics.",
     "category": "threejs"
   },
   {

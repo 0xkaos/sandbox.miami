@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Interactive connected particle field with complex sinusoidal undulation and neural network aesthetics.">
     <title>Neural Network Particles</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
@@ -37,6 +38,10 @@
         let particles, particlePositions, particleVelocities;
         let linesMesh, linesPositions;
         let raycaster, mouse;
+        let draggedParticleIndex = -1;
+        let dragPlane = new THREE.Plane();
+        let dragOffset = new THREE.Vector3();
+        let intersection = new THREE.Vector3();
         
         const particleCount = 300;
         const connectionDistance = 15;
@@ -122,10 +127,13 @@
 
             // Interaction
             raycaster = new THREE.Raycaster();
+            raycaster.params.Points.threshold = 2; // Increase hit area for particles
             mouse = new THREE.Vector2(9999, 9999); // Off screen initially
 
             window.addEventListener('resize', onWindowResize);
             document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mouseup', onMouseUp);
         }
 
         function onWindowResize() {
@@ -137,6 +145,58 @@
         function onMouseMove(event) {
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            if (draggedParticleIndex !== -1) {
+                raycaster.setFromCamera(mouse, camera);
+                if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
+                    // Update particle position
+                    const positions = particles.geometry.attributes.position.array;
+                    
+                    // We need to update the baseY so the wave function continues around the new position
+                    // The wave function is: waveY = Math.sin(x * 0.05 + time) * 5 + Math.cos(z * 0.05 + time * 1.5) * 5;
+                    // currentY = baseY + waveY
+                    // So newBaseY = newY - waveY
+                    
+                    const time = Date.now() * 0.001;
+                    const x = intersection.x;
+                    const z = intersection.z;
+                    const waveY = Math.sin(x * 0.05 + time) * 5 + Math.cos(z * 0.05 + time * 1.5) * 5;
+                    
+                    particleVelocities[draggedParticleIndex].baseY = intersection.y - waveY;
+                    
+                    // Also update the position directly for immediate feedback
+                    positions[draggedParticleIndex * 3] = intersection.x;
+                    positions[draggedParticleIndex * 3 + 1] = intersection.y;
+                    positions[draggedParticleIndex * 3 + 2] = intersection.z;
+                    
+                    particles.geometry.attributes.position.needsUpdate = true;
+                }
+            }
+        }
+
+        function onMouseDown(event) {
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(particles);
+
+            if (intersects.length > 0) {
+                draggedParticleIndex = intersects[0].index;
+                controls.enabled = false;
+                
+                // Create a plane facing the camera at the particle's position
+                const positions = particles.geometry.attributes.position.array;
+                const p = new THREE.Vector3(
+                    positions[draggedParticleIndex * 3],
+                    positions[draggedParticleIndex * 3 + 1],
+                    positions[draggedParticleIndex * 3 + 2]
+                );
+                
+                dragPlane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), p);
+            }
+        }
+
+        function onMouseUp(event) {
+            draggedParticleIndex = -1;
+            controls.enabled = true;
         }
 
         function animate() {
@@ -158,6 +218,9 @@
             let lineVertexIndex = 0;
 
             for (let i = 0; i < particleCount; i++) {
+                // Skip update for dragged particle so it doesn't jitter
+                if (i === draggedParticleIndex) continue;
+
                 const velocity = particleVelocities[i];
 
                 // Sinusoidal undulation
