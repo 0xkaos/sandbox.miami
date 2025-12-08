@@ -198,19 +198,20 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMappingExposure = 1.45;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x03060d, 0.004);
+    renderer.setClearColor('#050910', 1);
+    scene.fog = new THREE.FogExp2(0x050910, 0.0025);
 
     const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 500);
-    camera.position.set(0, 26, 90);
+    camera.position.set(0, 18, 52);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.minDistance = 26;
-    controls.maxDistance = 150;
+    controls.minDistance = 14;
+    controls.maxDistance = 120;
 
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
@@ -263,7 +264,7 @@
     const NODE_COUNT = 420;
     const CONNECTION_DISTANCE = 20;
     const MAX_CONNECTIONS = 6;
-    const FIELD_RADIUS = 56;
+    const FIELD_RADIUS = 42;
 
     const positions = new Float32Array(NODE_COUNT * 3);
     const offsets = new Float32Array(NODE_COUNT * 3);
@@ -298,7 +299,7 @@
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       uniforms: {
-        size: { value: 28 * renderer.getPixelRatio() },
+        size: { value: 220 * renderer.getPixelRatio() },
         colorA: { value: new THREE.Color(palettes[0].nodes) },
         colorB: { value: new THREE.Color(palettes[0].accent) },
         time: { value: 0 }
@@ -312,7 +313,8 @@
           float radial = clamp(length(position) / ${FIELD_RADIUS.toFixed(1)}, 0.0, 1.0);
           vStrength = 1.0 - radial;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = size * (1.0 / -mvPosition.z) * (1.1 + 0.35 * sin(time + radial * 6.0));
+          float depth = max(8.0, -mvPosition.z);
+          gl_PointSize = (size / depth) * (1.1 + 0.35 * sin(time + radial * 6.0));
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -326,7 +328,7 @@
           float d = length(uv);
           float alpha = smoothstep(0.5, 0.05, d);
           vec3 col = mix(colorB, colorA, vStrength);
-          gl_FragColor = vec4(col, alpha * (vStrength * 1.35));
+          gl_FragColor = vec4(col, alpha * (vStrength * 1.65));
         }
       `
     });
@@ -450,7 +452,7 @@
 
         const len = tmpVec.length();
         if (len > FIELD_RADIUS) {
-          tmpVec.multiplyScalar(0.96);
+          tmpVec.multiplyScalar(0.9);
         }
 
         positions[i3] = tmpVec.x;
@@ -518,7 +520,7 @@
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       composer.setSize(w, h);
-      nodeMaterial.uniforms.size.value = 28 * renderer.getPixelRatio();
+      nodeMaterial.uniforms.size.value = 220 * renderer.getPixelRatio();
       bloom.setSize(w, h);
     });
   </script>
