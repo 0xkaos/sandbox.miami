@@ -201,7 +201,7 @@
     renderer.toneMappingExposure = 1.2;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x03060d, 0.008);
+    scene.fog = new THREE.FogExp2(0x03060d, 0.004);
 
     const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 500);
     camera.position.set(0, 26, 90);
@@ -260,7 +260,7 @@
       lineMaterial.uniforms.uColor.value.set(p.links);
     };
 
-    const NODE_COUNT = 320;
+    const NODE_COUNT = 420;
     const CONNECTION_DISTANCE = 20;
     const MAX_CONNECTIONS = 6;
     const FIELD_RADIUS = 56;
@@ -298,7 +298,7 @@
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       uniforms: {
-        size: { value: 10 * renderer.getPixelRatio() },
+        size: { value: 28 * renderer.getPixelRatio() },
         colorA: { value: new THREE.Color(palettes[0].nodes) },
         colorB: { value: new THREE.Color(palettes[0].accent) },
         time: { value: 0 }
@@ -312,7 +312,7 @@
           float radial = clamp(length(position) / ${FIELD_RADIUS.toFixed(1)}, 0.0, 1.0);
           vStrength = 1.0 - radial;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = size * (1.0 / -mvPosition.z) * (0.9 + 0.3 * sin(time + radial * 6.0));
+          gl_PointSize = size * (1.0 / -mvPosition.z) * (1.1 + 0.35 * sin(time + radial * 6.0));
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -324,9 +324,9 @@
         void main() {
           vec2 uv = gl_PointCoord - 0.5;
           float d = length(uv);
-          float alpha = smoothstep(0.45, 0.02, d);
+          float alpha = smoothstep(0.5, 0.05, d);
           vec3 col = mix(colorB, colorA, vStrength);
-          gl_FragColor = vec4(col, alpha * vStrength);
+          gl_FragColor = vec4(col, alpha * (vStrength * 1.35));
         }
       `
     });
@@ -518,7 +518,7 @@
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       composer.setSize(w, h);
-      nodeMaterial.uniforms.size.value = 10 * renderer.getPixelRatio();
+      nodeMaterial.uniforms.size.value = 28 * renderer.getPixelRatio();
       bloom.setSize(w, h);
     });
   </script>
