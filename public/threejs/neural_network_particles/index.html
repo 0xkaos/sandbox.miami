@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neural Network Particles</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: #ffffff;
+            font-family: monospace;
+            pointer-events: none;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Neural Network Particles - Interactive</div>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let scene, camera, renderer, controls;
+        let particles, particlePositions, particleVelocities;
+        let linesMesh, linesPositions;
+        let raycaster, mouse;
+        
+        const particleCount = 300;
+        const connectionDistance = 15;
+        const connectionDistanceSq = connectionDistance * connectionDistance;
+        
+        init();
+        animate();
+
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050505, 0.002);
+            scene.background = new THREE.Color(0x050505);
+
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+            camera.position.z = 100;
+            camera.position.y = 50;
+
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 0.5;
+
+            // Particles
+            const geometry = new THREE.BufferGeometry();
+            particlePositions = new Float32Array(particleCount * 3);
+            particleVelocities = [];
+
+            for (let i = 0; i < particleCount; i++) {
+                const x = (Math.random() - 0.5) * 100;
+                const y = (Math.random() - 0.5) * 100;
+                const z = (Math.random() - 0.5) * 100;
+
+                particlePositions[i * 3] = x;
+                particlePositions[i * 3 + 1] = y;
+                particlePositions[i * 3 + 2] = z;
+
+                particleVelocities.push({
+                    x: (Math.random() - 0.5) * 0.2,
+                    y: (Math.random() - 0.5) * 0.2,
+                    z: (Math.random() - 0.5) * 0.2,
+                    baseY: y,
+                    phase: Math.random() * Math.PI * 2
+                });
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+
+            const material = new THREE.PointsMaterial({
+                color: 0x00ffff,
+                size: 2,
+                blending: THREE.AdditiveBlending,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+
+            // Lines
+            const linesGeometry = new THREE.BufferGeometry();
+            linesPositions = new Float32Array(particleCount * particleCount * 3); // Max possible connections
+            linesGeometry.setAttribute('position', new THREE.BufferAttribute(linesPositions, 3));
+            
+            const linesMaterial = new THREE.LineBasicMaterial({
+                color: 0x00ffff,
+                transparent: true,
+                opacity: 0.2,
+                blending: THREE.AdditiveBlending
+            });
+
+            linesMesh = new THREE.LineSegments(linesGeometry, linesMaterial);
+            scene.add(linesMesh);
+
+            // Interaction
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2(9999, 9999); // Off screen initially
+
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('mousemove', onMouseMove);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = Date.now() * 0.001;
+
+            // Update particles
+            const positions = particles.geometry.attributes.position.array;
+            
+            // Raycaster for interaction
+            raycaster.setFromCamera(mouse, camera);
+            
+            // Simple interaction plane or sphere logic could be added, 
+            // but let's just use mouse position projected to z=0 for a simple effect
+            // or just let the camera rotation be the main interaction for now + subtle mouse influence
+            
+            let vertexIndex = 0;
+            let lineVertexIndex = 0;
+
+            for (let i = 0; i < particleCount; i++) {
+                const velocity = particleVelocities[i];
+
+                // Sinusoidal undulation
+                // We modify the Y position based on X, Z and Time
+                const x = positions[i * 3];
+                const z = positions[i * 3 + 2];
+                
+                // Complex wave function
+                const waveY = Math.sin(x * 0.05 + time) * 5 + Math.cos(z * 0.05 + time * 1.5) * 5;
+                
+                // Apply velocity and wave
+                positions[i * 3] += velocity.x;
+                positions[i * 3 + 1] = velocity.baseY + waveY; // Keep base Y but add wave
+                positions[i * 3 + 2] += velocity.z;
+
+                // Boundary check (wrap around)
+                if (positions[i * 3] > 50) positions[i * 3] = -50;
+                if (positions[i * 3] < -50) positions[i * 3] = 50;
+                if (positions[i * 3 + 2] > 50) positions[i * 3 + 2] = -50;
+                if (positions[i * 3 + 2] < -50) positions[i * 3 + 2] = 50;
+
+                // Interaction: Repel from mouse ray
+                // This is a bit expensive to do accurate ray-point distance for all, 
+                // so we'll skip complex physics for this quick sketch.
+            }
+
+            // Update connections
+            for (let i = 0; i < particleCount; i++) {
+                for (let j = i + 1; j < particleCount; j++) {
+                    const dx = positions[i * 3] - positions[j * 3];
+                    const dy = positions[i * 3 + 1] - positions[j * 3 + 1];
+                    const dz = positions[i * 3 + 2] - positions[j * 3 + 2];
+                    const distSq = dx * dx + dy * dy + dz * dz;
+
+                    if (distSq < connectionDistanceSq) {
+                        // Add line
+                        linesPositions[lineVertexIndex++] = positions[i * 3];
+                        linesPositions[lineVertexIndex++] = positions[i * 3 + 1];
+                        linesPositions[lineVertexIndex++] = positions[i * 3 + 2];
+
+                        linesPositions[lineVertexIndex++] = positions[j * 3];
+                        linesPositions[lineVertexIndex++] = positions[j * 3 + 1];
+                        linesPositions[lineVertexIndex++] = positions[j * 3 + 2];
+                    }
+                }
+            }
+
+            particles.geometry.attributes.position.needsUpdate = true;
+            
+            linesMesh.geometry.setDrawRange(0, lineVertexIndex / 3);
+            linesMesh.geometry.attributes.position.needsUpdate = true;
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
