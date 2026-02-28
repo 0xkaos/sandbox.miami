@@ -54,6 +54,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/verbs_atlas/",
+    "title": "Verb Atlas - Binyan Constellations",
+    "description": "Interactive atlas of Hebrew verb roots with binyan and tense constellations.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/verbs_galaxy/",
     "title": "Verbs Galaxy - Roots Edition",
     "description": "Explore 350+ verb roots in a 3D galaxy with search, audio pronunciations, and conjugation panels.",

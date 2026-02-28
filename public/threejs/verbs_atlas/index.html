@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Interactive atlas of Hebrew verb roots with binyan and tense constellations.">
+    <title>Verb Atlas - Binyan Constellations</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Hebrew:wght@400;600&family=Sora:wght@400;600;700&display=swap');
+
+        :root {
+            --bg-1: #080b14;
+            --bg-2: #101a2c;
+            --glow: #4ce6ff;
+            --accent: #f9d76b;
+            --panel: rgba(9, 12, 20, 0.86);
+            --panel-2: rgba(14, 18, 28, 0.92);
+            --text: #f3f6ff;
+            --muted: rgba(243, 246, 255, 0.65);
+            --border: rgba(76, 230, 255, 0.35);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Sora', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            background: radial-gradient(circle at top, var(--bg-2), var(--bg-1) 60%);
+            color: var(--text);
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: radial-gradient(rgba(76, 230, 255, 0.08) 1px, transparent 1px);
+            background-size: 120px 120px;
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        #canvas-wrap {
+            position: absolute;
+            inset: 0;
+        }
+
+        #ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            display: grid;
+            grid-template-columns: minmax(250px, 320px) 1fr minmax(300px, 360px);
+            grid-template-rows: auto 1fr auto;
+            gap: 1.5rem;
+            padding: 1.5rem;
+        }
+
+        .panel {
+            pointer-events: auto;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 1.2rem 1.4rem;
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(8px);
+        }
+
+        .title-panel {
+            grid-column: 1 / 3;
+        }
+
+        .title-panel h1 {
+            font-size: 2.2rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .title-panel span {
+            color: var(--accent);
+        }
+
+        .title-panel p {
+            margin-top: 0.6rem;
+            color: var(--muted);
+            max-width: 60ch;
+        }
+
+        .root-panel {
+            grid-column: 1 / 2;
+            grid-row: 2 / 4;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .root-panel h2 {
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: var(--muted);
+        }
+
+        .root-controls {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .root-controls button,
+        .root-controls input {
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        input[type="text"],
+        select {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: var(--text);
+            padding: 0.6rem 0.8rem;
+            border-radius: 10px;
+            width: 100%;
+            font-size: 0.9rem;
+        }
+
+        button {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--text);
+            padding: 0.5rem 0.8rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            border-color: var(--glow);
+            box-shadow: 0 0 15px rgba(76, 230, 255, 0.25);
+        }
+
+        .root-details {
+            background: var(--panel-2);
+            border-radius: 14px;
+            padding: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .root-details h3 {
+            font-size: 1.6rem;
+            font-family: 'Noto Sans Hebrew', sans-serif;
+        }
+
+        .root-details p {
+            color: var(--muted);
+            margin-top: 0.4rem;
+            font-size: 0.9rem;
+        }
+
+        .root-meta {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.6rem;
+            margin-top: 0.8rem;
+            font-size: 0.85rem;
+        }
+
+        .root-meta div {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 0.5rem 0.6rem;
+            border-radius: 8px;
+        }
+
+        .root-meta span {
+            display: block;
+            color: var(--muted);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .legend {
+            margin-top: 0.8rem;
+            font-size: 0.85rem;
+            color: var(--muted);
+        }
+
+        .legend strong {
+            color: var(--text);
+        }
+
+        .conjugation-panel {
+            grid-column: 3 / 4;
+            grid-row: 2 / 4;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            max-height: calc(100vh - 5.5rem);
+            overflow: hidden;
+        }
+
+        .conjugation-panel header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .conjugation-panel h2 {
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: var(--muted);
+        }
+
+        .filter-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.6rem;
+        }
+
+        .cards {
+            overflow-y: auto;
+            display: grid;
+            gap: 0.8rem;
+            padding-right: 0.4rem;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 0.9rem 1rem;
+        }
+
+        .card h3 {
+            font-size: 0.95rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .card .hebrew {
+            font-family: 'Noto Sans Hebrew', sans-serif;
+            font-size: 1.3rem;
+            direction: rtl;
+        }
+
+        .card .latin {
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--muted);
+            margin-top: 0.2rem;
+        }
+
+        .card ul {
+            list-style: none;
+            margin-top: 0.4rem;
+            display: grid;
+            gap: 0.2rem;
+            font-size: 0.85rem;
+        }
+
+        .card li {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.6rem;
+            color: var(--muted);
+        }
+
+        .card li strong {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        #tooltip {
+            position: absolute;
+            pointer-events: none;
+            background: rgba(12, 16, 26, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 0.6rem 0.8rem;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+
+        #tooltip strong {
+            display: block;
+            color: var(--accent);
+            font-size: 0.8rem;
+        }
+
+        @media (max-width: 1100px) {
+            #ui-layer {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto;
+                overflow-y: auto;
+            }
+
+            .title-panel,
+            .root-panel,
+            .conjugation-panel {
+                grid-column: 1 / 2;
+            }
+
+            .root-panel,
+            .conjugation-panel {
+                max-height: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-wrap"></div>
+    <div id="tooltip"></div>
+
+    <div id="ui-layer">
+        <section class="panel title-panel">
+            <h1>Verb <span>Atlas</span></h1>
+            <p>Navigate Hebrew verb roots as glowing constellations. Each ring represents a binyan, each vertical strand a tense.</p>
+        </section>
+
+        <aside class="panel root-panel">
+            <h2>Root Navigator</h2>
+            <div class="root-controls">
+                <input id="root-input" type="text" list="root-list" placeholder="Type a root (e.g. כ.ת.ב)">
+                <datalist id="root-list"></datalist>
+                <button id="prev-root" type="button">Prev</button>
+                <button id="next-root" type="button">Next</button>
+                <button id="random-root" type="button">Random</button>
+            </div>
+            <div class="root-details" id="root-details">
+                <h3>Loading…</h3>
+                <p>Fetching verb data.</p>
+            </div>
+            <div class="legend">
+                <div><strong>Tip:</strong> Drag to orbit, scroll to zoom, hover nodes for detail.</div>
+            </div>
+        </aside>
+
+        <aside class="panel conjugation-panel">
+            <header>
+                <h2>Conjugations</h2>
+                <div class="filter-row">
+                    <select id="tense-select"></select>
+                    <select id="pronoun-select"></select>
+                </div>
+            </header>
+            <div class="cards" id="conjugation-cards"></div>
+        </aside>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        const TENSES = [
+            { key: 'inf', label: 'Infinitive' },
+            { key: 'past', label: 'Past' },
+            { key: 'present', label: 'Present' },
+            { key: 'future', label: 'Future' },
+            { key: 'imperative', label: 'Imperative' }
+        ];
+
+        const PRONOUNS = [
+            { key: 'all', label: 'All Pronouns' },
+            { key: 'אני', label: 'I (אֲנִי)' },
+            { key: 'אתה', label: 'You m.s.' },
+            { key: 'את', label: 'You f.s.' },
+            { key: 'הוא', label: 'He' },
+            { key: 'היא', label: 'She' },
+            { key: 'אנחנו', label: 'We' },
+            { key: 'אתם', label: 'You m.pl.' },
+            { key: 'אתן', label: 'You f.pl.' },
+            { key: 'הם', label: 'They m.' },
+            { key: 'הן', label: 'They f.' }
+        ];
+
+        const palette = [
+            '#66f2ff', '#ffb84c', '#9b8dff', '#55f28d', '#ff7abf', '#ffd36b', '#56b1ff'
+        ];
+
+        const state = {
+            roots: {},
+            rootKeys: [],
+            binyanColors: new Map(),
+            activeRoot: null,
+            activeTense: 'present',
+            activePronoun: 'all',
+            interactiveMeshes: [],
+            hovered: null
+        };
+
+        const ui = {
+            rootInput: document.getElementById('root-input'),
+            rootList: document.getElementById('root-list'),
+            rootDetails: document.getElementById('root-details'),
+            prevRoot: document.getElementById('prev-root'),
+            nextRoot: document.getElementById('next-root'),
+            randomRoot: document.getElementById('random-root'),
+            tenseSelect: document.getElementById('tense-select'),
+            pronounSelect: document.getElementById('pronoun-select'),
+            cards: document.getElementById('conjugation-cards'),
+            tooltip: document.getElementById('tooltip')
+        };
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x060910, 0.03);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+        camera.position.set(0, 8, 30);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.getElementById('canvas-wrap').appendChild(renderer.domElement);
+
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        document.getElementById('canvas-wrap').appendChild(labelRenderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.maxDistance = 60;
+        controls.minDistance = 10;
+
+        const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambient);
+        const keyLight = new THREE.DirectionalLight(0x88d7ff, 0.8);
+        keyLight.position.set(20, 30, 10);
+        scene.add(keyLight);
+
+        const rootGroup = new THREE.Group();
+        const nodeGroup = new THREE.Group();
+        scene.add(rootGroup, nodeGroup);
+
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+
+        const tenseOffsets = new Map([
+            ['inf', 8],
+            ['past', 4],
+            ['present', 0],
+            ['future', -4],
+            ['imperative', -8]
+        ]);
+
+        initUI();
+        loadData();
+        animate();
+
+        function initUI() {
+            TENSES.forEach(tense => {
+                const option = document.createElement('option');
+                option.value = tense.key;
+                option.textContent = tense.label;
+                ui.tenseSelect.appendChild(option);
+            });
+
+            PRONOUNS.forEach(pronoun => {
+                const option = document.createElement('option');
+                option.value = pronoun.key;
+                option.textContent = pronoun.label;
+                ui.pronounSelect.appendChild(option);
+            });
+
+            ui.tenseSelect.value = state.activeTense;
+            ui.pronounSelect.value = state.activePronoun;
+
+            ui.tenseSelect.addEventListener('change', () => {
+                state.activeTense = ui.tenseSelect.value;
+                ui.pronounSelect.disabled = state.activeTense === 'inf';
+                updateConjugations();
+                updateNodeFocus();
+            });
+
+            ui.pronounSelect.addEventListener('change', () => {
+                state.activePronoun = ui.pronounSelect.value;
+                updateConjugations();
+            });
+
+            ui.rootInput.addEventListener('change', () => {
+                const value = ui.rootInput.value.trim();
+                const match = resolveRoot(value);
+                if (match) {
+                    selectRoot(match);
+                }
+            });
+
+            ui.rootInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    const value = ui.rootInput.value.trim();
+                    const match = resolveRoot(value);
+                    if (match) {
+                        selectRoot(match);
+                    }
+                }
+            });
+
+            ui.prevRoot.addEventListener('click', () => shiftRoot(-1));
+            ui.nextRoot.addEventListener('click', () => shiftRoot(1));
+            ui.randomRoot.addEventListener('click', () => {
+                const randomIndex = Math.floor(Math.random() * state.rootKeys.length);
+                selectRoot(state.rootKeys[randomIndex]);
+            });
+
+            renderer.domElement.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('resize', onResize);
+        }
+
+        async function loadData() {
+            try {
+                const response = await fetch('../verbs_galaxy/verbs.json');
+                const data = await response.json();
+                buildRootIndex(data);
+                buildDatalist();
+                selectRoot(state.rootKeys[0]);
+            } catch (error) {
+                ui.rootDetails.innerHTML = '<h3>Error</h3><p>Failed to load verbs data.</p>';
+                console.error(error);
+            }
+        }
+
+        function buildRootIndex(data) {
+            Object.entries(data).forEach(([key, verb]) => {
+                const rootStr = verb.rt.join('.');
+                if (!state.roots[rootStr]) {
+                    state.roots[rootStr] = [];
+                }
+                verb._key = key;
+                state.roots[rootStr].push(verb);
+            });
+
+            state.rootKeys = Object.keys(state.roots).sort();
+
+            const binyanSet = new Set();
+            state.rootKeys.forEach(root => {
+                state.roots[root].forEach(verb => binyanSet.add(verb.bnE || verb.bn));
+            });
+
+            Array.from(binyanSet).sort().forEach((binyan, index) => {
+                const color = new THREE.Color(palette[index % palette.length]);
+                state.binyanColors.set(binyan, color);
+            });
+        }
+
+        function buildDatalist() {
+            ui.rootList.innerHTML = '';
+            state.rootKeys.forEach(root => {
+                const option = document.createElement('option');
+                option.value = root;
+                ui.rootList.appendChild(option);
+            });
+        }
+
+        function shiftRoot(direction) {
+            const index = state.rootKeys.indexOf(state.activeRoot);
+            if (index === -1) return;
+            const nextIndex = (index + direction + state.rootKeys.length) % state.rootKeys.length;
+            selectRoot(state.rootKeys[nextIndex]);
+        }
+
+        function resolveRoot(query) {
+            if (!query) return null;
+            if (state.roots[query]) return query;
+            const normalized = query.replace(/\./g, '');
+            return state.rootKeys.find(root => root.replace(/\./g, '') === normalized) || null;
+        }
+
+        function selectRoot(root) {
+            state.activeRoot = root;
+            ui.rootInput.value = root;
+            updateRootDetails();
+            rebuildScene();
+            updateConjugations();
+        }
+
+        function updateRootDetails() {
+            const verbs = state.roots[state.activeRoot] || [];
+            const meanings = Array.from(new Set(verbs.flatMap(verb => verb.mng || [])));
+            const difficulties = Array.from(new Set(verbs.map(verb => verb.difficulty).filter(Boolean)));
+            const frequencies = Array.from(new Set(verbs.map(verb => verb.frequency).filter(Boolean)));
+
+            ui.rootDetails.innerHTML = `
+                <h3 dir="rtl">${state.activeRoot}</h3>
+                <p>${meanings.slice(0, 4).join(', ') || 'No meaning available.'}</p>
+                <div class="root-meta">
+                    <div><span>Binyanim</span>${verbs.length}</div>
+                    <div><span>Meanings</span>${meanings.length || '—'}</div>
+                    <div><span>Difficulty</span>${difficulties.join(' / ') || '—'}</div>
+                    <div><span>Frequency</span>${frequencies.join(' / ') || '—'}</div>
+                </div>
+            `;
+        }
+
+        function rebuildScene() {
+            rootGroup.clear();
+            nodeGroup.clear();
+            state.interactiveMeshes = [];
+
+            const verbs = state.roots[state.activeRoot] || [];
+            const ringRadius = 14;
+            const centerSphere = new THREE.Mesh(
+                new THREE.SphereGeometry(1.2, 32, 32),
+                new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x334455, emissiveIntensity: 0.8 })
+            );
+            rootGroup.add(centerSphere);
+
+            verbs.forEach((verb, index) => {
+                const angle = (index / verbs.length) * Math.PI * 2;
+                const x = Math.cos(angle) * ringRadius;
+                const z = Math.sin(angle) * ringRadius;
+                const binyanName = verb.bnE || verb.bn;
+                const color = state.binyanColors.get(binyanName) || new THREE.Color('#ffffff');
+
+                const hub = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.7, 20, 20),
+                    new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.5 })
+                );
+                hub.position.set(x, 0, z);
+                hub.userData = { type: 'binyan', binyan: binyanName, verb };
+                nodeGroup.add(hub);
+
+                const label = document.createElement('div');
+                label.textContent = binyanName;
+                label.style.fontSize = '0.65rem';
+                label.style.letterSpacing = '0.1em';
+                label.style.textTransform = 'uppercase';
+                label.style.color = '#f6f9ff';
+                label.style.fontFamily = 'IBM Plex Mono, monospace';
+                label.style.padding = '0.2rem 0.4rem';
+                label.style.background = 'rgba(10, 12, 20, 0.6)';
+                label.style.borderRadius = '6px';
+                const labelObj = new CSS2DObject(label);
+                labelObj.position.set(0, 1.2, 0);
+                hub.add(labelObj);
+
+                const lineGeom = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(x, 0, z)
+                ]);
+                const lineMat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.4 });
+                const line = new THREE.Line(lineGeom, lineMat);
+                nodeGroup.add(line);
+
+                TENSES.forEach(tense => {
+                    const y = tenseOffsets.get(tense.key);
+                    const hasForm = hasTense(verb, tense.key);
+                    const node = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.35, 16, 16),
+                        new THREE.MeshStandardMaterial({
+                            color: hasForm ? color : new THREE.Color('#3a3f52'),
+                            emissive: hasForm ? color : new THREE.Color('#1b2233'),
+                            emissiveIntensity: hasForm ? 0.6 : 0.2,
+                            transparent: true,
+                            opacity: hasForm ? 1 : 0.35
+                        })
+                    );
+                    node.position.set(x, y, z);
+                    node.userData = { type: 'tense', binyan: binyanName, tense: tense.key, verb };
+                    nodeGroup.add(node);
+                    state.interactiveMeshes.push(node);
+                });
+            });
+
+            updateNodeFocus();
+        }
+
+        function updateNodeFocus() {
+            state.interactiveMeshes.forEach(mesh => {
+                const isActive = mesh.userData.tense === state.activeTense;
+                mesh.scale.setScalar(isActive ? 1.4 : 1.0);
+            });
+        }
+
+        function hasTense(verb, tenseKey) {
+            if (tenseKey === 'inf') {
+                return Boolean(verb.inf);
+            }
+            return Boolean(verb.conjugations && verb.conjugations[tenseKey] && verb.conjugations[tenseKey].length);
+        }
+
+        function updateConjugations() {
+            const verbs = state.roots[state.activeRoot] || [];
+            ui.cards.innerHTML = '';
+
+            verbs.forEach(verb => {
+                const binyanName = verb.bnE || verb.bn;
+                const color = state.binyanColors.get(binyanName) || new THREE.Color('#ffffff');
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.style.borderColor = `rgba(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)}, 0.5)`;
+
+                const tenseData = getTenseData(verb, state.activeTense, state.activePronoun);
+
+                card.innerHTML = `
+                    <h3>${binyanName} <span style="color: rgba(255,255,255,0.6); font-size: 0.8rem;">${verb.bn || ''}</span></h3>
+                    <div class="hebrew">${tenseData.primary || '—'}</div>
+                    <div class="latin">${tenseData.secondary || 'No data for this tense.'}</div>
+                    ${tenseData.listMarkup}
+                `;
+
+                ui.cards.appendChild(card);
+            });
+        }
+
+        function getTenseData(verb, tenseKey, pronounKey) {
+            if (tenseKey === 'inf') {
+                return {
+                    primary: verb.inf || '—',
+                    secondary: (verb.mng && verb.mng.join(', ')) || 'No meaning available.',
+                    listMarkup: ''
+                };
+            }
+
+            const forms = verb.conjugations ? verb.conjugations[tenseKey] : null;
+            if (!forms || forms.length === 0) {
+                return { primary: '—', secondary: 'No data for this tense.', listMarkup: '' };
+            }
+
+            const filtered = pronounKey === 'all'
+                ? forms
+                : forms.filter(form => form.prn === pronounKey);
+
+            const primaryForm = filtered[0] || forms[0];
+
+            const listMarkup = filtered.length > 1 || pronounKey === 'all'
+                ? `
+                    <ul>
+                        ${filtered.map(form => `
+                            <li><strong>${form.prn}</strong><span dir="rtl">${form.frm}</span></li>
+                        `).join('')}
+                    </ul>
+                `
+                : '';
+
+            return {
+                primary: primaryForm ? primaryForm.frm : '—',
+                secondary: primaryForm ? primaryForm.trl : 'No translation available.',
+                listMarkup
+            };
+        }
+
+        function onPointerMove(event) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(pointer, camera);
+            const hits = raycaster.intersectObjects(state.interactiveMeshes);
+            if (hits.length > 0) {
+                const hit = hits[0].object;
+                if (state.hovered !== hit) {
+                    state.hovered = hit;
+                    showTooltip(hit, event.clientX, event.clientY);
+                } else {
+                    moveTooltip(event.clientX, event.clientY);
+                }
+            } else {
+                state.hovered = null;
+                ui.tooltip.style.opacity = '0';
+            }
+        }
+
+        function showTooltip(mesh, x, y) {
+            const { binyan, tense, verb } = mesh.userData;
+            const tenseLabel = TENSES.find(item => item.key === tense)?.label || tense;
+            const sample = getTenseData(verb, tense, state.activePronoun);
+
+            ui.tooltip.innerHTML = `
+                <strong>${binyan}</strong>
+                <div>${tenseLabel}</div>
+                <div dir="rtl" style="font-size: 1rem; margin-top: 0.2rem;">${sample.primary || '—'}</div>
+            `;
+            ui.tooltip.style.opacity = '1';
+            moveTooltip(x, y);
+        }
+
+        function moveTooltip(x, y) {
+            ui.tooltip.style.left = `${x + 12}px`;
+            ui.tooltip.style.top = `${y + 12}px`;
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            nodeGroup.rotation.y += 0.0008;
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
