@@ -18,6 +18,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/mandelbulb_realtime/",
+    "title": "Realtime Mandelbulb Lab",
+    "description": "Realtime raymarched mandelbulb fractal with live controls for formula, animation, color grading, and camera path.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/neural_network_particles/",
     "title": "Neural Network Particles",
     "description": "Interactive connected particle field with complex sinusoidal undulation and neural network aesthetics.",

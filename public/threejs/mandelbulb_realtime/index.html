@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Realtime raymarched mandelbulb fractal with live controls for formula, animation, color grading, and camera path.">
+    <title>Realtime Mandelbulb Lab</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: "Space Grotesk", "Segoe UI", sans-serif;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(55, 95, 255, 0.18), transparent 45%),
+                radial-gradient(circle at 80% 75%, rgba(0, 220, 180, 0.15), transparent 42%),
+                #05060b;
+            color: #ebefff;
+        }
+
+        #app {
+            position: fixed;
+            inset: 0;
+        }
+
+        .hud {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            z-index: 10;
+            width: min(360px, calc(100vw - 30px));
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 18px;
+            background: rgba(8, 10, 16, 0.74);
+            backdrop-filter: blur(12px);
+            padding: 14px 16px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+            pointer-events: none;
+        }
+
+        .hud h1 {
+            font-size: 1rem;
+            margin: 0;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .hud p {
+            margin: 8px 0 0;
+            font-size: 0.82rem;
+            line-height: 1.4;
+            color: rgba(235, 239, 255, 0.82);
+        }
+
+        .hud small {
+            display: block;
+            margin-top: 10px;
+            font-size: 0.72rem;
+            letter-spacing: 0.06em;
+            color: rgba(235, 239, 255, 0.64);
+        }
+
+        .toggle {
+            position: fixed;
+            right: 16px;
+            top: 16px;
+            z-index: 12;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 999px;
+            background: rgba(8, 10, 16, 0.7);
+            color: #eaf1ff;
+            padding: 8px 14px;
+            font-size: 0.78rem;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            cursor: pointer;
+            backdrop-filter: blur(8px);
+        }
+
+        .toggle:hover {
+            background: rgba(18, 22, 34, 0.92);
+        }
+
+        @media (max-width: 760px) {
+            .hud {
+                width: calc(100vw - 24px);
+                left: 12px;
+                top: auto;
+                bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+                border-radius: 16px;
+                padding: 12px 14px;
+            }
+
+            .toggle {
+                top: auto;
+                bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+    <aside class="hud" id="hud">
+        <h1>Realtime Mandelbulb Lab</h1>
+        <p>Raymarched distance estimator fractal. Orbit with mouse/touch, then tune formula shape, animation timing, palette, and exact camera coordinates.</p>
+        <small>Tip: lower max steps and raise epsilon if your GPU is under load.</small>
+    </aside>
+    <button class="toggle" id="toggle-hud" type="button">Hide HUD</button>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+        const app = document.getElementById('app');
+        const hud = document.getElementById('hud');
+        const toggleHudButton = document.getElementById('toggle-hud');
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        app.appendChild(renderer.domElement);
+
+        const viewCamera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 200);
+        viewCamera.position.set(3.2, 1.9, 4.2);
+
+        const controls = new OrbitControls(viewCamera, renderer.domElement);
+        controls.target.set(0, 0, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+
+        const params = {
+            power: 8.0,
+            iterations: 12,
+            bailout: 8.0,
+            maxSteps: 120,
+            maxDistance: 40,
+            epsilon: 0.0016,
+            animatePower: true,
+            speed: 0.75,
+            powerAmplitude: 0.7,
+            cameraOrbit: false,
+            orbitSpeed: 0.25,
+            palette: 'Inferno',
+            hueShift: 0.0,
+            saturation: 1.1,
+            glow: 0.8,
+            background: '#070912',
+            accent: '#5ab7ff',
+            fog: 0.22,
+            cameraX: viewCamera.position.x,
+            cameraY: viewCamera.position.y,
+            cameraZ: viewCamera.position.z,
+            targetX: controls.target.x,
+            targetY: controls.target.y,
+            targetZ: controls.target.z,
+            fov: viewCamera.fov,
+            renderScale: 1.0,
+            resetCamera() {
+                viewCamera.position.set(3.2, 1.9, 4.2);
+                controls.target.set(0, 0, 0);
+                viewCamera.fov = 52;
+                viewCamera.updateProjectionMatrix();
+                syncCameraParams();
+            }
+        };
+
+        const paletteMap = {
+            Inferno: 0,
+            CyanFire: 1,
+            Voltage: 2,
+            Mono: 3
+        };
+
+        const uniforms = {
+            uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+            uTime: { value: 0 },
+            uCamPos: { value: viewCamera.position.clone() },
+            uCamTarget: { value: controls.target.clone() },
+            uCamUp: { value: new THREE.Vector3(0, 1, 0) },
+            uFov: { value: THREE.MathUtils.degToRad(viewCamera.fov) },
+            uPower: { value: params.power },
+            uIterations: { value: params.iterations },
+            uBailout: { value: params.bailout },
+            uMaxSteps: { value: params.maxSteps },
+            uMaxDistance: { value: params.maxDistance },
+            uEpsilon: { value: params.epsilon },
+            uPalette: { value: paletteMap[params.palette] },
+            uHueShift: { value: params.hueShift },
+            uSaturation: { value: params.saturation },
+            uGlow: { value: params.glow },
+            uFog: { value: params.fog },
+            uBackground: { value: new THREE.Color(params.background) },
+            uAccent: { value: new THREE.Color(params.accent) }
+        };
+
+        const material = new THREE.ShaderMaterial({
+            uniforms,
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                precision highp float;
+
+                varying vec2 vUv;
+
+                uniform vec2 uResolution;
+                uniform float uTime;
+                uniform vec3 uCamPos;
+                uniform vec3 uCamTarget;
+                uniform vec3 uCamUp;
+                uniform float uFov;
+                uniform float uPower;
+                uniform int uIterations;
+                uniform float uBailout;
+                uniform int uMaxSteps;
+                uniform float uMaxDistance;
+                uniform float uEpsilon;
+                uniform int uPalette;
+                uniform float uHueShift;
+                uniform float uSaturation;
+                uniform float uGlow;
+                uniform float uFog;
+                uniform vec3 uBackground;
+                uniform vec3 uAccent;
+
+                float hash31(vec3 p) {
+                    p = fract(p * 0.1031);
+                    p += dot(p, p.yzx + 31.32);
+                    return fract((p.x + p.y) * p.z);
+                }
+
+                mat3 makeCamera(vec3 ro, vec3 ta, vec3 upRef) {
+                    vec3 f = normalize(ta - ro);
+                    vec3 r = normalize(cross(f, upRef));
+                    vec3 u = cross(r, f);
+                    return mat3(r, u, f);
+                }
+
+                float mandelbulbDE(vec3 p, out float trap) {
+                    vec3 z = p;
+                    float dr = 1.0;
+                    float r = 0.0;
+                    trap = 1e5;
+
+                    for (int i = 0; i < 24; i++) {
+                        if (i >= uIterations) break;
+                        r = length(z);
+                        if (r > uBailout) break;
+
+                        float theta = acos(clamp(z.z / max(r, 1e-6), -1.0, 1.0));
+                        float phi = atan(z.y, z.x);
+                        dr = pow(r, uPower - 1.0) * uPower * dr + 1.0;
+
+                        float zr = pow(r, uPower);
+                        theta *= uPower;
+                        phi *= uPower;
+
+                        z = zr * vec3(sin(theta) * cos(phi), sin(phi) * sin(theta), cos(theta));
+                        z += p;
+
+                        trap = min(trap, abs(z.y) + 0.15 * abs(z.x));
+                    }
+
+                    return 0.5 * log(max(r, 1e-6)) * r / dr;
+                }
+
+                float mapScene(vec3 p, out float trap) {
+                    return mandelbulbDE(p, trap);
+                }
+
+                vec3 estimateNormal(vec3 p) {
+                    vec2 e = vec2(uEpsilon, 0.0);
+                    float trap;
+                    return normalize(vec3(
+                        mapScene(p + e.xyy, trap) - mapScene(p - e.xyy, trap),
+                        mapScene(p + e.yxy, trap) - mapScene(p - e.yxy, trap),
+                        mapScene(p + e.yyx, trap) - mapScene(p - e.yyx, trap)
+                    ));
+                }
+
+                vec3 shiftHue(vec3 color, float shift) {
+                    const mat3 toYIQ = mat3(
+                        0.299, 0.587, 0.114,
+                        0.596, -0.275, -0.321,
+                        0.212, -0.523, 0.311
+                    );
+                    const mat3 toRGB = mat3(
+                        1.0, 0.956, 0.621,
+                        1.0, -0.272, -0.647,
+                        1.0, -1.106, 1.703
+                    );
+                    vec3 yiq = toYIQ * color;
+                    float hue = atan(yiq.z, yiq.y) + shift;
+                    float chroma = length(yiq.yz);
+                    return clamp(toRGB * vec3(yiq.x, chroma * cos(hue), chroma * sin(hue)), 0.0, 1.0);
+                }
+
+                vec3 palette(float t, float trap, float spec) {
+                    vec3 c;
+                    if (uPalette == 0) {
+                        c = 0.6 + 0.45 * cos(6.2831 * (vec3(0.08, 0.25, 0.55) + t * vec3(0.7, 0.8, 0.9)));
+                    } else if (uPalette == 1) {
+                        c = mix(vec3(0.02, 0.10, 0.18), vec3(0.20, 0.96, 1.00), smoothstep(0.0, 1.0, t));
+                    } else if (uPalette == 2) {
+                        c = vec3(0.25, 0.85, 1.0) * (0.35 + 0.65 * sin(5.0 * t + vec3(0.0, 1.2, 2.4)));
+                    } else {
+                        c = vec3(0.25 + 0.75 * t);
+                    }
+
+                    c = mix(c, uAccent, 0.28 + 0.3 * exp(-8.0 * trap));
+                    c += spec * 0.65;
+                    c = shiftHue(c, uHueShift);
+
+                    float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+                    return mix(vec3(luma), c, uSaturation);
+                }
+
+                vec3 shade(vec3 ro, vec3 rd) {
+                    float t = 0.0;
+                    float trapAccum = 1e5;
+                    float hit = -1.0;
+                    float edgeGlow = 0.0;
+
+                    for (int i = 0; i < 260; i++) {
+                        if (i >= uMaxSteps) break;
+                        vec3 p = ro + rd * t;
+                        float trap;
+                        float d = mapScene(p, trap);
+
+                        trapAccum = min(trapAccum, trap);
+                        edgeGlow += exp(-80.0 * abs(d)) * 0.009;
+
+                        if (d < uEpsilon) {
+                            hit = t;
+                            break;
+                        }
+                        if (t > uMaxDistance) break;
+                        t += max(0.001, d * 0.72);
+                    }
+
+                    vec3 bg = uBackground;
+                    if (hit < 0.0) {
+                        float horizon = pow(max(0.0, 1.0 - abs(rd.y)), 2.0);
+                        vec3 star = vec3(step(0.9975, hash31(rd * 27.0 + uTime * 0.01))) * 0.35;
+                        return bg + horizon * 0.08 + star + edgeGlow * uGlow;
+                    }
+
+                    vec3 p = ro + rd * hit;
+                    vec3 n = estimateNormal(p);
+                    vec3 lightDir = normalize(vec3(0.4, 0.8, -0.55));
+                    vec3 halfVec = normalize(lightDir - rd);
+
+                    float diffuse = clamp(dot(n, lightDir), 0.0, 1.0);
+                    float spec = pow(clamp(dot(n, halfVec), 0.0, 1.0), 32.0);
+                    float fresnel = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
+                    float ao = exp(-0.11 * float(uMaxSteps) * uEpsilon);
+                    float tNorm = clamp(hit / uMaxDistance, 0.0, 1.0);
+
+                    vec3 base = palette(diffuse * 0.65 + fresnel * 0.35 + (1.0 - tNorm) * 0.12, trapAccum, spec);
+                    vec3 lit = base * (0.2 + 1.15 * diffuse * ao) + fresnel * uAccent * 0.5;
+
+                    float fogAmount = 1.0 - exp(-uFog * hit * hit * 0.05);
+                    vec3 color = mix(lit, bg, fogAmount);
+                    color += edgeGlow * uGlow * (0.6 + 0.4 * fresnel);
+
+                    return color;
+                }
+
+                void main() {
+                    vec2 uv = vUv * 2.0 - 1.0;
+                    uv.x *= uResolution.x / max(uResolution.y, 1.0);
+
+                    mat3 camBasis = makeCamera(uCamPos, uCamTarget, uCamUp);
+                    float focal = 1.0 / tan(0.5 * uFov);
+                    vec3 rd = normalize(camBasis * vec3(uv, focal));
+                    vec3 ro = uCamPos;
+
+                    vec3 color = shade(ro, rd);
+                    color = pow(color, vec3(0.92));
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
+        });
+
+        const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+        scene.add(quad);
+
+        function syncCameraParams() {
+            params.cameraX = viewCamera.position.x;
+            params.cameraY = viewCamera.position.y;
+            params.cameraZ = viewCamera.position.z;
+            params.targetX = controls.target.x;
+            params.targetY = controls.target.y;
+            params.targetZ = controls.target.z;
+            params.fov = viewCamera.fov;
+
+            for (const controller of cameraControllers) {
+                controller.updateDisplay();
+            }
+        }
+
+        function applyCameraParams() {
+            viewCamera.position.set(params.cameraX, params.cameraY, params.cameraZ);
+            controls.target.set(params.targetX, params.targetY, params.targetZ);
+            viewCamera.fov = params.fov;
+            viewCamera.updateProjectionMatrix();
+        }
+
+        const gui = new GUI({ title: 'Mandelbulb Controls', width: 328 });
+
+        const fFunction = gui.addFolder('Function');
+        fFunction.add(params, 'power', 2, 14, 0.05);
+        fFunction.add(params, 'iterations', 4, 20, 1);
+        fFunction.add(params, 'bailout', 2, 20, 0.1);
+        fFunction.add(params, 'maxSteps', 40, 220, 1);
+        fFunction.add(params, 'maxDistance', 10, 80, 0.5);
+        fFunction.add(params, 'epsilon', 0.0005, 0.01, 0.0001);
+
+        const fAnimation = gui.addFolder('Animation');
+        fAnimation.add(params, 'animatePower');
+        fAnimation.add(params, 'speed', 0, 2, 0.01);
+        fAnimation.add(params, 'powerAmplitude', 0, 3, 0.01);
+        fAnimation.add(params, 'cameraOrbit');
+        fAnimation.add(params, 'orbitSpeed', -1.2, 1.2, 0.01);
+
+        const fColor = gui.addFolder('Color');
+        fColor.add(params, 'palette', Object.keys(paletteMap));
+        fColor.add(params, 'hueShift', -3.14, 3.14, 0.01);
+        fColor.add(params, 'saturation', 0, 2, 0.01);
+        fColor.add(params, 'glow', 0, 2.5, 0.01);
+        fColor.add(params, 'fog', 0, 0.8, 0.01);
+        fColor.addColor(params, 'background');
+        fColor.addColor(params, 'accent');
+
+        const fCamera = gui.addFolder('Camera');
+        const cameraControllers = [
+            fCamera.add(params, 'cameraX', -12, 12, 0.01).onChange(applyCameraParams),
+            fCamera.add(params, 'cameraY', -12, 12, 0.01).onChange(applyCameraParams),
+            fCamera.add(params, 'cameraZ', -12, 12, 0.01).onChange(applyCameraParams),
+            fCamera.add(params, 'targetX', -4, 4, 0.01).onChange(applyCameraParams),
+            fCamera.add(params, 'targetY', -4, 4, 0.01).onChange(applyCameraParams),
+            fCamera.add(params, 'targetZ', -4, 4, 0.01).onChange(applyCameraParams),
+            fCamera.add(params, 'fov', 22, 100, 0.1).onChange(applyCameraParams)
+        ];
+        fCamera.add(params, 'renderScale', 0.4, 1.2, 0.05);
+        fCamera.add(params, 'resetCamera');
+
+        fFunction.open();
+
+        controls.addEventListener('change', () => {
+            if (!params.cameraOrbit) {
+                syncCameraParams();
+            }
+        });
+
+        let hudVisible = true;
+        toggleHudButton.addEventListener('click', () => {
+            hudVisible = !hudVisible;
+            hud.style.display = hudVisible ? 'block' : 'none';
+            toggleHudButton.textContent = hudVisible ? 'Hide HUD' : 'Show HUD';
+        });
+
+        function updateUniforms(timeSeconds) {
+            const animatedPower = params.animatePower
+                ? params.power + Math.sin(timeSeconds * params.speed) * params.powerAmplitude
+                : params.power;
+
+            if (params.cameraOrbit) {
+                const radius = Math.max(0.6, viewCamera.position.distanceTo(controls.target));
+                const angle = timeSeconds * params.orbitSpeed;
+                const y = params.cameraY;
+                viewCamera.position.set(
+                    controls.target.x + Math.cos(angle) * radius,
+                    y,
+                    controls.target.z + Math.sin(angle) * radius
+                );
+                syncCameraParams();
+            }
+
+            uniforms.uResolution.value.set(
+                window.innerWidth * params.renderScale,
+                window.innerHeight * params.renderScale
+            );
+            uniforms.uTime.value = timeSeconds;
+            uniforms.uCamPos.value.copy(viewCamera.position);
+            uniforms.uCamTarget.value.copy(controls.target);
+            uniforms.uFov.value = THREE.MathUtils.degToRad(viewCamera.fov);
+            uniforms.uPower.value = Math.max(1.0, animatedPower);
+            uniforms.uIterations.value = Math.max(1, Math.floor(params.iterations));
+            uniforms.uBailout.value = params.bailout;
+            uniforms.uMaxSteps.value = Math.max(1, Math.floor(params.maxSteps));
+            uniforms.uMaxDistance.value = params.maxDistance;
+            uniforms.uEpsilon.value = params.epsilon;
+            uniforms.uPalette.value = paletteMap[params.palette];
+            uniforms.uHueShift.value = params.hueShift;
+            uniforms.uSaturation.value = params.saturation;
+            uniforms.uGlow.value = params.glow;
+            uniforms.uFog.value = params.fog;
+            uniforms.uBackground.value.set(params.background);
+            uniforms.uAccent.value.set(params.accent);
+        }
+
+        function onResize() {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            viewCamera.aspect = window.innerWidth / window.innerHeight;
+            viewCamera.updateProjectionMatrix();
+            uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', onResize);
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            const timeSeconds = clock.getElapsedTime();
+            updateUniforms(timeSeconds);
+
+            renderer.render(scene, camera);
+        }
+
+        syncCameraParams();
+        animate();
+    </script>
+</body>
+</html>
