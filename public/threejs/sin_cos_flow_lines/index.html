@@ -217,11 +217,10 @@
             lineWidth: 0.55,
             alpha: 0.30,
             palette: 'viridis',
-            bgFade: 1.0,
-            revealSpeed: 2.2,
-            animateReveal: true,
-            animationMode: 'pingpong',
-            trailLength: 22,
+            bgFade: 0.2,
+            animateParams: true,
+            animationFps: 24,
+            cycleSeconds: 6,
             jitter: 0.0,
             seed: Math.floor(Math.random() * 1e9)
         };
@@ -235,11 +234,28 @@
             ['range', 0.4, 3.2, 0.01],
             ['lineWidth', 0.1, 2.5, 0.01],
             ['alpha', 0.03, 0.9, 0.01],
-            ['bgFade', 0.05, 1.0, 0.01],
-            ['revealSpeed', 0.3, 10.0, 0.1],
-            ['trailLength', 4, 160, 1],
+            ['bgFade', 0.0, 0.98, 0.01],
+            ['animationFps', 1, 60, 1],
+            ['cycleSeconds', 1, 30, 0.1],
             ['jitter', 0.0, 0.15, 0.001]
         ];
+
+        const animatableKeys = ['c1', 'c2', 'dt', 'particles', 'iterations', 'range'];
+        const controlMeta = Object.fromEntries(controlsSpec.map(([k, min, max, step]) => [k, { min, max, step }]));
+
+        const paramAnimation = {};
+        for (const key of animatableKeys) {
+            paramAnimation[key] = {
+                mode: 'static',
+                start: params[key],
+                end: params[key],
+                speedMul: 1.0,
+                phase: 0.0
+            };
+        }
+
+        const uiRefs = {};
+        const animUiRefs = {};
 
         const palettes = {
             viridis: ['#440154', '#3b528b', '#21918c', '#5dc963', '#fde725'],
@@ -248,6 +264,32 @@
             magma: ['#000004', '#3b0f70', '#8c2981', '#de4968', '#fea16e'],
             twilight: ['#1e1a4b', '#3b528b', '#5f6bd8', '#9b8ce1', '#f6d7be']
         };
+
+        function digitsForStep(step) {
+            return Math.max(0, String(step).split('.')[1]?.length || 0);
+        }
+
+        function formatValue(key, value) {
+            const meta = controlMeta[key];
+            if (!meta) return String(value);
+            if (Number.isInteger(meta.step)) return String(Math.round(value));
+            return Number(value).toFixed(digitsForStep(meta.step));
+        }
+
+        function setBaseParam(key, value, updateSlider = true) {
+            const meta = controlMeta[key];
+            if (!meta) return;
+
+            let v = Math.max(meta.min, Math.min(meta.max, value));
+            if (Number.isInteger(meta.step)) v = Math.round(v);
+            params[key] = v;
+
+            const ref = uiRefs[key];
+            if (ref) {
+                ref.output.textContent = formatValue(key, v);
+                if (updateSlider) ref.slider.value = String(v);
+            }
+        }
 
         function createControl(key, min, max, step) {
             const row = document.createElement('div');
@@ -259,7 +301,7 @@
 
             const out = document.createElement('output');
             out.id = `out-${key}`;
-            out.textContent = String(params[key]);
+            out.textContent = formatValue(key, params[key]);
 
             const slider = document.createElement('input');
             slider.type = 'range';
@@ -270,16 +312,12 @@
             slider.value = String(params[key]);
 
             slider.addEventListener('input', () => {
-                const value = Number(slider.value);
-                params[key] = Number.isInteger(step) ? Math.round(value) : value;
-                out.textContent = key === 'particles' || key === 'iterations'
-                    ? String(Math.round(params[key]))
-                    : params[key].toFixed(Math.max(0, String(step).split('.')[1]?.length || 0));
-
-                if (key === 'particles' || key === 'iterations') {
-                    params[key] = Math.round(params[key]);
+                setBaseParam(key, Number(slider.value), false);
+                if (animatableKeys.includes(key) && paramAnimation[key].mode === 'static') {
+                    paramAnimation[key].start = params[key];
+                    paramAnimation[key].end = params[key];
+                    syncAnimControlDisplays(key);
                 }
-
                 requestRebuild();
             });
 
@@ -291,6 +329,7 @@
             row.appendChild(out);
             row.appendChild(holder);
             controlsHost.appendChild(row);
+            uiRefs[key] = { slider, output: out };
         }
 
         function createSelect() {
@@ -328,59 +367,119 @@
             controlsHost.appendChild(row);
         }
 
-        function createAnimationModeSelect() {
-            const row = document.createElement('div');
-            row.className = 'row';
+        function createAnimSection() {
+            const sectionLabel = document.createElement('div');
+            sectionLabel.className = 'row';
+            sectionLabel.innerHTML = '<label style="opacity:.85;letter-spacing:.08em;text-transform:uppercase;">Param Animation</label><output>start/end</output>';
+            controlsHost.appendChild(sectionLabel);
 
-            const label = document.createElement('label');
-            label.textContent = 'animationMode';
+            for (const key of animatableKeys) {
+                const meta = controlMeta[key];
+                const group = document.createElement('div');
+                group.style.margin = '8px 0';
+                group.style.padding = '8px';
+                group.style.border = '1px solid rgba(255,255,255,.1)';
+                group.style.borderRadius = '10px';
+                group.style.background = 'rgba(255,255,255,.03)';
 
-            const out = document.createElement('output');
-            out.textContent = params.animationMode;
+                const title = document.createElement('div');
+                title.style.fontSize = '.74rem';
+                title.style.marginBottom = '6px';
+                title.style.letterSpacing = '.08em';
+                title.style.textTransform = 'uppercase';
+                title.textContent = key;
+                group.appendChild(title);
 
-            const select = document.createElement('select');
-            const modes = [
-                ['pingpong', 'pingpong sweep'],
-                ['stream', 'continuous stream']
-            ];
+                const mode = document.createElement('select');
+                mode.innerHTML = '<option value="static">static</option><option value="sweep">sweep</option><option value="osc">oscillator</option>';
+                mode.value = paramAnimation[key].mode;
+                mode.addEventListener('change', () => {
+                    paramAnimation[key].mode = mode.value;
+                    requestRebuild();
+                });
+                group.appendChild(mode);
 
-            for (const [value, text] of modes) {
-                const option = document.createElement('option');
-                option.value = value;
-                option.textContent = text;
-                if (value === params.animationMode) option.selected = true;
-                select.appendChild(option);
+                function makeMiniSlider(name, min, max, step, value, onInput) {
+                    const wrap = document.createElement('div');
+                    wrap.style.marginTop = '6px';
+
+                    const text = document.createElement('div');
+                    text.style.fontSize = '.68rem';
+                    text.style.opacity = '.75';
+                    text.style.marginBottom = '2px';
+                    text.textContent = name;
+
+                    const out = document.createElement('output');
+                    out.style.float = 'right';
+                    out.textContent = Number.isInteger(step) ? String(Math.round(value)) : Number(value).toFixed(digitsForStep(step));
+                    text.appendChild(out);
+
+                    const slider = document.createElement('input');
+                    slider.type = 'range';
+                    slider.min = String(min);
+                    slider.max = String(max);
+                    slider.step = String(step);
+                    slider.value = String(value);
+                    slider.addEventListener('input', () => {
+                        const v = Number(slider.value);
+                        out.textContent = Number.isInteger(step) ? String(Math.round(v)) : v.toFixed(digitsForStep(step));
+                        onInput(v);
+                    });
+
+                    wrap.appendChild(text);
+                    wrap.appendChild(slider);
+                    group.appendChild(wrap);
+                    return { slider, out };
+                }
+
+                const startRef = makeMiniSlider('start', meta.min, meta.max, meta.step, paramAnimation[key].start, (v) => {
+                    paramAnimation[key].start = Number.isInteger(meta.step) ? Math.round(v) : v;
+                    requestRebuild();
+                });
+
+                const endRef = makeMiniSlider('end', meta.min, meta.max, meta.step, paramAnimation[key].end, (v) => {
+                    paramAnimation[key].end = Number.isInteger(meta.step) ? Math.round(v) : v;
+                    requestRebuild();
+                });
+
+                const speedRef = makeMiniSlider('speed', 0.1, 4.0, 0.01, paramAnimation[key].speedMul, (v) => {
+                    paramAnimation[key].speedMul = v;
+                });
+
+                const phaseRef = makeMiniSlider('phase', 0.0, 1.0, 0.01, paramAnimation[key].phase, (v) => {
+                    paramAnimation[key].phase = v;
+                });
+
+                animUiRefs[key] = { mode, startRef, endRef, speedRef, phaseRef };
+                controlsHost.appendChild(group);
             }
+        }
 
-            select.addEventListener('change', () => {
-                params.animationMode = select.value;
-                out.textContent = params.animationMode;
-                reveal = 1;
-                revealDir = 1;
-                streamHead = 1;
-                drawFrame(true);
-            });
-
-            const holder = document.createElement('div');
-            holder.style.gridColumn = '1 / -1';
-            holder.appendChild(select);
-
-            row.appendChild(label);
-            row.appendChild(out);
-            row.appendChild(holder);
-            controlsHost.appendChild(row);
+        function syncAnimControlDisplays(key) {
+            const refs = animUiRefs[key];
+            if (!refs) return;
+            const meta = controlMeta[key];
+            refs.startRef.slider.value = String(paramAnimation[key].start);
+            refs.endRef.slider.value = String(paramAnimation[key].end);
+            refs.startRef.out.textContent = formatValue(key, paramAnimation[key].start);
+            refs.endRef.out.textContent = formatValue(key, paramAnimation[key].end);
+            refs.mode.value = paramAnimation[key].mode;
+            refs.speedRef.out.textContent = Number(paramAnimation[key].speedMul).toFixed(2);
+            refs.phaseRef.out.textContent = Number(paramAnimation[key].phase).toFixed(2);
+            if (Number.isInteger(meta.step)) {
+                refs.startRef.out.textContent = String(Math.round(paramAnimation[key].start));
+                refs.endRef.out.textContent = String(Math.round(paramAnimation[key].end));
+            }
         }
 
         controlsSpec.forEach(([k, min, max, step]) => createControl(k, min, max, step));
         createSelect();
-        createAnimationModeSelect();
+        createAnimSection();
 
         let traceX = null;
         let traceY = null;
-        let reveal = 1;
-        let revealDir = 1;
-        let streamHead = 1;
         let rebuildHandle = null;
+        let lastAnimatedRebuild = 0;
 
         function xorshift32(seed) {
             let t = seed >>> 0;
@@ -396,14 +495,15 @@
             return a + (b - a) * t;
         }
 
+        function triangleWave(t) {
+            const x = t - Math.floor(t);
+            return 1.0 - Math.abs(2.0 * x - 1.0);
+        }
+
         function hexToRgb(hex) {
             const s = hex.replace('#', '');
             const n = parseInt(s, 16);
-            return [
-                (n >> 16) & 255,
-                (n >> 8) & 255,
-                n & 255
-            ];
+            return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
         }
 
         function paletteColor(name, t) {
@@ -433,21 +533,44 @@
 
         function requestRebuild() {
             statusEl.textContent = 'queued';
-            if (rebuildHandle !== null) {
-                clearTimeout(rebuildHandle);
-            }
+            if (rebuildHandle !== null) clearTimeout(rebuildHandle);
             rebuildHandle = setTimeout(() => {
                 rebuildHandle = null;
                 generateTraces();
                 drawFrame(true);
-            }, 90);
+            }, 80);
+        }
+
+        function applyAnimatedParams(timeSeconds) {
+            let anyAnimated = false;
+
+            for (const key of animatableKeys) {
+                const anim = paramAnimation[key];
+                if (anim.mode === 'static') continue;
+
+                anyAnimated = true;
+                const span = Math.max(0.001, params.cycleSeconds) / Math.max(0.01, anim.speedMul);
+                const t = timeSeconds / span + anim.phase;
+
+                let mix;
+                if (anim.mode === 'osc') {
+                    mix = 0.5 + 0.5 * Math.sin(Math.PI * 2 * t);
+                } else {
+                    mix = triangleWave(t);
+                }
+
+                const value = lerp(anim.start, anim.end, mix);
+                setBaseParam(key, value, true);
+            }
+
+            return anyAnimated;
         }
 
         function generateTraces() {
             statusEl.textContent = 'generating';
             const rand = xorshift32(params.seed | 1);
-            const particles = params.particles;
-            const steps = params.iterations;
+            const particles = Math.max(10, Math.round(params.particles));
+            const steps = Math.max(2, Math.round(params.iterations));
 
             traceX = new Float32Array(particles * steps);
             traceY = new Float32Array(particles * steps);
@@ -484,9 +607,6 @@
                 }
             }
 
-            reveal = params.animateReveal ? 1 : steps - 1;
-            revealDir = 1;
-            streamHead = 1;
             statusEl.textContent = `${particles.toLocaleString()} x ${steps}`;
         }
 
@@ -497,36 +617,9 @@
                 return;
             }
 
-            const fade = 1 - params.bgFade;
-            if (fade > 0.0001) {
-                ctx.fillStyle = `rgba(4,5,10,${Math.min(1, fade)})`;
-                ctx.fillRect(0, 0, width, height);
-            }
-        }
-
-        function drawSegment(stepIndex, particles, scale, cx, cy, alphaScale) {
-            const steps = params.iterations;
-            if (stepIndex < 0 || stepIndex >= steps - 1) return;
-
-            const t = stepIndex / Math.max(1, steps - 2);
-            const color = paletteColor(params.palette, t);
-            ctx.strokeStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
-            ctx.globalAlpha = Math.max(0, Math.min(1, params.alpha * alphaScale));
-            ctx.beginPath();
-
-            const a = stepIndex * particles;
-            const b = (stepIndex + 1) * particles;
-
-            for (let p = 0; p < particles; p++) {
-                const x1 = cx + traceX[a + p] * scale;
-                const y1 = cy - traceY[a + p] * scale;
-                const x2 = cx + traceX[b + p] * scale;
-                const y2 = cy - traceY[b + p] * scale;
-                ctx.moveTo(x1, y1);
-                ctx.lineTo(x2, y2);
-            }
-
-            ctx.stroke();
+            if (params.bgFade <= 0) return;
+            ctx.fillStyle = `rgba(4,5,10,${Math.min(1, Math.max(0, params.bgFade))})`;
+            ctx.fillRect(0, 0, width, height);
         }
 
         function drawFrame(clear) {
@@ -536,65 +629,52 @@
             const height = window.innerHeight;
             const cx = width * 0.5;
             const cy = height * 0.5;
-            const scale = Math.min(width, height) * 0.5 / params.range;
+            const scale = Math.min(width, height) * 0.5 / Math.max(0.0001, params.range);
 
             beginFade(clear, width, height);
 
-            const particles = params.particles;
-            const steps = params.iterations;
+            const particles = Math.max(10, Math.round(params.particles));
+            const steps = Math.max(2, Math.round(params.iterations));
             ctx.lineWidth = params.lineWidth;
+            ctx.globalAlpha = params.alpha;
 
-            if (!params.animateReveal) {
-                for (let i = 0; i < steps - 1; i++) {
-                    drawSegment(i, particles, scale, cx, cy, 1.0);
-                }
-                ctx.globalAlpha = 1;
-                return;
-            }
+            for (let i = 0; i < steps - 1; i++) {
+                const t = i / Math.max(1, steps - 2);
+                const color = paletteColor(params.palette, t);
+                ctx.strokeStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+                ctx.beginPath();
 
-            if (params.animationMode === 'stream') {
-                const tail = Math.max(2, Math.floor(params.trailLength));
-                const maxSeg = steps - 1;
-                const head = Math.floor(streamHead) % Math.max(1, maxSeg);
+                const a = i * particles;
+                const b = (i + 1) * particles;
 
-                for (let s = 0; s < tail; s++) {
-                    const idx = (head - s + maxSeg) % maxSeg;
-                    const age = s / tail;
-                    const strength = Math.pow(1 - age, 1.65);
-                    drawSegment(idx, particles, scale, cx, cy, strength);
+                for (let p = 0; p < particles; p++) {
+                    const x1 = cx + traceX[a + p] * scale;
+                    const y1 = cy - traceY[a + p] * scale;
+                    const x2 = cx + traceX[b + p] * scale;
+                    const y2 = cy - traceY[b + p] * scale;
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
                 }
-            } else {
-                const maxStep = Math.min(steps - 1, Math.max(1, Math.floor(reveal)));
-                for (let i = 0; i < maxStep; i++) {
-                    drawSegment(i, particles, scale, cx, cy, 1.0);
-                }
+
+                ctx.stroke();
             }
 
             ctx.globalAlpha = 1;
         }
 
-        function frame() {
-            if (params.animateReveal && traceX) {
-                if (params.animationMode === 'stream') {
-                    streamHead += params.revealSpeed;
-                    const limit = Math.max(1, params.iterations - 1);
-                    if (streamHead >= limit) {
-                        streamHead -= limit;
-                    }
+        function frame(nowMs) {
+            const now = nowMs * 0.001;
+            const anyAnimated = params.animateParams && applyAnimatedParams(now);
+
+            if (anyAnimated) {
+                const minInterval = 1 / Math.max(1, params.animationFps);
+                if (now - lastAnimatedRebuild >= minInterval) {
+                    lastAnimatedRebuild = now;
+                    generateTraces();
                     drawFrame(false);
-                } else {
-                    const ceiling = Math.max(1, params.iterations - 1);
-                    reveal += params.revealSpeed * revealDir;
-                    if (reveal >= ceiling) {
-                        reveal = ceiling;
-                        revealDir = -1;
-                    } else if (reveal <= 1) {
-                        reveal = 1;
-                        revealDir = 1;
-                    }
-                    drawFrame(true);
                 }
             }
+
             requestAnimationFrame(frame);
         }
 
@@ -605,12 +685,20 @@
         });
 
         document.getElementById('randomize').addEventListener('click', () => {
-            params.c1 = (Math.random() * 8 - 4);
-            params.c2 = (Math.random() * 8 - 4);
-            document.getElementById('ctrl-c1').value = params.c1;
-            document.getElementById('ctrl-c2').value = params.c2;
-            document.getElementById('out-c1').textContent = params.c1.toFixed(2);
-            document.getElementById('out-c2').textContent = params.c2.toFixed(2);
+            setBaseParam('c1', Math.random() * 8 - 4, true);
+            setBaseParam('c2', Math.random() * 8 - 4, true);
+
+            if (paramAnimation.c1.mode === 'static') {
+                paramAnimation.c1.start = params.c1;
+                paramAnimation.c1.end = params.c1;
+                syncAnimControlDisplays('c1');
+            }
+            if (paramAnimation.c2.mode === 'static') {
+                paramAnimation.c2.start = params.c2;
+                paramAnimation.c2.end = params.c2;
+                syncAnimControlDisplays('c2');
+            }
+
             params.seed = Math.floor(Math.random() * 1e9);
             generateTraces();
             drawFrame(true);
@@ -624,12 +712,11 @@
         });
 
         document.getElementById('animateToggle').addEventListener('click', (event) => {
-            params.animateReveal = !params.animateReveal;
-            event.currentTarget.textContent = params.animateReveal ? 'Animate On' : 'Animate Off';
-            reveal = 1;
-            revealDir = 1;
-            streamHead = 1;
-            drawFrame(true);
+            params.animateParams = !params.animateParams;
+            event.currentTarget.textContent = params.animateParams ? 'Animate On' : 'Animate Off';
+            if (!params.animateParams) {
+                drawFrame(false);
+            }
         });
 
         togglePanel.addEventListener('click', () => {
@@ -639,10 +726,12 @@
 
         window.addEventListener('resize', resize);
 
+        for (const key of animatableKeys) syncAnimControlDisplays(key);
+
         resize();
         generateTraces();
         drawFrame(true);
-        frame();
+        requestAnimationFrame(frame);
     </script>
 </body>
 </html>
