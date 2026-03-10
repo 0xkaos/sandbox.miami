@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Realtime sin/cos attractor flow lines with interactive controls for c-values, integration step, particle count, and rendering style.">
+    <title>Sin-Cos Flow Lines Lab</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            font-family: "Space Grotesk", "Segoe UI", sans-serif;
+            background: #04050a;
+            color: #edf2ff;
+        }
+
+        canvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            background: radial-gradient(circle at 20% 15%, #0e1325 0%, #04050a 55%);
+        }
+
+        .panel {
+            position: fixed;
+            top: 14px;
+            left: 14px;
+            width: min(360px, calc(100vw - 28px));
+            max-height: calc(100vh - 28px);
+            overflow: auto;
+            background: rgba(8, 10, 18, 0.82);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+            padding: 12px;
+            z-index: 10;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+        }
+
+        .title {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .title h1 {
+            font-size: 1rem;
+            margin: 0;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .title small {
+            font-size: 0.68rem;
+            letter-spacing: 0.1em;
+            color: rgba(237, 242, 255, 0.64);
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            align-items: center;
+            margin: 7px 0;
+        }
+
+        .row label {
+            font-size: 0.78rem;
+            color: rgba(237, 242, 255, 0.9);
+            letter-spacing: 0.03em;
+        }
+
+        .row output {
+            font-size: 0.75rem;
+            color: rgba(237, 242, 255, 0.72);
+            min-width: 70px;
+            text-align: right;
+        }
+
+        input[type="range"], select {
+            width: 100%;
+            margin-top: 3px;
+        }
+
+        input[type="range"] {
+            accent-color: #62d0ff;
+        }
+
+        select {
+            background: rgba(255, 255, 255, 0.06);
+            color: #edf2ff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 6px;
+        }
+
+        .buttons {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        button {
+            border: none;
+            border-radius: 10px;
+            padding: 9px 10px;
+            background: linear-gradient(120deg, #62d0ff, #7d8dff);
+            color: #03111f;
+            font-weight: 700;
+            font-size: 0.78rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
+        button.secondary {
+            background: rgba(255, 255, 255, 0.14);
+            color: #edf2ff;
+            font-weight: 600;
+        }
+
+        .foot {
+            margin-top: 9px;
+            font-size: 0.68rem;
+            color: rgba(237, 242, 255, 0.58);
+            line-height: 1.35;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .toggle {
+            position: fixed;
+            right: 14px;
+            top: 14px;
+            z-index: 11;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 999px;
+            background: rgba(6, 9, 18, 0.75);
+            color: #edf2ff;
+            padding: 8px 12px;
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        @media (max-width: 760px) {
+            .panel {
+                top: auto;
+                bottom: 12px;
+                left: 12px;
+                width: calc(100vw - 24px);
+                max-height: min(58vh, 440px);
+            }
+
+            .toggle {
+                top: auto;
+                bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <button class="toggle" id="toggle-panel" type="button">Hide Controls</button>
+
+    <aside class="panel" id="panel">
+        <div class="title">
+            <h1>Sin-Cos Flow Lines</h1>
+            <small id="status">ready</small>
+        </div>
+
+        <div id="controls"></div>
+
+        <div class="buttons">
+            <button id="regen" type="button">Regenerate</button>
+            <button class="secondary" id="randomize" type="button">Randomize C</button>
+            <button class="secondary" id="download" type="button">Save PNG</button>
+            <button class="secondary" id="animateToggle" type="button">Animate On</button>
+        </div>
+
+        <div class="foot">
+            Vector field adaptation of your Python script:<br>
+            <code>target = (sin(x^2-y^2+c1), cos(2xy+c2))</code>, integrated via <code>P += (target-P)*dt</code>.
+        </div>
+    </aside>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const controlsHost = document.getElementById('controls');
+        const statusEl = document.getElementById('status');
+        const panel = document.getElementById('panel');
+        const togglePanel = document.getElementById('toggle-panel');
+
+        const params = {
+            c1: 2.4,
+            c2: 1.6,
+            dt: 0.05,
+            particles: 2000,
+            iterations: 100,
+            range: 1.2,
+            lineWidth: 0.55,
+            alpha: 0.30,
+            palette: 'viridis',
+            bgFade: 1.0,
+            revealSpeed: 2.2,
+            animateReveal: true,
+            jitter: 0.0,
+            seed: Math.floor(Math.random() * 1e9)
+        };
+
+        const controlsSpec = [
+            ['c1', -4, 4, 0.01],
+            ['c2', -4, 4, 0.01],
+            ['dt', 0.005, 0.25, 0.001],
+            ['particles', 200, 12000, 50],
+            ['iterations', 20, 420, 1],
+            ['range', 0.4, 3.2, 0.01],
+            ['lineWidth', 0.1, 2.5, 0.01],
+            ['alpha', 0.03, 0.9, 0.01],
+            ['bgFade', 0.05, 1.0, 0.01],
+            ['revealSpeed', 0.3, 10.0, 0.1],
+            ['jitter', 0.0, 0.15, 0.001]
+        ];
+
+        const palettes = {
+            viridis: ['#440154', '#3b528b', '#21918c', '#5dc963', '#fde725'],
+            plasma: ['#0d0887', '#6a00a8', '#b12a90', '#e16462', '#fca636'],
+            inferno: ['#000004', '#420a68', '#932667', '#dd513a', '#fba40a'],
+            magma: ['#000004', '#3b0f70', '#8c2981', '#de4968', '#fea16e'],
+            twilight: ['#1e1a4b', '#3b528b', '#5f6bd8', '#9b8ce1', '#f6d7be']
+        };
+
+        function createControl(key, min, max, step) {
+            const row = document.createElement('div');
+            row.className = 'row';
+
+            const label = document.createElement('label');
+            label.textContent = key;
+            label.setAttribute('for', `ctrl-${key}`);
+
+            const out = document.createElement('output');
+            out.id = `out-${key}`;
+            out.textContent = String(params[key]);
+
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.id = `ctrl-${key}`;
+            slider.min = String(min);
+            slider.max = String(max);
+            slider.step = String(step);
+            slider.value = String(params[key]);
+
+            slider.addEventListener('input', () => {
+                const value = Number(slider.value);
+                params[key] = Number.isInteger(step) ? Math.round(value) : value;
+                out.textContent = key === 'particles' || key === 'iterations'
+                    ? String(Math.round(params[key]))
+                    : params[key].toFixed(Math.max(0, String(step).split('.')[1]?.length || 0));
+
+                if (key === 'particles' || key === 'iterations') {
+                    params[key] = Math.round(params[key]);
+                }
+
+                requestRebuild();
+            });
+
+            const holder = document.createElement('div');
+            holder.style.gridColumn = '1 / -1';
+            holder.appendChild(slider);
+
+            row.appendChild(label);
+            row.appendChild(out);
+            row.appendChild(holder);
+            controlsHost.appendChild(row);
+        }
+
+        function createSelect() {
+            const row = document.createElement('div');
+            row.className = 'row';
+
+            const label = document.createElement('label');
+            label.textContent = 'palette';
+
+            const out = document.createElement('output');
+            out.textContent = params.palette;
+
+            const select = document.createElement('select');
+            for (const name of Object.keys(palettes)) {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                if (name === params.palette) option.selected = true;
+                select.appendChild(option);
+            }
+
+            select.addEventListener('change', () => {
+                params.palette = select.value;
+                out.textContent = params.palette;
+                drawFrame(true);
+            });
+
+            const holder = document.createElement('div');
+            holder.style.gridColumn = '1 / -1';
+            holder.appendChild(select);
+
+            row.appendChild(label);
+            row.appendChild(out);
+            row.appendChild(holder);
+            controlsHost.appendChild(row);
+        }
+
+        controlsSpec.forEach(([k, min, max, step]) => createControl(k, min, max, step));
+        createSelect();
+
+        let traceX = null;
+        let traceY = null;
+        let reveal = 0;
+        let rebuildHandle = null;
+
+        function xorshift32(seed) {
+            let t = seed >>> 0;
+            return function rand() {
+                t ^= t << 13;
+                t ^= t >>> 17;
+                t ^= t << 5;
+                return ((t >>> 0) / 4294967296);
+            };
+        }
+
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+
+        function hexToRgb(hex) {
+            const s = hex.replace('#', '');
+            const n = parseInt(s, 16);
+            return [
+                (n >> 16) & 255,
+                (n >> 8) & 255,
+                n & 255
+            ];
+        }
+
+        function paletteColor(name, t) {
+            const stops = palettes[name] || palettes.viridis;
+            const n = stops.length - 1;
+            const x = Math.min(0.9999, Math.max(0, t)) * n;
+            const i = Math.floor(x);
+            const f = x - i;
+            const c1 = hexToRgb(stops[i]);
+            const c2 = hexToRgb(stops[Math.min(i + 1, n)]);
+            return [
+                Math.round(lerp(c1[0], c2[0], f)),
+                Math.round(lerp(c1[1], c2[1], f)),
+                Math.round(lerp(c1[2], c2[2], f))
+            ];
+        }
+
+        function resize() {
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            canvas.width = Math.floor(window.innerWidth * dpr);
+            canvas.height = Math.floor(window.innerHeight * dpr);
+            canvas.style.width = `${window.innerWidth}px`;
+            canvas.style.height = `${window.innerHeight}px`;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            drawFrame(true);
+        }
+
+        function requestRebuild() {
+            statusEl.textContent = 'queued';
+            if (rebuildHandle !== null) {
+                clearTimeout(rebuildHandle);
+            }
+            rebuildHandle = setTimeout(() => {
+                rebuildHandle = null;
+                generateTraces();
+                drawFrame(true);
+            }, 90);
+        }
+
+        function generateTraces() {
+            statusEl.textContent = 'generating';
+            const rand = xorshift32(params.seed | 1);
+            const particles = params.particles;
+            const steps = params.iterations;
+
+            traceX = new Float32Array(particles * steps);
+            traceY = new Float32Array(particles * steps);
+
+            const x = new Float32Array(particles);
+            const y = new Float32Array(particles);
+
+            for (let p = 0; p < particles; p++) {
+                x[p] = (rand() * 2 - 1) * params.range;
+                y[p] = (rand() * 2 - 1) * params.range;
+            }
+
+            for (let i = 0; i < steps; i++) {
+                const row = i * particles;
+                for (let p = 0; p < particles; p++) {
+                    traceX[row + p] = x[p];
+                    traceY[row + p] = y[p];
+                }
+
+                for (let p = 0; p < particles; p++) {
+                    const xp = x[p];
+                    const yp = y[p];
+                    const argX = xp * xp - yp * yp + params.c1;
+                    const argY = 2 * xp * yp + params.c2;
+
+                    const targetX = Math.sin(argX);
+                    const targetY = Math.cos(argY);
+
+                    const jx = params.jitter > 0 ? (rand() * 2 - 1) * params.jitter : 0;
+                    const jy = params.jitter > 0 ? (rand() * 2 - 1) * params.jitter : 0;
+
+                    x[p] = xp + (targetX - xp + jx) * params.dt;
+                    y[p] = yp + (targetY - yp + jy) * params.dt;
+                }
+            }
+
+            reveal = params.animateReveal ? 1 : steps - 1;
+            statusEl.textContent = `${particles.toLocaleString()} x ${steps}`;
+        }
+
+        function drawFrame(clear) {
+            if (!traceX || !traceY) return;
+
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const cx = width * 0.5;
+            const cy = height * 0.5;
+            const scale = Math.min(width, height) * 0.5 / params.range;
+
+            if (clear) {
+                ctx.fillStyle = '#04050a';
+                ctx.fillRect(0, 0, width, height);
+            } else {
+                const fade = 1 - params.bgFade;
+                if (fade > 0.0001) {
+                    ctx.fillStyle = `rgba(4,5,10,${Math.min(1, fade)})`;
+                    ctx.fillRect(0, 0, width, height);
+                }
+            }
+
+            const particles = params.particles;
+            const steps = params.iterations;
+            const maxStep = Math.min(steps - 1, Math.max(1, Math.floor(reveal)));
+
+            ctx.lineWidth = params.lineWidth;
+            ctx.globalAlpha = params.alpha;
+
+            for (let i = 0; i < maxStep; i++) {
+                const t = i / Math.max(1, steps - 2);
+                const color = paletteColor(params.palette, t);
+                ctx.strokeStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+                ctx.beginPath();
+
+                const a = i * particles;
+                const b = (i + 1) * particles;
+
+                for (let p = 0; p < particles; p++) {
+                    const x1 = cx + traceX[a + p] * scale;
+                    const y1 = cy - traceY[a + p] * scale;
+                    const x2 = cx + traceX[b + p] * scale;
+                    const y2 = cy - traceY[b + p] * scale;
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                }
+
+                ctx.stroke();
+            }
+
+            ctx.globalAlpha = 1;
+        }
+
+        function frame() {
+            if (params.animateReveal && traceX) {
+                reveal += params.revealSpeed;
+                if (reveal > params.iterations - 1) {
+                    reveal = 1;
+                }
+                drawFrame(true);
+            }
+            requestAnimationFrame(frame);
+        }
+
+        document.getElementById('regen').addEventListener('click', () => {
+            params.seed = Math.floor(Math.random() * 1e9);
+            generateTraces();
+            drawFrame(true);
+        });
+
+        document.getElementById('randomize').addEventListener('click', () => {
+            params.c1 = (Math.random() * 8 - 4);
+            params.c2 = (Math.random() * 8 - 4);
+            document.getElementById('ctrl-c1').value = params.c1;
+            document.getElementById('ctrl-c2').value = params.c2;
+            document.getElementById('out-c1').textContent = params.c1.toFixed(2);
+            document.getElementById('out-c2').textContent = params.c2.toFixed(2);
+            params.seed = Math.floor(Math.random() * 1e9);
+            generateTraces();
+            drawFrame(true);
+        });
+
+        document.getElementById('download').addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = `sin_cos_flow_${Date.now()}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+
+        document.getElementById('animateToggle').addEventListener('click', (event) => {
+            params.animateReveal = !params.animateReveal;
+            event.currentTarget.textContent = params.animateReveal ? 'Animate On' : 'Animate Off';
+            reveal = 1;
+            drawFrame(true);
+        });
+
+        togglePanel.addEventListener('click', () => {
+            panel.classList.toggle('hidden');
+            togglePanel.textContent = panel.classList.contains('hidden') ? 'Show Controls' : 'Hide Controls';
+        });
+
+        window.addEventListener('resize', resize);
+
+        resize();
+        generateTraces();
+        drawFrame(true);
+        frame();
+    </script>
+</body>
+</html>

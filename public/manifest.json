@@ -48,6 +48,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/sin_cos_flow_lines/",
+    "title": "Sin-Cos Flow Lines Lab",
+    "description": "Realtime sin/cos attractor flow lines with interactive controls for c-values, integration step, particle count, and rendering style.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/text_effects_studio/",
     "title": "Text Effects Studio",
     "description": "Design stylized neon, chrome, and bloom-heavy text renders with realtime Three.js post-processing.",
