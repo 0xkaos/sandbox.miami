@@ -220,6 +220,8 @@
             bgFade: 1.0,
             revealSpeed: 2.2,
             animateReveal: true,
+            animationMode: 'pingpong',
+            trailLength: 22,
             jitter: 0.0,
             seed: Math.floor(Math.random() * 1e9)
         };
@@ -235,6 +237,7 @@
             ['alpha', 0.03, 0.9, 0.01],
             ['bgFade', 0.05, 1.0, 0.01],
             ['revealSpeed', 0.3, 10.0, 0.1],
+            ['trailLength', 4, 160, 1],
             ['jitter', 0.0, 0.15, 0.001]
         ];
 
@@ -325,12 +328,58 @@
             controlsHost.appendChild(row);
         }
 
+        function createAnimationModeSelect() {
+            const row = document.createElement('div');
+            row.className = 'row';
+
+            const label = document.createElement('label');
+            label.textContent = 'animationMode';
+
+            const out = document.createElement('output');
+            out.textContent = params.animationMode;
+
+            const select = document.createElement('select');
+            const modes = [
+                ['pingpong', 'pingpong sweep'],
+                ['stream', 'continuous stream']
+            ];
+
+            for (const [value, text] of modes) {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = text;
+                if (value === params.animationMode) option.selected = true;
+                select.appendChild(option);
+            }
+
+            select.addEventListener('change', () => {
+                params.animationMode = select.value;
+                out.textContent = params.animationMode;
+                reveal = 1;
+                revealDir = 1;
+                streamHead = 1;
+                drawFrame(true);
+            });
+
+            const holder = document.createElement('div');
+            holder.style.gridColumn = '1 / -1';
+            holder.appendChild(select);
+
+            row.appendChild(label);
+            row.appendChild(out);
+            row.appendChild(holder);
+            controlsHost.appendChild(row);
+        }
+
         controlsSpec.forEach(([k, min, max, step]) => createControl(k, min, max, step));
         createSelect();
+        createAnimationModeSelect();
 
         let traceX = null;
         let traceY = null;
-        let reveal = 0;
+        let reveal = 1;
+        let revealDir = 1;
+        let streamHead = 1;
         let rebuildHandle = null;
 
         function xorshift32(seed) {
@@ -436,7 +485,48 @@
             }
 
             reveal = params.animateReveal ? 1 : steps - 1;
+            revealDir = 1;
+            streamHead = 1;
             statusEl.textContent = `${particles.toLocaleString()} x ${steps}`;
+        }
+
+        function beginFade(clear, width, height) {
+            if (clear) {
+                ctx.fillStyle = '#04050a';
+                ctx.fillRect(0, 0, width, height);
+                return;
+            }
+
+            const fade = 1 - params.bgFade;
+            if (fade > 0.0001) {
+                ctx.fillStyle = `rgba(4,5,10,${Math.min(1, fade)})`;
+                ctx.fillRect(0, 0, width, height);
+            }
+        }
+
+        function drawSegment(stepIndex, particles, scale, cx, cy, alphaScale) {
+            const steps = params.iterations;
+            if (stepIndex < 0 || stepIndex >= steps - 1) return;
+
+            const t = stepIndex / Math.max(1, steps - 2);
+            const color = paletteColor(params.palette, t);
+            ctx.strokeStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+            ctx.globalAlpha = Math.max(0, Math.min(1, params.alpha * alphaScale));
+            ctx.beginPath();
+
+            const a = stepIndex * particles;
+            const b = (stepIndex + 1) * particles;
+
+            for (let p = 0; p < particles; p++) {
+                const x1 = cx + traceX[a + p] * scale;
+                const y1 = cy - traceY[a + p] * scale;
+                const x2 = cx + traceX[b + p] * scale;
+                const y2 = cy - traceY[b + p] * scale;
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+            }
+
+            ctx.stroke();
         }
 
         function drawFrame(clear) {
@@ -448,43 +538,36 @@
             const cy = height * 0.5;
             const scale = Math.min(width, height) * 0.5 / params.range;
 
-            if (clear) {
-                ctx.fillStyle = '#04050a';
-                ctx.fillRect(0, 0, width, height);
-            } else {
-                const fade = 1 - params.bgFade;
-                if (fade > 0.0001) {
-                    ctx.fillStyle = `rgba(4,5,10,${Math.min(1, fade)})`;
-                    ctx.fillRect(0, 0, width, height);
-                }
-            }
+            beginFade(clear, width, height);
 
             const particles = params.particles;
             const steps = params.iterations;
-            const maxStep = Math.min(steps - 1, Math.max(1, Math.floor(reveal)));
-
             ctx.lineWidth = params.lineWidth;
-            ctx.globalAlpha = params.alpha;
 
-            for (let i = 0; i < maxStep; i++) {
-                const t = i / Math.max(1, steps - 2);
-                const color = paletteColor(params.palette, t);
-                ctx.strokeStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
-                ctx.beginPath();
-
-                const a = i * particles;
-                const b = (i + 1) * particles;
-
-                for (let p = 0; p < particles; p++) {
-                    const x1 = cx + traceX[a + p] * scale;
-                    const y1 = cy - traceY[a + p] * scale;
-                    const x2 = cx + traceX[b + p] * scale;
-                    const y2 = cy - traceY[b + p] * scale;
-                    ctx.moveTo(x1, y1);
-                    ctx.lineTo(x2, y2);
+            if (!params.animateReveal) {
+                for (let i = 0; i < steps - 1; i++) {
+                    drawSegment(i, particles, scale, cx, cy, 1.0);
                 }
+                ctx.globalAlpha = 1;
+                return;
+            }
 
-                ctx.stroke();
+            if (params.animationMode === 'stream') {
+                const tail = Math.max(2, Math.floor(params.trailLength));
+                const maxSeg = steps - 1;
+                const head = Math.floor(streamHead) % Math.max(1, maxSeg);
+
+                for (let s = 0; s < tail; s++) {
+                    const idx = (head - s + maxSeg) % maxSeg;
+                    const age = s / tail;
+                    const strength = Math.pow(1 - age, 1.65);
+                    drawSegment(idx, particles, scale, cx, cy, strength);
+                }
+            } else {
+                const maxStep = Math.min(steps - 1, Math.max(1, Math.floor(reveal)));
+                for (let i = 0; i < maxStep; i++) {
+                    drawSegment(i, particles, scale, cx, cy, 1.0);
+                }
             }
 
             ctx.globalAlpha = 1;
@@ -492,11 +575,25 @@
 
         function frame() {
             if (params.animateReveal && traceX) {
-                reveal += params.revealSpeed;
-                if (reveal > params.iterations - 1) {
-                    reveal = 1;
+                if (params.animationMode === 'stream') {
+                    streamHead += params.revealSpeed;
+                    const limit = Math.max(1, params.iterations - 1);
+                    if (streamHead >= limit) {
+                        streamHead -= limit;
+                    }
+                    drawFrame(false);
+                } else {
+                    const ceiling = Math.max(1, params.iterations - 1);
+                    reveal += params.revealSpeed * revealDir;
+                    if (reveal >= ceiling) {
+                        reveal = ceiling;
+                        revealDir = -1;
+                    } else if (reveal <= 1) {
+                        reveal = 1;
+                        revealDir = 1;
+                    }
+                    drawFrame(true);
                 }
-                drawFrame(true);
             }
             requestAnimationFrame(frame);
         }
@@ -530,6 +627,8 @@
             params.animateReveal = !params.animateReveal;
             event.currentTarget.textContent = params.animateReveal ? 'Animate On' : 'Animate Off';
             reveal = 1;
+            revealDir = 1;
+            streamHead = 1;
             drawFrame(true);
         });
 
