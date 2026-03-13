@@ -273,29 +273,22 @@
       </div>
 
       <div id="mobileControls" class="hidden">
-        <p>Tap start, grant motion access, and move your phone like a pen in 3D space.</p>
-        <p class="mono">Hold touch pad to draw. Release to move without painting.</p>
+        <p>Tap start, grant sensor access, and tilt your phone to rotate the particle field.</p>
+        <p class="mono">Hold + / - to zoom in and out. Shakes and spins add force bursts.</p>
         <button id="startSensors" class="button">Start Stylus Streaming</button>
         <div class="controls-row">
-          <button id="modeXY" class="button small active" type="button">Plane XY</button>
-          <button id="modeXZ" class="button small" type="button">Plane XZ</button>
-          <button id="recenterPad" class="button small" type="button">Recenter</button>
+          <button id="zoomInBtn" class="button small" type="button">Hold Zoom +</button>
+          <button id="zoomOutBtn" class="button small" type="button">Hold Zoom -</button>
           <button id="lockOrientationBtn" class="button small" type="button">Lock Portrait</button>
         </div>
         <p class="mono" id="orientationLockInfo">Orientation lock: not requested.</p>
-        <div class="slider-wrap">
-          Touch gain: <span id="gainVal">1.00</span>
-          <input id="gainSlider" type="range" min="0.2" max="2.0" step="0.05" value="1.0" />
-        </div>
-        <div id="touchPad" class="touch-pad" aria-label="Touch plane control pad">
-          <div id="touchDot" class="touch-dot"></div>
-        </div>
         <div class="meta">
           <div>alpha: <span id="alphaVal">-</span></div>
           <div>beta: <span id="betaVal">-</span></div>
           <div>gamma: <span id="gammaVal">-</span></div>
           <div>rate: <span id="rateVal">0/s</span></div>
-          <div>draw: <span id="drawVal">off</span></div>
+          <div>force: <span id="forceVal">0.00</span></div>
+          <div>zoom: <span id="zoomVal">idle</span></div>
         </div>
       </div>
     </section>
@@ -360,7 +353,113 @@
       presenceInfo.classList.add('warn');
     });
 
-    let lastOrientation = null;
+    const viewport = document.getElementById('viewport');
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+    viewport.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x05070f, 6, 32);
+
+    const camera = new THREE.PerspectiveCamera(52, viewport.clientWidth / viewport.clientHeight, 0.1, 100);
+    const cameraRig = new THREE.Group();
+    camera.position.set(0, 0, 8);
+    cameraRig.add(camera);
+    scene.add(cameraRig);
+
+    const hemi = new THREE.HemisphereLight(0xaac7ff, 0x1a1f2e, 0.95);
+    const key = new THREE.DirectionalLight(0xfff2d4, 1.15);
+    key.position.set(3, 4, 2);
+    scene.add(hemi, key);
+
+    const fieldGroup = new THREE.Group();
+    scene.add(fieldGroup);
+
+    const particleCount = 6000;
+    const positions = new Float32Array(particleCount * 3);
+    const basePositions = new Float32Array(particleCount * 3);
+    const directions = new Float32Array(particleCount * 3);
+    const phases = new Float32Array(particleCount);
+
+    for (let i = 0; i < particleCount; i += 1) {
+      const i3 = i * 3;
+      const r = 1.2 + Math.pow(Math.random(), 0.75) * 2.8;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+
+      const x = r * Math.sin(phi) * Math.cos(theta);
+      const y = r * Math.sin(phi) * Math.sin(theta);
+      const z = r * Math.cos(phi);
+      const len = Math.max(Math.sqrt(x * x + y * y + z * z), 0.0001);
+
+      basePositions[i3] = x;
+      basePositions[i3 + 1] = y;
+      basePositions[i3 + 2] = z;
+
+      directions[i3] = x / len;
+      directions[i3 + 1] = y / len;
+      directions[i3 + 2] = z / len;
+
+      positions[i3] = x;
+      positions[i3 + 1] = y;
+      positions[i3 + 2] = z;
+
+      phases[i] = Math.random() * Math.PI * 2;
+    }
+
+    const particleGeo = new THREE.BufferGeometry();
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const particleMat = new THREE.PointsMaterial({
+      color: 0x91d2ff,
+      size: 0.04,
+      transparent: true,
+      opacity: 0.92,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const particles = new THREE.Points(particleGeo, particleMat);
+    fieldGroup.add(particles);
+
+    const halo = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(3.25, 2),
+      new THREE.MeshBasicMaterial({ color: 0x4a8ed6, wireframe: true, transparent: true, opacity: 0.15 })
+    );
+    fieldGroup.add(halo);
+
+    function onResize() {
+      const w = viewport.clientWidth;
+      const h = viewport.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+
+    window.addEventListener('resize', onResize);
+
+    let mobileState = null;
+    let lastMobileTs = 0;
+    let forceImpulse = 0;
+    let zoomTarget = 8;
+    let zoomCurrent = 8;
+
+    const desktopMouse = { x: 0, y: 0 };
+
+    if (mode === 'desktop') {
+      viewport.addEventListener('pointermove', (event) => {
+        const rect = viewport.getBoundingClientRect();
+        const nx = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        const ny = ((event.clientY - rect.top) / rect.height) * 2 - 1;
+        desktopMouse.x = THREE.MathUtils.clamp(nx, -1, 1);
+        desktopMouse.y = THREE.MathUtils.clamp(ny, -1, 1);
+      });
+
+      viewport.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        zoomTarget += event.deltaY * 0.008;
+        zoomTarget = THREE.MathUtils.clamp(zoomTarget, 3.2, 14);
+      }, { passive: false });
+    }
 
     socket.addEventListener('message', (event) => {
       try {
@@ -382,128 +481,79 @@
         }
 
         if (mode === 'desktop' && typeof payload.alpha === 'number') {
-          lastOrientation = payload;
-          const plane = payload.control?.plane || 'xy';
-          const tx = payload.control?.x || 0;
-          const ty = payload.control?.y || 0;
-          const drawState = payload.control?.draw ? 'on' : 'off';
-          desktopHud.textContent = `a:${payload.alpha.toFixed(1)} b:${payload.beta.toFixed(1)} g:${payload.gamma.toFixed(1)} p:${plane} tx:${tx.toFixed(2)} ty:${ty.toFixed(2)} draw:${drawState} hz:${payload.hz || 0}`;
+          mobileState = payload;
+          lastMobileTs = performance.now();
+
+          if (typeof payload.sensorForce === 'number') {
+            forceImpulse = Math.max(forceImpulse, payload.sensorForce);
+          }
+
+          const zoomDelta = payload.control?.zoomDelta || 0;
+          if (zoomDelta !== 0) {
+            zoomTarget += zoomDelta * -0.12;
+            zoomTarget = THREE.MathUtils.clamp(zoomTarget, 3.2, 14);
+          }
         }
       } catch (_) {
         // Ignore malformed payloads.
       }
     });
 
-    const viewport = document.getElementById('viewport');
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(viewport.clientWidth, viewport.clientHeight);
-    viewport.appendChild(renderer.domElement);
+    const smoothRot = new THREE.Vector2(0, 0);
+    const targetRot = new THREE.Vector2(0, 0);
 
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x0a0f1a, 6, 25);
-
-    const camera = new THREE.PerspectiveCamera(52, viewport.clientWidth / viewport.clientHeight, 0.1, 100);
-    camera.position.set(0, 1.4, 5.5);
-
-    const ambient = new THREE.HemisphereLight(0x9db7ff, 0x202020, 1.1);
-    const key = new THREE.DirectionalLight(0xfff4cc, 1.1);
-    key.position.set(4, 5, 3);
-    scene.add(ambient, key);
-
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(12, 12),
-      new THREE.MeshStandardMaterial({ color: 0x132033, roughness: 0.92, metalness: 0.08 })
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -1.15;
-    scene.add(floor);
-
-    const stylus = new THREE.Mesh(
-      new THREE.ConeGeometry(0.12, 0.9, 16),
-      new THREE.MeshStandardMaterial({ color: 0xff6a3a, roughness: 0.25, metalness: 0.35 })
-    );
-    stylus.position.y = 0.25;
-    scene.add(stylus);
-
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(1.35, 0.05, 18, 120),
-      new THREE.MeshStandardMaterial({ color: 0x66b6ff, emissive: 0x103050, roughness: 0.55, metalness: 0.2 })
-    );
-    ring.rotation.x = Math.PI / 2;
-    scene.add(ring);
-
-    const trailPoints = Array.from({ length: 120 }, () => new THREE.Vector3(0, 0, 0));
-    const trailGeo = new THREE.BufferGeometry().setFromPoints(trailPoints);
-    const trail = new THREE.Line(
-      trailGeo,
-      new THREE.LineBasicMaterial({ color: 0xf8cf78, transparent: true, opacity: 0.75 })
-    );
-    scene.add(trail);
-
-    const targetQuat = new THREE.Quaternion();
-    const euler = new THREE.Euler(0, 0, 0, 'YXZ');
-
-    function onResize() {
-      const w = viewport.clientWidth;
-      const h = viewport.clientHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-    }
-
-    window.addEventListener('resize', onResize);
-
-    function pushTrail(point) {
-      trailPoints.shift();
-      trailPoints.push(point.clone());
-      trail.geometry.setFromPoints(trailPoints);
-    }
-
-    function updateFromSensor(orientation) {
-      const a = THREE.MathUtils.degToRad(orientation.alpha || 0);
-      const b = THREE.MathUtils.degToRad(orientation.beta || 0);
-      const g = THREE.MathUtils.degToRad(orientation.gamma || 0);
-
-      euler.set(b, a, -g);
-      targetQuat.setFromEuler(euler);
-
-      const dir = new THREE.Vector3(0, 0.9, 0).applyQuaternion(targetQuat);
-      const control = orientation.control || { plane: 'xy', x: 0, y: 0, gain: 1 };
-      const gain = typeof control.gain === 'number' ? control.gain : 1;
-      const offset = new THREE.Vector3(0, 0, 0);
-
-      if (control.plane === 'xz') {
-        offset.x = control.x * 1.5 * gain;
-        offset.z = control.y * 1.5 * gain;
-      } else {
-        offset.x = control.x * 1.5 * gain;
-        offset.y = control.y * 1.2 * gain;
-      }
-
-      dir.add(offset);
-      stylus.position.lerp(dir, 0.22);
-
-      if (control.draw === true) {
-        pushTrail(stylus.position);
-      }
-    }
-
-    function animate() {
+    function animate(timeMs) {
       requestAnimationFrame(animate);
 
-      if (mode === 'desktop' && lastOrientation) {
-        updateFromSensor(lastOrientation);
-        stylus.quaternion.slerp(targetQuat, 0.2);
+      const now = performance.now();
+      const hasFreshMobile = mode === 'desktop' && mobileState && (now - lastMobileTs < 1400);
+
+      if (hasFreshMobile) {
+        const a = mobileState.alpha || 0;
+        const b = mobileState.beta || 0;
+        const g = mobileState.gamma || 0;
+
+        targetRot.x = THREE.MathUtils.clamp(b / 100, -0.9, 0.9) * 0.03;
+        targetRot.y = THREE.MathUtils.clamp(g / 100, -0.9, 0.9) * 0.03 + (a / 360) * 0.004;
       } else {
-        stylus.rotation.y += 0.008;
+        targetRot.x = -desktopMouse.y * 0.03;
+        targetRot.y = desktopMouse.x * 0.03;
       }
 
-      ring.rotation.z += 0.006;
+      smoothRot.x = THREE.MathUtils.lerp(smoothRot.x, targetRot.x, 0.08);
+      smoothRot.y = THREE.MathUtils.lerp(smoothRot.y, targetRot.y, 0.08);
+
+      fieldGroup.rotation.x += smoothRot.x;
+      fieldGroup.rotation.y += smoothRot.y;
+      halo.rotation.x -= smoothRot.y * 0.4;
+      halo.rotation.z += 0.003 + Math.abs(smoothRot.x) * 0.4;
+
+      forceImpulse = Math.max(forceImpulse * 0.95, 0);
+      const t = timeMs * 0.001;
+      const amp = 0.05 + forceImpulse * 0.24;
+
+      for (let i = 0; i < particleCount; i += 1) {
+        const i3 = i * 3;
+        const wobble = Math.sin(t * (0.8 + forceImpulse * 2.6) + phases[i]) * amp;
+        positions[i3] = basePositions[i3] + directions[i3] * wobble;
+        positions[i3 + 1] = basePositions[i3 + 1] + directions[i3 + 1] * wobble;
+        positions[i3 + 2] = basePositions[i3 + 2] + directions[i3 + 2] * wobble;
+      }
+      particleGeo.attributes.position.needsUpdate = true;
+      particleMat.size = 0.035 + forceImpulse * 0.06;
+
+      zoomCurrent = THREE.MathUtils.lerp(zoomCurrent, zoomTarget, 0.09);
+      camera.position.z = zoomCurrent;
+
+      if (mode === 'desktop') {
+        const src = hasFreshMobile ? 'mobile' : 'desktop';
+        desktopHud.textContent = `src:${src} rotX:${smoothRot.x.toFixed(3)} rotY:${smoothRot.y.toFixed(3)} zoom:${zoomCurrent.toFixed(2)} force:${forceImpulse.toFixed(2)}`;
+      }
+
       renderer.render(scene, camera);
     }
 
-    animate();
+    animate(0);
 
     if (mode === 'mobile') {
       const startBtn = document.getElementById('startSensors');
@@ -511,88 +561,48 @@
       const betaVal = document.getElementById('betaVal');
       const gammaVal = document.getElementById('gammaVal');
       const rateVal = document.getElementById('rateVal');
-      const drawVal = document.getElementById('drawVal');
-      const gainVal = document.getElementById('gainVal');
-      const gainSlider = document.getElementById('gainSlider');
-      const modeXY = document.getElementById('modeXY');
-      const modeXZ = document.getElementById('modeXZ');
-      const recenterPad = document.getElementById('recenterPad');
+      const forceVal = document.getElementById('forceVal');
+      const zoomVal = document.getElementById('zoomVal');
+      const zoomInBtn = document.getElementById('zoomInBtn');
+      const zoomOutBtn = document.getElementById('zoomOutBtn');
       const lockOrientationBtn = document.getElementById('lockOrientationBtn');
       const orientationLockInfo = document.getElementById('orientationLockInfo');
-      const touchPad = document.getElementById('touchPad');
-      const touchDot = document.getElementById('touchDot');
 
       let sent = 0;
       let rateStart = performance.now();
       let streamTimer = null;
       let latestOrientation = { alpha: 0, beta: 0, gamma: 0 };
-      let plane = 'xy';
-      let touch = { x: 0, y: 0 };
-      let gain = 1;
-      let isDrawing = false;
+      let latestForce = 0;
+      let zoomDelta = 0;
 
-      function setPlane(nextPlane) {
-        plane = nextPlane;
-        modeXY.classList.toggle('active', nextPlane === 'xy');
-        modeXZ.classList.toggle('active', nextPlane === 'xz');
+      function setZoomDelta(value) {
+        zoomDelta = value;
+        zoomVal.textContent = value > 0 ? 'out' : value < 0 ? 'in' : 'idle';
+        zoomInBtn.classList.toggle('active', value < 0);
+        zoomOutBtn.classList.toggle('active', value > 0);
       }
 
-      function setTouch(x, y) {
-        touch = { x, y };
-        const dotX = 50 + x * 45;
-        const dotY = 50 - y * 45;
-        touchDot.style.left = `${dotX}%`;
-        touchDot.style.top = `${dotY}%`;
-      }
+      function bindHold(button, value) {
+        const activate = (event) => {
+          event.preventDefault();
+          setZoomDelta(value);
+        };
+        const deactivate = (event) => {
+          event.preventDefault();
+          setZoomDelta(0);
+        };
 
-      function updateTouchFromPoint(clientX, clientY) {
-        const rect = touchPad.getBoundingClientRect();
-        const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
-        const ny = ((clientY - rect.top) / rect.height) * 2 - 1;
-        setTouch(THREE.MathUtils.clamp(nx, -1, 1), THREE.MathUtils.clamp(-ny, -1, 1));
-      }
-
-      function streamPacket() {
-        const now = performance.now();
-
-        const data = {
-          alpha: latestOrientation.alpha ?? 0,
-          beta: latestOrientation.beta ?? 0,
-          gamma: latestOrientation.gamma ?? 0,
-          hz: 30,
-          control: {
-            plane,
-            x: touch.x,
-            y: touch.y,
-            gain,
-            draw: isDrawing
+        button.addEventListener('pointerdown', activate);
+        button.addEventListener('pointerup', deactivate);
+        button.addEventListener('pointercancel', deactivate);
+        button.addEventListener('pointerleave', (event) => {
+          if ((event.buttons & 1) !== 1) {
+            setZoomDelta(0);
           }
-        };
-
-        alphaVal.textContent = data.alpha.toFixed(1);
-        betaVal.textContent = data.beta.toFixed(1);
-        gammaVal.textContent = data.gamma.toFixed(1);
-        drawVal.textContent = isDrawing ? 'on' : 'off';
-
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify(data));
-          sent += 1;
-        }
-
-        const elapsed = (now - rateStart) / 1000;
-        if (elapsed > 1) {
-          rateVal.textContent = `${Math.round(sent / elapsed)}/s`;
-          sent = 0;
-          rateStart = now;
-        }
-      }
-
-      function onOrientation(event) {
-        latestOrientation = {
-          alpha: event.alpha ?? 0,
-          beta: event.beta ?? 0,
-          gamma: event.gamma ?? 0
-        };
+        });
+        button.addEventListener('touchstart', activate, { passive: false });
+        button.addEventListener('touchend', deactivate, { passive: false });
+        button.addEventListener('touchcancel', deactivate, { passive: false });
       }
 
       async function tryLockPortrait(showStatus = true) {
@@ -617,97 +627,112 @@
         }
       }
 
-      modeXY.addEventListener('click', () => setPlane('xy'));
-      modeXZ.addEventListener('click', () => setPlane('xz'));
-      recenterPad.addEventListener('click', () => setTouch(0, 0));
+      function onOrientation(event) {
+        latestOrientation = {
+          alpha: event.alpha ?? 0,
+          beta: event.beta ?? 0,
+          gamma: event.gamma ?? 0
+        };
+      }
+
+      function onMotion(event) {
+        const accel = event.accelerationIncludingGravity || event.acceleration;
+        const rotation = event.rotationRate;
+
+        let accelNorm = 0;
+        if (accel) {
+          const ax = accel.x ?? 0;
+          const ay = accel.y ?? 0;
+          const az = accel.z ?? 0;
+          const mag = Math.sqrt(ax * ax + ay * ay + az * az);
+          accelNorm = THREE.MathUtils.clamp(Math.abs(mag - 9.81) / 10, 0, 1);
+        }
+
+        let rotNorm = 0;
+        if (rotation) {
+          const rx = rotation.alpha ?? 0;
+          const ry = rotation.beta ?? 0;
+          const rz = rotation.gamma ?? 0;
+          const rmag = Math.sqrt(rx * rx + ry * ry + rz * rz);
+          rotNorm = THREE.MathUtils.clamp(rmag / 280, 0, 1);
+        }
+
+        latestForce = Math.max(accelNorm, rotNorm);
+      }
+
+      function streamPacket() {
+        const now = performance.now();
+
+        const data = {
+          alpha: latestOrientation.alpha,
+          beta: latestOrientation.beta,
+          gamma: latestOrientation.gamma,
+          sensorForce: latestForce,
+          hz: 30,
+          control: {
+            zoomDelta
+          }
+        };
+
+        alphaVal.textContent = data.alpha.toFixed(1);
+        betaVal.textContent = data.beta.toFixed(1);
+        gammaVal.textContent = data.gamma.toFixed(1);
+        forceVal.textContent = data.sensorForce.toFixed(2);
+
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify(data));
+          sent += 1;
+        }
+
+        const elapsed = (now - rateStart) / 1000;
+        if (elapsed > 1) {
+          rateVal.textContent = `${Math.round(sent / elapsed)}/s`;
+          sent = 0;
+          rateStart = now;
+        }
+      }
+
       lockOrientationBtn.addEventListener('click', async () => {
         await tryLockPortrait(true);
       });
-      gainSlider.addEventListener('input', () => {
-        gain = Number(gainSlider.value);
-        gainVal.textContent = gain.toFixed(2);
-      });
 
-      touchPad.addEventListener('touchstart', (event) => {
-        event.preventDefault();
-        isDrawing = true;
-        const touchPoint = event.touches[0];
-        if (!touchPoint) return;
-        updateTouchFromPoint(touchPoint.clientX, touchPoint.clientY);
-      }, { passive: false });
-
-      touchPad.addEventListener('touchmove', (event) => {
-        event.preventDefault();
-        const touchPoint = event.touches[0];
-        if (!touchPoint) return;
-        updateTouchFromPoint(touchPoint.clientX, touchPoint.clientY);
-      }, { passive: false });
-
-      touchPad.addEventListener('touchend', (event) => {
-        event.preventDefault();
-        isDrawing = false;
-      }, { passive: false });
-
-      touchPad.addEventListener('touchcancel', (event) => {
-        event.preventDefault();
-        isDrawing = false;
-      }, { passive: false });
-
-      touchPad.addEventListener('pointerdown', (event) => {
-        event.preventDefault();
-        isDrawing = true;
-        updateTouchFromPoint(event.clientX, event.clientY);
-      });
-
-      touchPad.addEventListener('pointermove', (event) => {
-        if ((event.buttons & 1) !== 1) return;
-        event.preventDefault();
-        updateTouchFromPoint(event.clientX, event.clientY);
-      });
-
-      touchPad.addEventListener('pointerup', (event) => {
-        event.preventDefault();
-        isDrawing = false;
-      });
-
-      touchPad.addEventListener('pointercancel', (event) => {
-        event.preventDefault();
-        isDrawing = false;
-      });
-
-      touchPad.addEventListener('pointerleave', (event) => {
-        if ((event.buttons & 1) !== 1) {
-          isDrawing = false;
-        }
-      });
+      bindHold(zoomInBtn, -1);
+      bindHold(zoomOutBtn, 1);
 
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
-          isDrawing = false;
+          setZoomDelta(0);
         }
       });
-
-      setPlane('xy');
-      setTouch(0, 0);
 
       startBtn.addEventListener('click', async () => {
         startBtn.disabled = true;
         try {
           if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            const result = await DeviceOrientationEvent.requestPermission();
-            if (result !== 'granted') {
+            const orientationPermission = await DeviceOrientationEvent.requestPermission();
+            if (orientationPermission !== 'granted') {
+              throw new Error('Orientation permission denied');
+            }
+          }
+
+          if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            const motionPermission = await DeviceMotionEvent.requestPermission();
+            if (motionPermission !== 'granted') {
               throw new Error('Motion permission denied');
             }
           }
 
           window.addEventListener('deviceorientation', onOrientation, true);
+          window.addEventListener('devicemotion', onMotion, true);
           document.body.classList.add('mobile-streaming');
           await tryLockPortrait(false);
+
           if (!streamTimer) {
             streamTimer = setInterval(streamPacket, 33);
           }
+
           startBtn.textContent = 'Streaming Active';
-          presenceInfo.textContent = 'Motion stream running';
+          presenceInfo.textContent = 'Sensor stream running';
           presenceInfo.classList.add('ok');
           presenceInfo.classList.remove('warn');
         } catch (err) {
