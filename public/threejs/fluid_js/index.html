@@ -41,16 +41,6 @@
       display: block;
     }
 
-    #fxCanvas {
-      position: fixed;
-      inset: 0;
-      width: 100vw;
-      height: 100vh;
-      z-index: 1;
-      display: block;
-      pointer-events: none;
-    }
-
     .hud {
       position: fixed;
       z-index: 2;
@@ -152,7 +142,6 @@
 </head>
 <body>
   <canvas id="fluidCanvas"></canvas>
-  <canvas id="fxCanvas"></canvas>
 
   <section class="hud">
     <h1 class="title">Fluid JS Playground</h1>
@@ -178,12 +167,12 @@
 
     <div class="row">
       <label for="gravity">Emitter Gravity</label>
-      <span class="val" id="gravityVal">0.55</span>
+      <span class="val" id="gravityVal">0.24</span>
     </div>
-    <input id="gravity" type="range" min="0.10" max="1.20" step="0.01" value="0.55" />
+    <input id="gravity" type="range" min="0.05" max="0.80" step="0.01" value="0.24" />
 
     <div class="inline-toggle">
-      <label for="emittersToggle">Show Gravity Emitters</label>
+      <label for="emittersToggle">Enable Orbital Emitters</label>
       <input id="emittersToggle" type="checkbox" checked />
     </div>
 
@@ -197,8 +186,6 @@
 
   <script>
     const canvas = document.getElementById('fluidCanvas');
-    const fxCanvas = document.getElementById('fxCanvas');
-    const fx = fxCanvas.getContext('2d');
     const fluid = new Fluid(canvas);
 
     const params = {
@@ -294,7 +281,7 @@
     wireRange('dissipation', 'dissipation', (v) => v.toFixed(3));
     wireRange('radius', 'emitter_size', (v) => v.toFixed(2));
 
-    let gravityStrength = 0.55;
+    let gravityStrength = 0.24;
     const gravityInput = document.getElementById('gravity');
     const gravityVal = document.getElementById('gravityVal');
     gravityInput.addEventListener('input', () => {
@@ -308,9 +295,6 @@
     const emittersToggle = document.getElementById('emittersToggle');
     emittersToggle.addEventListener('change', () => {
       showEmitters = emittersToggle.checked;
-      if (!showEmitters) {
-        fx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
-      }
     });
 
     document.getElementById('randomize').addEventListener('click', () => {
@@ -333,8 +317,8 @@
     });
 
     const emitters = [
-      { x: 0.33, y: 0.42, vx: 0.09, vy: -0.06, mass: 1.0, radius: 9, color: '#89d8ff' },
-      { x: 0.67, y: 0.58, vx: -0.08, vy: 0.05, mass: 1.2, radius: 10, color: '#ffbc8e' }
+      { x: 0.33, y: 0.42, vx: 0.020, vy: -0.013, mass: 1.0 },
+      { x: 0.67, y: 0.58, vx: -0.018, vy: 0.011, mass: 1.2 }
     ];
 
     const mouseBody = {
@@ -344,11 +328,45 @@
       active: false
     };
 
-    function resizeFxCanvas() {
-      fxCanvas.width = Math.floor(window.innerWidth * Math.min(window.devicePixelRatio, 2));
-      fxCanvas.height = Math.floor(window.innerHeight * Math.min(window.devicePixelRatio, 2));
-      fx.setTransform(1, 0, 0, 1, 0, 0);
-      fx.scale(fxCanvas.width / window.innerWidth, fxCanvas.height / window.innerHeight);
+    const virtualPointerIds = [101, 102, 103];
+
+    function ensureVirtualPointers() {
+      if (!Array.isArray(fluid.pointers)) {
+        return false;
+      }
+
+      while (fluid.pointers.length < 3) {
+        fluid.pointers.push({
+          id: -1,
+          x: 0,
+          y: 0,
+          dx: 0,
+          dy: 0,
+          down: false,
+          moved: false,
+          color: [30, 180, 300]
+        });
+      }
+
+      return true;
+    }
+
+    function updateVirtualPointer(slot, normX, normY, isDown) {
+      if (!ensureVirtualPointers()) {
+        return;
+      }
+
+      const p = fluid.pointers[slot];
+      const x = normX * canvas.clientWidth;
+      const y = normY * canvas.clientHeight;
+
+      p.id = virtualPointerIds[slot];
+      p.dx = x - p.x;
+      p.dy = y - p.y;
+      p.x = x;
+      p.y = y;
+      p.down = isDown;
+      p.moved = isDown;
     }
 
     function applyGravity(a, b, dt) {
@@ -389,8 +407,8 @@
       applyMouseGravity(emitters[1], dt);
 
       for (const p of emitters) {
-        p.vx *= 0.997;
-        p.vy *= 0.997;
+        p.vx *= 0.992;
+        p.vy *= 0.992;
         p.x += p.vx * dt;
         p.y += p.vy * dt;
 
@@ -405,58 +423,21 @@
       }
     }
 
-    function drawEmitters() {
-      fx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-      if (!showEmitters) {
-        return;
-      }
-
-      const p0 = emitters[0];
-      const p1 = emitters[1];
-      const x0 = p0.x * window.innerWidth;
-      const y0 = p0.y * window.innerHeight;
-      const x1 = p1.x * window.innerWidth;
-      const y1 = p1.y * window.innerHeight;
-
-      fx.strokeStyle = 'rgba(140, 220, 255, 0.22)';
-      fx.lineWidth = 1.4;
-      fx.beginPath();
-      fx.moveTo(x0, y0);
-      fx.lineTo(x1, y1);
-      fx.stroke();
-
-      for (const p of emitters) {
-        const px = p.x * window.innerWidth;
-        const py = p.y * window.innerHeight;
-        const grad = fx.createRadialGradient(px, py, 1, px, py, p.radius * 3.5);
-        grad.addColorStop(0, 'rgba(255,255,255,0.95)');
-        grad.addColorStop(0.25, p.color);
-        grad.addColorStop(1, 'rgba(0,0,0,0)');
-        fx.fillStyle = grad;
-        fx.beginPath();
-        fx.arc(px, py, p.radius * 3.5, 0, Math.PI * 2);
-        fx.fill();
-      }
-
-      if (mouseBody.active) {
-        const mx = mouseBody.x * window.innerWidth;
-        const my = mouseBody.y * window.innerHeight;
-        fx.strokeStyle = 'rgba(255, 245, 180, 0.75)';
-        fx.lineWidth = 1.1;
-        fx.beginPath();
-        fx.arc(mx, my, 14, 0, Math.PI * 2);
-        fx.stroke();
-      }
-    }
-
     let prevTime = performance.now();
     function animateEmitters(now) {
       const dt = Math.min((now - prevTime) / 1000, 0.035);
       prevTime = now;
+
       if (showEmitters) {
         stepEmitters(dt);
+        updateVirtualPointer(0, emitters[0].x, emitters[0].y, true);
+        updateVirtualPointer(1, emitters[1].x, emitters[1].y, true);
+      } else {
+        updateVirtualPointer(0, emitters[0].x, emitters[0].y, false);
+        updateVirtualPointer(1, emitters[1].x, emitters[1].y, false);
       }
-      drawEmitters();
+
+      updateVirtualPointer(2, mouseBody.x, mouseBody.y, mouseBody.active);
       requestAnimationFrame(animateEmitters);
     }
 
@@ -477,13 +458,12 @@
     });
 
     window.addEventListener('resize', () => {
-      resizeFxCanvas();
       canvas.width = canvas.clientWidth;
       canvas.height = canvas.clientHeight;
       fluid.reset();
     });
 
-    resizeFxCanvas();
+    ensureVirtualPointers();
     requestAnimationFrame(animateEmitters);
   </script>
 </body>
