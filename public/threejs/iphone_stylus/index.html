@@ -443,6 +443,10 @@
     let forceImpulse = 0;
     let zoomTarget = 8;
     let zoomCurrent = 8;
+    let windAngle = 0;
+
+    const targetWindDir = new THREE.Vector3(0, 0, 1);
+    const windDir = new THREE.Vector3(0, 0, 1);
 
     const desktopMouse = { x: 0, y: 0 };
 
@@ -517,10 +521,27 @@
 
         targetRot.x = THREE.MathUtils.clamp(b / 100, -0.9, 0.9) * 0.03;
         targetRot.y = THREE.MathUtils.clamp(g / 100, -0.9, 0.9) * 0.03 + (a / 360) * 0.004;
+
+        targetWindDir.set(
+          THREE.MathUtils.clamp(g / 45, -1, 1),
+          THREE.MathUtils.clamp(-b / 45, -1, 1),
+          Math.sin(THREE.MathUtils.degToRad(a)) * 0.55
+        );
       } else {
         targetRot.x = -desktopMouse.y * 0.03;
         targetRot.y = desktopMouse.x * 0.03;
+
+        targetWindDir.set(desktopMouse.x, -desktopMouse.y, 0.35);
       }
+
+      if (targetWindDir.lengthSq() < 0.0001) {
+        targetWindDir.set(0, 0, 1);
+      } else {
+        targetWindDir.normalize();
+      }
+
+      windDir.lerp(targetWindDir, 0.065);
+      windDir.normalize();
 
       smoothRot.x = THREE.MathUtils.lerp(smoothRot.x, targetRot.x, 0.08);
       smoothRot.y = THREE.MathUtils.lerp(smoothRot.y, targetRot.y, 0.08);
@@ -532,15 +553,37 @@
 
       forceImpulse = THREE.MathUtils.lerp(forceImpulse, targetForce, 0.11);
       targetForce *= 0.975;
+
+      windAngle += 0.01 + forceImpulse * 0.07;
       const t = timeMs * 0.001;
-      const amp = 0.05 + forceImpulse * 0.24;
+      const calmBreathAmp = 0.025 + forceImpulse * 0.05;
+      const directionalAmp = forceImpulse * 0.75;
+      const swirlAmp = 0.05 + forceImpulse * 0.35;
 
       for (let i = 0; i < particleCount; i += 1) {
         const i3 = i * 3;
-        const wobble = Math.sin(t * (0.8 + forceImpulse * 2.6) + phases[i]) * amp;
-        positions[i3] = basePositions[i3] + directions[i3] * wobble;
-        positions[i3 + 1] = basePositions[i3 + 1] + directions[i3 + 1] * wobble;
-        positions[i3 + 2] = basePositions[i3 + 2] + directions[i3 + 2] * wobble;
+        const dx = directions[i3];
+        const dy = directions[i3 + 1];
+        const dz = directions[i3 + 2];
+
+        let sx = windDir.y * dz - windDir.z * dy;
+        let sy = windDir.z * dx - windDir.x * dz;
+        let sz = windDir.x * dy - windDir.y * dx;
+        const sLen = Math.sqrt(sx * sx + sy * sy + sz * sz) + 0.0001;
+        sx /= sLen;
+        sy /= sLen;
+        sz /= sLen;
+
+        const phase = phases[i];
+        const gustWave = Math.sin((t * (0.7 + forceImpulse * 1.6)) + phase * 0.75);
+        const swirlWave = Math.sin(windAngle + phase * 1.4);
+        const breath = Math.sin(t * 0.52 + phase) * calmBreathAmp;
+        const directional = directionalAmp * (0.35 + 0.65 * (gustWave * 0.5 + 0.5));
+        const swirl = swirlWave * swirlAmp;
+
+        positions[i3] = basePositions[i3] + dx * breath + windDir.x * directional + sx * swirl;
+        positions[i3 + 1] = basePositions[i3 + 1] + dy * breath + windDir.y * directional + sy * swirl;
+        positions[i3 + 2] = basePositions[i3 + 2] + dz * breath + windDir.z * directional + sz * swirl;
       }
       particleGeo.attributes.position.needsUpdate = true;
       particleMat.size = 0.035 + forceImpulse * 0.06;
@@ -550,7 +593,7 @@
 
       if (mode === 'desktop') {
         const src = hasFreshMobile ? 'mobile' : 'desktop';
-        desktopHud.textContent = `src:${src} rotX:${smoothRot.x.toFixed(3)} rotY:${smoothRot.y.toFixed(3)} zoom:${zoomCurrent.toFixed(2)} force:${forceImpulse.toFixed(2)}`;
+        desktopHud.textContent = `src:${src} rotX:${smoothRot.x.toFixed(3)} rotY:${smoothRot.y.toFixed(3)} zoom:${zoomCurrent.toFixed(2)} force:${forceImpulse.toFixed(2)} wind:${windDir.x.toFixed(2)},${windDir.y.toFixed(2)},${windDir.z.toFixed(2)}`;
       }
 
       renderer.render(scene, camera);
