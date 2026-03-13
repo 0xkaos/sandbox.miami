@@ -439,6 +439,7 @@
 
     let mobileState = null;
     let lastMobileTs = 0;
+    let targetForce = 0;
     let forceImpulse = 0;
     let zoomTarget = 8;
     let zoomCurrent = 8;
@@ -485,7 +486,8 @@
           lastMobileTs = performance.now();
 
           if (typeof payload.sensorForce === 'number') {
-            forceImpulse = Math.max(forceImpulse, payload.sensorForce);
+            const clampedForce = THREE.MathUtils.clamp(payload.sensorForce, 0, 1);
+            targetForce = THREE.MathUtils.lerp(targetForce, clampedForce, 0.22);
           }
 
           const zoomDelta = payload.control?.zoomDelta || 0;
@@ -528,7 +530,8 @@
       halo.rotation.x -= smoothRot.y * 0.4;
       halo.rotation.z += 0.003 + Math.abs(smoothRot.x) * 0.4;
 
-      forceImpulse = Math.max(forceImpulse * 0.95, 0);
+      forceImpulse = THREE.MathUtils.lerp(forceImpulse, targetForce, 0.11);
+      targetForce *= 0.975;
       const t = timeMs * 0.001;
       const amp = 0.05 + forceImpulse * 0.24;
 
@@ -573,6 +576,7 @@
       let streamTimer = null;
       let latestOrientation = { alpha: 0, beta: 0, gamma: 0 };
       let latestForce = 0;
+      let filteredForce = 0;
       let zoomDelta = 0;
 
       function setZoomDelta(value) {
@@ -658,6 +662,10 @@
         }
 
         latestForce = Math.max(accelNorm, rotNorm);
+        filteredForce = THREE.MathUtils.lerp(filteredForce, latestForce, 0.12);
+        if (filteredForce < 0.03) {
+          filteredForce = 0;
+        }
       }
 
       function streamPacket() {
@@ -667,7 +675,7 @@
           alpha: latestOrientation.alpha,
           beta: latestOrientation.beta,
           gamma: latestOrientation.gamma,
-          sensorForce: latestForce,
+          sensorForce: filteredForce,
           hz: 30,
           control: {
             zoomDelta
