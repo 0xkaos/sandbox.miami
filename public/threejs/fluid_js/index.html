@@ -329,29 +329,39 @@
     };
 
     const virtualPointerIds = [101, 102, 103];
+    const pointerSlots = {
+      emitterA: 1,
+      emitterB: 2,
+      mouseField: 3
+    };
+
+    function makeVirtualPointer() {
+      return {
+        id: -1,
+        x: 0,
+        y: 0,
+        dx: 0,
+        dy: 0,
+        down: false,
+        moved: false,
+        color: { r: 0.06, g: 0.45, b: 0.95 }
+      };
+    }
 
     function ensureVirtualPointers() {
       if (!Array.isArray(fluid.pointers)) {
         return false;
       }
 
-      while (fluid.pointers.length < 3) {
-        fluid.pointers.push({
-          id: -1,
-          x: 0,
-          y: 0,
-          dx: 0,
-          dy: 0,
-          down: false,
-          moved: false,
-          color: [30, 180, 300]
-        });
+      // Slot 0 is managed by fluid-canvas mouse listeners; reserve it.
+      while (fluid.pointers.length < 4) {
+        fluid.pointers.push(makeVirtualPointer());
       }
 
       return true;
     }
 
-    function updateVirtualPointer(slot, normX, normY, isDown) {
+    function updateVirtualPointer(slot, normX, normY, isDown, velocityGain = 1) {
       if (!ensureVirtualPointers()) {
         return;
       }
@@ -361,12 +371,14 @@
       const y = normY * canvas.clientHeight;
 
       p.id = virtualPointerIds[slot];
-      p.dx = x - p.x;
-      p.dy = y - p.y;
+      const dx = x - p.x;
+      const dy = y - p.y;
+      p.dx = dx * velocityGain;
+      p.dy = dy * velocityGain;
       p.x = x;
       p.y = y;
       p.down = isDown;
-      p.moved = isDown;
+      p.moved = isDown && (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01);
     }
 
     function applyGravity(a, b, dt) {
@@ -430,14 +442,14 @@
 
       if (showEmitters) {
         stepEmitters(dt);
-        updateVirtualPointer(0, emitters[0].x, emitters[0].y, true);
-        updateVirtualPointer(1, emitters[1].x, emitters[1].y, true);
+        updateVirtualPointer(pointerSlots.emitterA, emitters[0].x, emitters[0].y, true, 24);
+        updateVirtualPointer(pointerSlots.emitterB, emitters[1].x, emitters[1].y, true, 24);
       } else {
-        updateVirtualPointer(0, emitters[0].x, emitters[0].y, false);
-        updateVirtualPointer(1, emitters[1].x, emitters[1].y, false);
+        updateVirtualPointer(pointerSlots.emitterA, emitters[0].x, emitters[0].y, false);
+        updateVirtualPointer(pointerSlots.emitterB, emitters[1].x, emitters[1].y, false);
       }
 
-      updateVirtualPointer(2, mouseBody.x, mouseBody.y, mouseBody.active);
+      updateVirtualPointer(pointerSlots.mouseField, mouseBody.x, mouseBody.y, mouseBody.active, 5);
       requestAnimationFrame(animateEmitters);
     }
 
