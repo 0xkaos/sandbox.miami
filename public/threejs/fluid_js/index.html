@@ -373,8 +373,10 @@
       p.id = virtualPointerIds[slot];
       const dx = x - p.x;
       const dy = y - p.y;
-      p.dx = dx * velocityGain;
-      p.dy = dy * velocityGain;
+      const clampedDx = Math.max(-10, Math.min(10, dx));
+      const clampedDy = Math.max(-10, Math.min(10, dy));
+      p.dx = clampedDx * velocityGain;
+      p.dy = clampedDy * velocityGain;
       p.x = x;
       p.y = y;
       p.down = isDown;
@@ -442,14 +444,14 @@
 
       if (showEmitters) {
         stepEmitters(dt);
-        updateVirtualPointer(pointerSlots.emitterA, emitters[0].x, emitters[0].y, true, 24);
-        updateVirtualPointer(pointerSlots.emitterB, emitters[1].x, emitters[1].y, true, 24);
+        updateVirtualPointer(pointerSlots.emitterA, emitters[0].x, emitters[0].y, true, 6);
+        updateVirtualPointer(pointerSlots.emitterB, emitters[1].x, emitters[1].y, true, 6);
       } else {
         updateVirtualPointer(pointerSlots.emitterA, emitters[0].x, emitters[0].y, false);
         updateVirtualPointer(pointerSlots.emitterB, emitters[1].x, emitters[1].y, false);
       }
 
-      updateVirtualPointer(pointerSlots.mouseField, mouseBody.x, mouseBody.y, mouseBody.active, 5);
+      updateVirtualPointer(pointerSlots.mouseField, mouseBody.x, mouseBody.y, mouseBody.active, 1.5);
       requestAnimationFrame(animateEmitters);
     }
 
