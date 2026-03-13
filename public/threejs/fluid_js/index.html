@@ -171,6 +171,18 @@
     </div>
     <input id="gravity" type="range" min="0.05" max="0.80" step="0.01" value="0.24" />
 
+    <div class="row">
+      <label for="velocityScale">Velocity Scale</label>
+      <span class="val" id="velocityScaleVal">1.00</span>
+    </div>
+    <input id="velocityScale" type="range" min="0.20" max="2.40" step="0.01" value="1.00" />
+
+    <div class="row">
+      <label for="drag">Drag</label>
+      <span class="val" id="dragVal">0.008</span>
+    </div>
+    <input id="drag" type="range" min="0.000" max="0.080" step="0.001" value="0.008" />
+
     <div class="inline-toggle">
       <label for="emittersToggle">Enable Orbital Emitters</label>
       <input id="emittersToggle" type="checkbox" checked />
@@ -282,6 +294,9 @@
     wireRange('radius', 'emitter_size', (v) => v.toFixed(2));
 
     let gravityStrength = 0.24;
+    let velocityScale = 1;
+    let dragAmount = 0.008;
+
     const gravityInput = document.getElementById('gravity');
     const gravityVal = document.getElementById('gravityVal');
     gravityInput.addEventListener('input', () => {
@@ -290,6 +305,24 @@
     });
     gravityStrength = Number(gravityInput.value);
     gravityVal.textContent = gravityStrength.toFixed(2);
+
+    const velocityScaleInput = document.getElementById('velocityScale');
+    const velocityScaleVal = document.getElementById('velocityScaleVal');
+    velocityScaleInput.addEventListener('input', () => {
+      velocityScale = Number(velocityScaleInput.value);
+      velocityScaleVal.textContent = velocityScale.toFixed(2);
+    });
+    velocityScale = Number(velocityScaleInput.value);
+    velocityScaleVal.textContent = velocityScale.toFixed(2);
+
+    const dragInput = document.getElementById('drag');
+    const dragVal = document.getElementById('dragVal');
+    dragInput.addEventListener('input', () => {
+      dragAmount = Number(dragInput.value);
+      dragVal.textContent = dragAmount.toFixed(3);
+    });
+    dragAmount = Number(dragInput.value);
+    dragVal.textContent = dragAmount.toFixed(3);
 
     let showEmitters = true;
     const emittersToggle = document.getElementById('emittersToggle');
@@ -420,11 +453,13 @@
       applyMouseGravity(emitters[0], dt);
       applyMouseGravity(emitters[1], dt);
 
+      const damping = Math.max(0.85, 1 - dragAmount);
+
       for (const p of emitters) {
-        p.vx *= 0.992;
-        p.vy *= 0.992;
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
+        p.vx *= damping;
+        p.vy *= damping;
+        p.x += p.vx * dt * velocityScale;
+        p.y += p.vy * dt * velocityScale;
 
         if (p.x < 0.02 || p.x > 0.98) {
           p.vx *= -0.92;
@@ -444,8 +479,8 @@
 
       if (showEmitters) {
         stepEmitters(dt);
-        updateVirtualPointer(pointerSlots.emitterA, emitters[0].x, emitters[0].y, true, 6);
-        updateVirtualPointer(pointerSlots.emitterB, emitters[1].x, emitters[1].y, true, 6);
+        updateVirtualPointer(pointerSlots.emitterA, emitters[0].x, emitters[0].y, true, 6 * velocityScale);
+        updateVirtualPointer(pointerSlots.emitterB, emitters[1].x, emitters[1].y, true, 6 * velocityScale);
       } else {
         updateVirtualPointer(pointerSlots.emitterA, emitters[0].x, emitters[0].y, false);
         updateVirtualPointer(pointerSlots.emitterB, emitters[1].x, emitters[1].y, false);
