@@ -182,6 +182,24 @@
     fluid.mapBehaviors(params);
     fluid.activate();
 
+    let applyTimer = null;
+
+    function applyFluidParams() {
+      // Re-map into the runtime config and reset so shader/FBO state picks up changes.
+      fluid.mapBehaviors({ ...fluid.PARAMS });
+      fluid.reset();
+    }
+
+    function scheduleApply(delayMs = 80) {
+      if (applyTimer) {
+        clearTimeout(applyTimer);
+      }
+      applyTimer = setTimeout(() => {
+        applyTimer = null;
+        applyFluidParams();
+      }, delayMs);
+    }
+
     function wireRange(id, key, formatter = (v) => v) {
       const input = document.getElementById(id);
       const label = document.getElementById(id + 'Val');
@@ -192,7 +210,14 @@
         label.textContent = formatter(value);
       };
 
-      input.addEventListener('input', update);
+      input.addEventListener('input', () => {
+        update();
+        scheduleApply();
+      });
+      input.addEventListener('change', () => {
+        update();
+        applyFluidParams();
+      });
       update();
     }
 
@@ -204,9 +229,11 @@
       const baseA = [Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1];
       const baseB = [Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1];
       fluid.PARAMS.fluid_color = [baseA, baseB];
+      applyFluidParams();
     });
 
     document.getElementById('reset').addEventListener('click', () => {
+      fluid.mapBehaviors({ ...fluid.PARAMS });
       fluid.reset();
     });
 
