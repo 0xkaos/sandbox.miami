@@ -34,6 +34,12 @@
         linear-gradient(165deg, #f4ecdf 0%, #ece0d0 100%);
     }
 
+    body.mobile-streaming {
+      touch-action: none;
+      overscroll-behavior: none;
+      overflow: hidden;
+    }
+
     .layout {
       display: grid;
       grid-template-columns: minmax(280px, 360px) 1fr;
@@ -112,6 +118,77 @@
     .button:disabled {
       opacity: 0.6;
       cursor: wait;
+    }
+
+    .button.small {
+      margin-top: 0;
+      width: auto;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.78rem;
+      border-radius: 8px;
+      background: #f4e7d9;
+      color: var(--ink);
+      border-color: var(--line);
+      font-weight: 600;
+    }
+
+    .button.small.active {
+      background: linear-gradient(180deg, #eb7154, #d6502f);
+      color: white;
+      border-color: rgba(214, 80, 47, 0.45);
+    }
+
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 0.75rem;
+      align-items: center;
+    }
+
+    .slider-wrap {
+      margin-top: 0.6rem;
+      padding: 0.45rem 0.55rem;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f9f2e8;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.75rem;
+    }
+
+    .slider-wrap input {
+      width: 100%;
+      margin-top: 0.35rem;
+    }
+
+    .touch-pad {
+      margin-top: 0.6rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background:
+        linear-gradient(90deg, rgba(214, 80, 47, 0.06) 49%, rgba(214, 80, 47, 0.16) 50%, rgba(214, 80, 47, 0.06) 51%),
+        linear-gradient(rgba(20, 100, 180, 0.06) 49%, rgba(20, 100, 180, 0.16) 50%, rgba(20, 100, 180, 0.06) 51%),
+        #fff9f0;
+      background-size: 100% 100%, 100% 100%, auto;
+      aspect-ratio: 1.2 / 1;
+      position: relative;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .touch-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid white;
+      background: var(--accent);
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+      pointer-events: none;
     }
 
     .meta {
@@ -197,12 +274,26 @@
 
       <div id="mobileControls" class="hidden">
         <p>Tap start, grant motion access, and move your phone like a pen in 3D space.</p>
+        <p class="mono">Hold touch pad to draw. Release to move without painting.</p>
         <button id="startSensors" class="button">Start Stylus Streaming</button>
+        <div class="controls-row">
+          <button id="modeXY" class="button small active" type="button">Plane XY</button>
+          <button id="modeXZ" class="button small" type="button">Plane XZ</button>
+          <button id="recenterPad" class="button small" type="button">Recenter</button>
+        </div>
+        <div class="slider-wrap">
+          Touch gain: <span id="gainVal">1.00</span>
+          <input id="gainSlider" type="range" min="0.2" max="2.0" step="0.05" value="1.0" />
+        </div>
+        <div id="touchPad" class="touch-pad" aria-label="Touch plane control pad">
+          <div id="touchDot" class="touch-dot"></div>
+        </div>
         <div class="meta">
           <div>alpha: <span id="alphaVal">-</span></div>
           <div>beta: <span id="betaVal">-</span></div>
           <div>gamma: <span id="gammaVal">-</span></div>
           <div>rate: <span id="rateVal">0/s</span></div>
+          <div>draw: <span id="drawVal">off</span></div>
         </div>
       </div>
     </section>
@@ -290,7 +381,11 @@
 
         if (mode === 'desktop' && typeof payload.alpha === 'number') {
           lastOrientation = payload;
-          desktopHud.textContent = `a:${payload.alpha.toFixed(1)} b:${payload.beta.toFixed(1)} g:${payload.gamma.toFixed(1)} hz:${payload.hz || 0}`;
+          const plane = payload.control?.plane || 'xy';
+          const tx = payload.control?.x || 0;
+          const ty = payload.control?.y || 0;
+          const drawState = payload.control?.draw ? 'on' : 'off';
+          desktopHud.textContent = `a:${payload.alpha.toFixed(1)} b:${payload.beta.toFixed(1)} g:${payload.gamma.toFixed(1)} p:${plane} tx:${tx.toFixed(2)} ty:${ty.toFixed(2)} draw:${drawState} hz:${payload.hz || 0}`;
         }
       } catch (_) {
         // Ignore malformed payloads.
@@ -372,8 +467,24 @@
       targetQuat.setFromEuler(euler);
 
       const dir = new THREE.Vector3(0, 0.9, 0).applyQuaternion(targetQuat);
+      const control = orientation.control || { plane: 'xy', x: 0, y: 0, gain: 1 };
+      const gain = typeof control.gain === 'number' ? control.gain : 1;
+      const offset = new THREE.Vector3(0, 0, 0);
+
+      if (control.plane === 'xz') {
+        offset.x = control.x * 1.5 * gain;
+        offset.z = control.y * 1.5 * gain;
+      } else {
+        offset.x = control.x * 1.5 * gain;
+        offset.y = control.y * 1.2 * gain;
+      }
+
+      dir.add(offset);
       stylus.position.lerp(dir, 0.22);
-      pushTrail(stylus.position);
+
+      if (control.draw === true) {
+        pushTrail(stylus.position);
+      }
     }
 
     function animate() {
@@ -398,29 +509,66 @@
       const betaVal = document.getElementById('betaVal');
       const gammaVal = document.getElementById('gammaVal');
       const rateVal = document.getElementById('rateVal');
+      const drawVal = document.getElementById('drawVal');
+      const gainVal = document.getElementById('gainVal');
+      const gainSlider = document.getElementById('gainSlider');
+      const modeXY = document.getElementById('modeXY');
+      const modeXZ = document.getElementById('modeXZ');
+      const recenterPad = document.getElementById('recenterPad');
+      const touchPad = document.getElementById('touchPad');
+      const touchDot = document.getElementById('touchDot');
 
       let sent = 0;
       let rateStart = performance.now();
-      let lastSend = 0;
+      let streamTimer = null;
+      let latestOrientation = { alpha: 0, beta: 0, gamma: 0 };
+      let plane = 'xy';
+      let touch = { x: 0, y: 0 };
+      let gain = 1;
+      let isDrawing = false;
 
-      const sendOrientation = (event) => {
+      function setPlane(nextPlane) {
+        plane = nextPlane;
+        modeXY.classList.toggle('active', nextPlane === 'xy');
+        modeXZ.classList.toggle('active', nextPlane === 'xz');
+      }
+
+      function setTouch(x, y) {
+        touch = { x, y };
+        const dotX = 50 + x * 45;
+        const dotY = 50 - y * 45;
+        touchDot.style.left = `${dotX}%`;
+        touchDot.style.top = `${dotY}%`;
+      }
+
+      function updateTouchFromPoint(clientX, clientY) {
+        const rect = touchPad.getBoundingClientRect();
+        const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+        const ny = ((clientY - rect.top) / rect.height) * 2 - 1;
+        setTouch(THREE.MathUtils.clamp(nx, -1, 1), THREE.MathUtils.clamp(-ny, -1, 1));
+      }
+
+      function streamPacket() {
         const now = performance.now();
-        if (now - lastSend < 33) {
-          return;
-        }
-
-        lastSend = now;
 
         const data = {
-          alpha: event.alpha ?? 0,
-          beta: event.beta ?? 0,
-          gamma: event.gamma ?? 0,
-          hz: 30
+          alpha: latestOrientation.alpha ?? 0,
+          beta: latestOrientation.beta ?? 0,
+          gamma: latestOrientation.gamma ?? 0,
+          hz: 30,
+          control: {
+            plane,
+            x: touch.x,
+            y: touch.y,
+            gain,
+            draw: isDrawing
+          }
         };
 
         alphaVal.textContent = data.alpha.toFixed(1);
         betaVal.textContent = data.beta.toFixed(1);
         gammaVal.textContent = data.gamma.toFixed(1);
+        drawVal.textContent = isDrawing ? 'on' : 'off';
 
         if (socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify(data));
@@ -433,7 +581,91 @@
           sent = 0;
           rateStart = now;
         }
-      };
+      }
+
+      function onOrientation(event) {
+        latestOrientation = {
+          alpha: event.alpha ?? 0,
+          beta: event.beta ?? 0,
+          gamma: event.gamma ?? 0
+        };
+      }
+
+      modeXY.addEventListener('click', () => setPlane('xy'));
+      modeXZ.addEventListener('click', () => setPlane('xz'));
+      recenterPad.addEventListener('click', () => setTouch(0, 0));
+      gainSlider.addEventListener('input', () => {
+        gain = Number(gainSlider.value);
+        gainVal.textContent = gain.toFixed(2);
+      });
+
+      touchPad.addEventListener('touchstart', (event) => {
+        event.preventDefault();
+        isDrawing = true;
+        const touchPoint = event.touches[0];
+        if (!touchPoint) return;
+        updateTouchFromPoint(touchPoint.clientX, touchPoint.clientY);
+      }, { passive: false });
+
+      touchPad.addEventListener('touchmove', (event) => {
+        event.preventDefault();
+        const touchPoint = event.touches[0];
+        if (!touchPoint) return;
+        updateTouchFromPoint(touchPoint.clientX, touchPoint.clientY);
+      }, { passive: false });
+
+      touchPad.addEventListener('touchend', (event) => {
+        event.preventDefault();
+        isDrawing = false;
+        setTouch(0, 0);
+      }, { passive: false });
+
+      touchPad.addEventListener('touchcancel', (event) => {
+        event.preventDefault();
+        isDrawing = false;
+        setTouch(0, 0);
+      }, { passive: false });
+
+      touchPad.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        isDrawing = true;
+        updateTouchFromPoint(event.clientX, event.clientY);
+      });
+
+      touchPad.addEventListener('pointermove', (event) => {
+        if ((event.buttons & 1) !== 1) return;
+        event.preventDefault();
+        updateTouchFromPoint(event.clientX, event.clientY);
+      });
+
+      touchPad.addEventListener('pointerup', (event) => {
+        event.preventDefault();
+        isDrawing = false;
+        setTouch(0, 0);
+      });
+
+      touchPad.addEventListener('pointercancel', (event) => {
+        event.preventDefault();
+        isDrawing = false;
+        setTouch(0, 0);
+      });
+
+      touchPad.addEventListener('pointerleave', (event) => {
+        if ((event.buttons & 1) !== 1) {
+          isDrawing = false;
+          setTouch(0, 0);
+        }
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          isDrawing = false;
+          setTouch(0, 0);
+        }
+      });
+
+      setPlane('xy');
+      setTouch(0, 0);
 
       startBtn.addEventListener('click', async () => {
         startBtn.disabled = true;
@@ -445,7 +677,11 @@
             }
           }
 
-          window.addEventListener('deviceorientation', sendOrientation);
+          window.addEventListener('deviceorientation', onOrientation, true);
+          document.body.classList.add('mobile-streaming');
+          if (!streamTimer) {
+            streamTimer = setInterval(streamPacket, 33);
+          }
           startBtn.textContent = 'Streaming Active';
           presenceInfo.textContent = 'Motion stream running';
           presenceInfo.classList.add('ok');
