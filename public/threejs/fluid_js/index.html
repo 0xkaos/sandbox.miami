@@ -350,9 +350,15 @@
     });
 
     const emitters = [
-      { x: 0.33, y: 0.42, vx: 0.020, vy: -0.013, mass: 1.0 },
-      { x: 0.67, y: 0.58, vx: -0.018, vy: 0.011, mass: 1.2 }
+      { x: 0.36, y: 0.50, vx: 0.00, vy: -0.09, mass: 1.0 },
+      { x: 0.64, y: 0.50, vx: 0.00, vy: 0.09, mass: 1.2 }
     ];
+
+    const orbitModel = {
+      targetDistance: 0.32,
+      spring: 6.5,
+      tangentialDrive: 0.58
+    };
 
     const mouseBody = {
       x: 0.5,
@@ -448,16 +454,50 @@
       p.vy += dy * invDist * force * dt;
     }
 
+    function applyOrbitBias(a, b, dt) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 0.0001;
+      const nx = dx / dist;
+      const ny = dy / dist;
+
+      // Tangential push seeds/maintains angular momentum so bodies orbit.
+      const tx = -ny;
+      const ty = nx;
+      const tangential = orbitModel.tangentialDrive * velocityScale;
+      a.vx += tx * tangential * dt;
+      a.vy += ty * tangential * dt;
+      b.vx -= tx * tangential * dt;
+      b.vy -= ty * tangential * dt;
+
+      // Keep separation near a target ring so they do not collapse inward.
+      const radialCorrection = (dist - orbitModel.targetDistance) * orbitModel.spring;
+      a.vx += nx * radialCorrection * dt;
+      a.vy += ny * radialCorrection * dt;
+      b.vx -= nx * radialCorrection * dt;
+      b.vy -= ny * radialCorrection * dt;
+    }
+
     function stepEmitters(dt) {
       applyGravity(emitters[0], emitters[1], dt);
       applyMouseGravity(emitters[0], dt);
       applyMouseGravity(emitters[1], dt);
+      applyOrbitBias(emitters[0], emitters[1], dt);
 
       const damping = Math.max(0.85, 1 - dragAmount);
+      const maxSpeed = 1.8 * velocityScale;
 
       for (const p of emitters) {
         p.vx *= damping;
         p.vy *= damping;
+
+        const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+        if (speed > maxSpeed) {
+          const s = maxSpeed / speed;
+          p.vx *= s;
+          p.vy *= s;
+        }
+
         p.x += p.vx * dt * velocityScale;
         p.y += p.vy * dt * velocityScale;
 
