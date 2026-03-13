@@ -12,6 +12,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/fluid_js/",
+    "title": "Fluid JS Playground",
+    "description": "Interactive fluid simulation sketch powered by Fluid-JS with adjustable behavior controls.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/iphone_stylus/",
     "title": "iPhone 3D Stylus Bridge",
     "description": "Use an iPhone as a 3D stylus controller for a desktop Three.js scene via Cloudflare Worker WebSocket relay.",

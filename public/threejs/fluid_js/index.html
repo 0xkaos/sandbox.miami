@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fluid JS Playground</title>
+  <meta name="description" content="Interactive fluid simulation sketch powered by Fluid-JS with adjustable behavior controls." />
+  <script src="https://cdn.jsdelivr.net/npm/fluid-canvas@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+    :root {
+      --ink: #f3f8ff;
+      --panel: rgba(6, 11, 20, 0.72);
+      --border: rgba(255, 255, 255, 0.22);
+      --accent: #67e0ff;
+      --accent2: #ff8b5e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #04070e;
+      color: var(--ink);
+      font-family: 'Sora', sans-serif;
+    }
+
+    #fluidCanvas {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      display: block;
+    }
+
+    .hud {
+      position: fixed;
+      z-index: 2;
+      top: 1rem;
+      left: 1rem;
+      width: min(360px, calc(100vw - 2rem));
+      padding: 0.95rem;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    .title {
+      margin: 0;
+      font-size: 1rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .sub {
+      margin: 0.3rem 0 0.75rem;
+      opacity: 0.85;
+      font-size: 0.84rem;
+      line-height: 1.4;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 70px;
+      gap: 0.5rem;
+      align-items: center;
+      margin-top: 0.5rem;
+    }
+
+    .row label {
+      font-size: 0.75rem;
+      letter-spacing: 0.03em;
+      opacity: 0.9;
+    }
+
+    .val {
+      text-align: right;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.76rem;
+      opacity: 0.95;
+    }
+
+    input[type='range'] {
+      width: 100%;
+      appearance: none;
+      height: 6px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      outline: none;
+    }
+
+    .btns {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.8rem;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 1px solid var(--border);
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.08);
+      padding: 0.45rem 0.7rem;
+      border-radius: 8px;
+      font-size: 0.74rem;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    .note {
+      margin-top: 0.65rem;
+      font-size: 0.7rem;
+      opacity: 0.72;
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="fluidCanvas"></canvas>
+
+  <section class="hud">
+    <h1 class="title">Fluid JS Playground</h1>
+    <p class="sub">Drag on desktop or touch on mobile to inject flow. Tuned for your sandbox and inspired by Fluid-JS.</p>
+
+    <div class="row">
+      <label for="curl">Vorticity</label>
+      <span class="val" id="curlVal">18</span>
+    </div>
+    <input id="curl" type="range" min="0" max="50" step="1" value="18" />
+
+    <div class="row">
+      <label for="dissipation">Dissipation</label>
+      <span class="val" id="dissipationVal">0.97</span>
+    </div>
+    <input id="dissipation" type="range" min="0.90" max="1.00" step="0.005" value="0.97" />
+
+    <div class="row">
+      <label for="radius">Emitter Size</label>
+      <span class="val" id="radiusVal">0.42</span>
+    </div>
+    <input id="radius" type="range" min="0.20" max="0.90" step="0.01" value="0.42" />
+
+    <div class="btns">
+      <button id="randomize">Random Palette</button>
+      <button id="reset">Reset Fluid</button>
+    </div>
+
+    <p class="note">Source library: <code>fluid-canvas</code> from the Fluid-JS project. This page uses CDN runtime rather than vendoring repo code.</p>
+  </section>
+
+  <script>
+    const canvas = document.getElementById('fluidCanvas');
+    const fluid = new Fluid(canvas);
+
+    const params = {
+      sim_resolution: 128,
+      dye_resolution: 768,
+      dissipation: 0.97,
+      velocity: 0.99,
+      pressure: 0.82,
+      pressure_iteration: 20,
+      curl: 18,
+      emitter_size: 0.42,
+      render_shaders: true,
+      multi_color: true,
+      render_bloom: false,
+      transparent: false,
+      background_color: { r: 3, g: 6, b: 10 }
+    };
+
+    fluid.mapBehaviors(params);
+    fluid.activate();
+
+    function wireRange(id, key, formatter = (v) => v) {
+      const input = document.getElementById(id);
+      const label = document.getElementById(id + 'Val');
+
+      const update = () => {
+        const value = Number(input.value);
+        fluid.PARAMS[key] = value;
+        label.textContent = formatter(value);
+      };
+
+      input.addEventListener('input', update);
+      update();
+    }
+
+    wireRange('curl', 'curl', (v) => String(v));
+    wireRange('dissipation', 'dissipation', (v) => v.toFixed(3));
+    wireRange('radius', 'emitter_size', (v) => v.toFixed(2));
+
+    document.getElementById('randomize').addEventListener('click', () => {
+      const baseA = [Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1];
+      const baseB = [Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1];
+      fluid.PARAMS.fluid_color = [baseA, baseB];
+    });
+
+    document.getElementById('reset').addEventListener('click', () => {
+      fluid.reset();
+    });
+
+    window.addEventListener('resize', () => {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+      fluid.reset();
+    });
+  </script>
+</body>
+</html>
