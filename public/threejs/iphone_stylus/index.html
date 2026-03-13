@@ -280,7 +280,9 @@
           <button id="modeXY" class="button small active" type="button">Plane XY</button>
           <button id="modeXZ" class="button small" type="button">Plane XZ</button>
           <button id="recenterPad" class="button small" type="button">Recenter</button>
+          <button id="lockOrientationBtn" class="button small" type="button">Lock Portrait</button>
         </div>
+        <p class="mono" id="orientationLockInfo">Orientation lock: not requested.</p>
         <div class="slider-wrap">
           Touch gain: <span id="gainVal">1.00</span>
           <input id="gainSlider" type="range" min="0.2" max="2.0" step="0.05" value="1.0" />
@@ -515,6 +517,8 @@
       const modeXY = document.getElementById('modeXY');
       const modeXZ = document.getElementById('modeXZ');
       const recenterPad = document.getElementById('recenterPad');
+      const lockOrientationBtn = document.getElementById('lockOrientationBtn');
+      const orientationLockInfo = document.getElementById('orientationLockInfo');
       const touchPad = document.getElementById('touchPad');
       const touchDot = document.getElementById('touchDot');
 
@@ -591,9 +595,34 @@
         };
       }
 
+      async function tryLockPortrait(showStatus = true) {
+        if (!screen.orientation || typeof screen.orientation.lock !== 'function') {
+          if (showStatus) {
+            orientationLockInfo.textContent = 'Orientation lock API unsupported here. Use iPhone system rotation lock.';
+          }
+          return false;
+        }
+
+        try {
+          await screen.orientation.lock('portrait');
+          if (showStatus) {
+            orientationLockInfo.textContent = 'Orientation lock active (portrait).';
+          }
+          return true;
+        } catch (_) {
+          if (showStatus) {
+            orientationLockInfo.textContent = 'Browser denied lock (often needs fullscreen). Use iPhone system rotation lock.';
+          }
+          return false;
+        }
+      }
+
       modeXY.addEventListener('click', () => setPlane('xy'));
       modeXZ.addEventListener('click', () => setPlane('xz'));
       recenterPad.addEventListener('click', () => setTouch(0, 0));
+      lockOrientationBtn.addEventListener('click', async () => {
+        await tryLockPortrait(true);
+      });
       gainSlider.addEventListener('input', () => {
         gain = Number(gainSlider.value);
         gainVal.textContent = gain.toFixed(2);
@@ -617,13 +646,11 @@
       touchPad.addEventListener('touchend', (event) => {
         event.preventDefault();
         isDrawing = false;
-        setTouch(0, 0);
       }, { passive: false });
 
       touchPad.addEventListener('touchcancel', (event) => {
         event.preventDefault();
         isDrawing = false;
-        setTouch(0, 0);
       }, { passive: false });
 
       touchPad.addEventListener('pointerdown', (event) => {
@@ -641,26 +668,22 @@
       touchPad.addEventListener('pointerup', (event) => {
         event.preventDefault();
         isDrawing = false;
-        setTouch(0, 0);
       });
 
       touchPad.addEventListener('pointercancel', (event) => {
         event.preventDefault();
         isDrawing = false;
-        setTouch(0, 0);
       });
 
       touchPad.addEventListener('pointerleave', (event) => {
         if ((event.buttons & 1) !== 1) {
           isDrawing = false;
-          setTouch(0, 0);
         }
       });
 
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
           isDrawing = false;
-          setTouch(0, 0);
         }
       });
 
@@ -679,6 +702,7 @@
 
           window.addEventListener('deviceorientation', onOrientation, true);
           document.body.classList.add('mobile-streaming');
+          await tryLockPortrait(false);
           if (!streamTimer) {
             streamTimer = setInterval(streamPacket, 33);
           }
