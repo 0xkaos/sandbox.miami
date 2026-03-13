@@ -41,6 +41,16 @@
       display: block;
     }
 
+    #fxCanvas {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      display: block;
+      pointer-events: none;
+    }
+
     .hud {
       position: fixed;
       z-index: 2;
@@ -99,6 +109,20 @@
       outline: none;
     }
 
+    .inline-toggle {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 0.7rem;
+      font-size: 0.76rem;
+      opacity: 0.95;
+    }
+
+    .inline-toggle input {
+      width: 18px;
+      height: 18px;
+    }
+
     .btns {
       display: flex;
       gap: 0.5rem;
@@ -128,6 +152,7 @@
 </head>
 <body>
   <canvas id="fluidCanvas"></canvas>
+  <canvas id="fxCanvas"></canvas>
 
   <section class="hud">
     <h1 class="title">Fluid JS Playground</h1>
@@ -151,6 +176,17 @@
     </div>
     <input id="radius" type="range" min="0.20" max="0.90" step="0.01" value="0.42" />
 
+    <div class="row">
+      <label for="gravity">Emitter Gravity</label>
+      <span class="val" id="gravityVal">0.55</span>
+    </div>
+    <input id="gravity" type="range" min="0.10" max="1.20" step="0.01" value="0.55" />
+
+    <div class="inline-toggle">
+      <label for="emittersToggle">Show Gravity Emitters</label>
+      <input id="emittersToggle" type="checkbox" checked />
+    </div>
+
     <div class="btns">
       <button id="randomize">Random Palette</button>
       <button id="reset">Reset Fluid</button>
@@ -161,6 +197,8 @@
 
   <script>
     const canvas = document.getElementById('fluidCanvas');
+    const fxCanvas = document.getElementById('fxCanvas');
+    const fx = fxCanvas.getContext('2d');
     const fluid = new Fluid(canvas);
 
     const params = {
@@ -181,6 +219,37 @@
 
     fluid.mapBehaviors(params);
     fluid.activate();
+
+    const paletteState = {
+      hue: 0,
+      sat: 1,
+      contrast: 1
+    };
+
+    function hslToRgb01(h, s, l) {
+      const c = (1 - Math.abs(2 * l - 1)) * s;
+      const hh = h / 60;
+      const x = c * (1 - Math.abs((hh % 2) - 1));
+      let r = 0;
+      let g = 0;
+      let b = 0;
+
+      if (hh >= 0 && hh < 1) [r, g, b] = [c, x, 0];
+      else if (hh < 2) [r, g, b] = [x, c, 0];
+      else if (hh < 3) [r, g, b] = [0, c, x];
+      else if (hh < 4) [r, g, b] = [0, x, c];
+      else if (hh < 5) [r, g, b] = [x, 0, c];
+      else [r, g, b] = [c, 0, x];
+
+      const m = l - c / 2;
+      return [r + m, g + m, b + m];
+    }
+
+    function applyPalette() {
+      canvas.style.filter = `hue-rotate(${paletteState.hue}deg) saturate(${paletteState.sat.toFixed(2)}) contrast(${paletteState.contrast.toFixed(2)})`;
+    }
+
+    applyPalette();
 
     let applyTimer = null;
 
@@ -225,9 +294,35 @@
     wireRange('dissipation', 'dissipation', (v) => v.toFixed(3));
     wireRange('radius', 'emitter_size', (v) => v.toFixed(2));
 
+    let gravityStrength = 0.55;
+    const gravityInput = document.getElementById('gravity');
+    const gravityVal = document.getElementById('gravityVal');
+    gravityInput.addEventListener('input', () => {
+      gravityStrength = Number(gravityInput.value);
+      gravityVal.textContent = gravityStrength.toFixed(2);
+    });
+    gravityStrength = Number(gravityInput.value);
+    gravityVal.textContent = gravityStrength.toFixed(2);
+
+    let showEmitters = true;
+    const emittersToggle = document.getElementById('emittersToggle');
+    emittersToggle.addEventListener('change', () => {
+      showEmitters = emittersToggle.checked;
+      if (!showEmitters) {
+        fx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+      }
+    });
+
     document.getElementById('randomize').addEventListener('click', () => {
-      const baseA = [Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1];
-      const baseB = [Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1, Math.random() * 0.8 + 0.1];
+      const hue = Math.floor(Math.random() * 360);
+      paletteState.hue = hue;
+      paletteState.sat = 1.25 + Math.random() * 0.65;
+      paletteState.contrast = 1.0 + Math.random() * 0.35;
+      applyPalette();
+
+      const baseA = hslToRgb01(hue, 0.84, 0.55);
+      const baseB = hslToRgb01((hue + 45) % 360, 0.92, 0.62);
+      fluid.PARAMS.multi_color = false;
       fluid.PARAMS.fluid_color = [baseA, baseB];
       applyFluidParams();
     });
@@ -237,11 +332,159 @@
       fluid.reset();
     });
 
+    const emitters = [
+      { x: 0.33, y: 0.42, vx: 0.09, vy: -0.06, mass: 1.0, radius: 9, color: '#89d8ff' },
+      { x: 0.67, y: 0.58, vx: -0.08, vy: 0.05, mass: 1.2, radius: 10, color: '#ffbc8e' }
+    ];
+
+    const mouseBody = {
+      x: 0.5,
+      y: 0.5,
+      mass: 2.4,
+      active: false
+    };
+
+    function resizeFxCanvas() {
+      fxCanvas.width = Math.floor(window.innerWidth * Math.min(window.devicePixelRatio, 2));
+      fxCanvas.height = Math.floor(window.innerHeight * Math.min(window.devicePixelRatio, 2));
+      fx.setTransform(1, 0, 0, 1, 0, 0);
+      fx.scale(fxCanvas.width / window.innerWidth, fxCanvas.height / window.innerHeight);
+    }
+
+    function applyGravity(a, b, dt) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const distSq = dx * dx + dy * dy + 0.0025;
+      const dist = Math.sqrt(distSq);
+      const invDist = 1 / dist;
+      const force = gravityStrength * (a.mass * b.mass) / distSq;
+      const ax = dx * invDist * force;
+      const ay = dy * invDist * force;
+
+      a.vx += ax * dt;
+      a.vy += ay * dt;
+      b.vx -= ax * dt;
+      b.vy -= ay * dt;
+    }
+
+    function applyMouseGravity(p, dt) {
+      if (!mouseBody.active) {
+        return;
+      }
+
+      const dx = mouseBody.x - p.x;
+      const dy = mouseBody.y - p.y;
+      const distSq = dx * dx + dy * dy + 0.0012;
+      const dist = Math.sqrt(distSq);
+      const invDist = 1 / dist;
+      const force = gravityStrength * (p.mass * mouseBody.mass) / distSq;
+
+      p.vx += dx * invDist * force * dt;
+      p.vy += dy * invDist * force * dt;
+    }
+
+    function stepEmitters(dt) {
+      applyGravity(emitters[0], emitters[1], dt);
+      applyMouseGravity(emitters[0], dt);
+      applyMouseGravity(emitters[1], dt);
+
+      for (const p of emitters) {
+        p.vx *= 0.997;
+        p.vy *= 0.997;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+
+        if (p.x < 0.02 || p.x > 0.98) {
+          p.vx *= -0.92;
+          p.x = Math.max(0.02, Math.min(0.98, p.x));
+        }
+        if (p.y < 0.02 || p.y > 0.98) {
+          p.vy *= -0.92;
+          p.y = Math.max(0.02, Math.min(0.98, p.y));
+        }
+      }
+    }
+
+    function drawEmitters() {
+      fx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      if (!showEmitters) {
+        return;
+      }
+
+      const p0 = emitters[0];
+      const p1 = emitters[1];
+      const x0 = p0.x * window.innerWidth;
+      const y0 = p0.y * window.innerHeight;
+      const x1 = p1.x * window.innerWidth;
+      const y1 = p1.y * window.innerHeight;
+
+      fx.strokeStyle = 'rgba(140, 220, 255, 0.22)';
+      fx.lineWidth = 1.4;
+      fx.beginPath();
+      fx.moveTo(x0, y0);
+      fx.lineTo(x1, y1);
+      fx.stroke();
+
+      for (const p of emitters) {
+        const px = p.x * window.innerWidth;
+        const py = p.y * window.innerHeight;
+        const grad = fx.createRadialGradient(px, py, 1, px, py, p.radius * 3.5);
+        grad.addColorStop(0, 'rgba(255,255,255,0.95)');
+        grad.addColorStop(0.25, p.color);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        fx.fillStyle = grad;
+        fx.beginPath();
+        fx.arc(px, py, p.radius * 3.5, 0, Math.PI * 2);
+        fx.fill();
+      }
+
+      if (mouseBody.active) {
+        const mx = mouseBody.x * window.innerWidth;
+        const my = mouseBody.y * window.innerHeight;
+        fx.strokeStyle = 'rgba(255, 245, 180, 0.75)';
+        fx.lineWidth = 1.1;
+        fx.beginPath();
+        fx.arc(mx, my, 14, 0, Math.PI * 2);
+        fx.stroke();
+      }
+    }
+
+    let prevTime = performance.now();
+    function animateEmitters(now) {
+      const dt = Math.min((now - prevTime) / 1000, 0.035);
+      prevTime = now;
+      if (showEmitters) {
+        stepEmitters(dt);
+      }
+      drawEmitters();
+      requestAnimationFrame(animateEmitters);
+    }
+
+    window.addEventListener('pointermove', (event) => {
+      mouseBody.x = event.clientX / window.innerWidth;
+      mouseBody.y = event.clientY / window.innerHeight;
+    });
+    window.addEventListener('pointerdown', (event) => {
+      mouseBody.active = true;
+      mouseBody.x = event.clientX / window.innerWidth;
+      mouseBody.y = event.clientY / window.innerHeight;
+    });
+    window.addEventListener('pointerup', () => {
+      mouseBody.active = false;
+    });
+    window.addEventListener('pointercancel', () => {
+      mouseBody.active = false;
+    });
+
     window.addEventListener('resize', () => {
+      resizeFxCanvas();
       canvas.width = canvas.clientWidth;
       canvas.height = canvas.clientHeight;
       fluid.reset();
     });
+
+    resizeFxCanvas();
+    requestAnimationFrame(animateEmitters);
   </script>
 </body>
 </html>
