@@ -1,6 +1,101 @@
+export class StylusSession {
+  constructor(state) {
+    this.state = state;
+    this.clients = new Map();
+  }
+
+  async fetch(request) {
+    const upgradeHeader = request.headers.get('Upgrade');
+    if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
+      return new Response('Expected Upgrade: websocket', { status: 426 });
+    }
+
+    const url = new URL(request.url);
+    const role = url.searchParams.get('role');
+
+    if (role !== 'desktop' && role !== 'mobile') {
+      return new Response('Missing or invalid role', { status: 400 });
+    }
+
+    const pair = new WebSocketPair();
+    const [clientSocket, serverSocket] = Object.values(pair);
+
+    serverSocket.accept();
+    this.clients.set(role, serverSocket);
+
+    const sendPresence = () => {
+      const desktopConnected = this.clients.has('desktop');
+      const mobileConnected = this.clients.has('mobile');
+      const payload = JSON.stringify({
+        type: 'presence',
+        desktopConnected,
+        mobileConnected
+      });
+
+      for (const ws of this.clients.values()) {
+        try {
+          ws.send(payload);
+        } catch (_) {
+          // Ignore stale sockets; close handler will clean up.
+        }
+      }
+    };
+
+    sendPresence();
+
+    serverSocket.addEventListener('message', (event) => {
+      if (role === 'mobile') {
+        const desktopSocket = this.clients.get('desktop');
+        if (desktopSocket) {
+          try {
+            desktopSocket.send(event.data);
+          } catch (_) {
+            // Ignore failed sends to stale desktop socket.
+          }
+        }
+      }
+    });
+
+    serverSocket.addEventListener('close', () => {
+      this.clients.delete(role);
+      sendPresence();
+    });
+
+    serverSocket.addEventListener('error', () => {
+      this.clients.delete(role);
+      sendPresence();
+    });
+
+    return new Response(null, { status: 101, webSocket: clientSocket });
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // WebSocket Endpoint: /api/stylus/socket
+    if (url.pathname === '/api/stylus/socket') {
+      const sessionId = url.searchParams.get('session');
+
+      if (!sessionId) {
+        return new Response(JSON.stringify({ error: 'Missing session query param.' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (!env.STYLUS_SESSIONS) {
+        return new Response(JSON.stringify({ error: "Durable Object binding 'STYLUS_SESSIONS' is missing." }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      const id = env.STYLUS_SESSIONS.idFromName(sessionId);
+      const stub = env.STYLUS_SESSIONS.get(id);
+      return stub.fetch(request);
+    }
 
     // API Endpoint: /api/letters
     if (url.pathname === '/api/letters') {

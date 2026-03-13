@@ -12,6 +12,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/iphone_stylus/",
+    "title": "iPhone 3D Stylus Bridge",
+    "description": "Use an iPhone as a 3D stylus controller for a desktop Three.js scene via Cloudflare Worker WebSocket relay.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/mahjong_game/",
     "title": "Mahjong Game - Three.js",
     "description": "No description available.",

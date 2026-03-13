@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>iPhone 3D Stylus Bridge</title>
+  <meta name="description" content="Use an iPhone as a 3D stylus controller for a desktop Three.js scene via Cloudflare Worker WebSocket relay." />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+    :root {
+      --bg: #f0e8dc;
+      --ink: #1b1a17;
+      --panel: rgba(255, 255, 255, 0.8);
+      --line: rgba(27, 26, 23, 0.15);
+      --accent: #d6502f;
+      --accent-soft: rgba(214, 80, 47, 0.14);
+      --ok: #157347;
+      --warn: #a97500;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: 'Archivo', sans-serif;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(214, 80, 47, 0.18), transparent 34%),
+        radial-gradient(circle at 85% 8%, rgba(20, 100, 180, 0.18), transparent 30%),
+        linear-gradient(165deg, #f4ecdf 0%, #ece0d0 100%);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) 1fr;
+      gap: 1rem;
+      min-height: 100vh;
+      padding: 1rem;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      backdrop-filter: blur(6px);
+      border-radius: 16px;
+      padding: 1rem;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      margin: 0 0 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    p {
+      margin: 0.4rem 0;
+      line-height: 1.45;
+    }
+
+    .mono {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.85rem;
+      background: #f7f1e8;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.5rem;
+      word-break: break-all;
+    }
+
+    .chip {
+      display: inline-block;
+      margin: 0.25rem 0;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff9f0;
+      font-size: 0.78rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .ok {
+      border-color: rgba(21, 115, 71, 0.35);
+      color: var(--ok);
+      background: rgba(21, 115, 71, 0.08);
+    }
+
+    .warn {
+      border-color: rgba(169, 117, 0, 0.4);
+      color: var(--warn);
+      background: rgba(169, 117, 0, 0.1);
+    }
+
+    .button {
+      width: 100%;
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      border: 1px solid rgba(214, 80, 47, 0.45);
+      background: linear-gradient(180deg, #eb7154, #d6502f);
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 0.7rem;
+    }
+
+    .button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+      margin-top: 0.8rem;
+    }
+
+    .meta div {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff7ec;
+      padding: 0.5rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.78rem;
+    }
+
+    #qr {
+      margin-top: 0.8rem;
+      display: inline-block;
+      border: 10px solid white;
+      border-radius: 10px;
+      background: white;
+    }
+
+    .viewport {
+      min-height: 66vh;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      overflow: hidden;
+      background: radial-gradient(circle at 20% 20%, #223047, #0a0f1a);
+      position: relative;
+    }
+
+    .viewport canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .hud {
+      position: absolute;
+      top: 0.75rem;
+      right: 0.75rem;
+      z-index: 2;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.5rem 0.7rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.75rem;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .viewport {
+        min-height: 54vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="layout">
+    <section class="panel" id="leftPanel">
+      <h1>iPhone 3D Stylus</h1>
+      <p>Open this page on desktop to host a session, then scan to pair iPhone motion as a live stylus.</p>
+      <div id="modeInfo" class="chip"></div>
+      <div id="presenceInfo" class="chip warn">Waiting for connection...</div>
+      <div class="mono" id="sessionText"></div>
+
+      <div id="desktopControls">
+        <div id="qr" aria-label="Pairing QR code"></div>
+        <p class="mono" id="mobileUrl"></p>
+      </div>
+
+      <div id="mobileControls" class="hidden">
+        <p>Tap start, grant motion access, and move your phone like a pen in 3D space.</p>
+        <button id="startSensors" class="button">Start Stylus Streaming</button>
+        <div class="meta">
+          <div>alpha: <span id="alphaVal">-</span></div>
+          <div>beta: <span id="betaVal">-</span></div>
+          <div>gamma: <span id="gammaVal">-</span></div>
+          <div>rate: <span id="rateVal">0/s</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="viewport" id="viewport">
+      <div class="hud" id="desktopHud">No sensor data yet.</div>
+    </section>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.162.0/build/three.module.js';
+
+    const params = new URLSearchParams(location.search);
+    const mode = params.get('mode') === 'mobile' ? 'mobile' : 'desktop';
+    const session = params.get('session') || crypto.randomUUID().slice(0, 8);
+
+    const modeInfo = document.getElementById('modeInfo');
+    const presenceInfo = document.getElementById('presenceInfo');
+    const sessionText = document.getElementById('sessionText');
+    const desktopControls = document.getElementById('desktopControls');
+    const mobileControls = document.getElementById('mobileControls');
+    const mobileUrlEl = document.getElementById('mobileUrl');
+    const desktopHud = document.getElementById('desktopHud');
+
+    const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${wsProto}://${location.host}/api/stylus/socket?session=${encodeURIComponent(session)}&role=${mode}`;
+
+    modeInfo.textContent = `Mode: ${mode}`;
+    sessionText.textContent = `Session: ${session}`;
+
+    if (mode === 'mobile') {
+      desktopControls.classList.add('hidden');
+      mobileControls.classList.remove('hidden');
+      desktopHud.classList.add('hidden');
+    } else {
+      mobileControls.classList.add('hidden');
+      desktopControls.classList.remove('hidden');
+
+      const mobileUrl = `${location.origin}${location.pathname}?mode=mobile&session=${encodeURIComponent(session)}`;
+      mobileUrlEl.textContent = mobileUrl;
+      new QRCode(document.getElementById('qr'), {
+        text: mobileUrl,
+        width: 190,
+        height: 190,
+        colorDark: '#141414',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
+
+    const socket = new WebSocket(wsUrl);
+    socket.addEventListener('open', () => {
+      presenceInfo.textContent = 'Socket connected';
+      presenceInfo.classList.remove('warn');
+      presenceInfo.classList.add('ok');
+    });
+
+    socket.addEventListener('close', () => {
+      presenceInfo.textContent = 'Socket disconnected';
+      presenceInfo.classList.remove('ok');
+      presenceInfo.classList.add('warn');
+    });
+
+    let lastOrientation = null;
+
+    socket.addEventListener('message', (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+
+        if (payload.type === 'presence') {
+          if (mode === 'desktop') {
+            const paired = payload.mobileConnected === true;
+            presenceInfo.textContent = paired ? 'iPhone paired' : 'Waiting for iPhone';
+            presenceInfo.classList.toggle('ok', paired);
+            presenceInfo.classList.toggle('warn', !paired);
+          } else {
+            const paired = payload.desktopConnected === true;
+            presenceInfo.textContent = paired ? 'Desktop paired' : 'Waiting for desktop';
+            presenceInfo.classList.toggle('ok', paired);
+            presenceInfo.classList.toggle('warn', !paired);
+          }
+          return;
+        }
+
+        if (mode === 'desktop' && typeof payload.alpha === 'number') {
+          lastOrientation = payload;
+          desktopHud.textContent = `a:${payload.alpha.toFixed(1)} b:${payload.beta.toFixed(1)} g:${payload.gamma.toFixed(1)} hz:${payload.hz || 0}`;
+        }
+      } catch (_) {
+        // Ignore malformed payloads.
+      }
+    });
+
+    const viewport = document.getElementById('viewport');
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+    viewport.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x0a0f1a, 6, 25);
+
+    const camera = new THREE.PerspectiveCamera(52, viewport.clientWidth / viewport.clientHeight, 0.1, 100);
+    camera.position.set(0, 1.4, 5.5);
+
+    const ambient = new THREE.HemisphereLight(0x9db7ff, 0x202020, 1.1);
+    const key = new THREE.DirectionalLight(0xfff4cc, 1.1);
+    key.position.set(4, 5, 3);
+    scene.add(ambient, key);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(12, 12),
+      new THREE.MeshStandardMaterial({ color: 0x132033, roughness: 0.92, metalness: 0.08 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -1.15;
+    scene.add(floor);
+
+    const stylus = new THREE.Mesh(
+      new THREE.ConeGeometry(0.12, 0.9, 16),
+      new THREE.MeshStandardMaterial({ color: 0xff6a3a, roughness: 0.25, metalness: 0.35 })
+    );
+    stylus.position.y = 0.25;
+    scene.add(stylus);
+
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(1.35, 0.05, 18, 120),
+      new THREE.MeshStandardMaterial({ color: 0x66b6ff, emissive: 0x103050, roughness: 0.55, metalness: 0.2 })
+    );
+    ring.rotation.x = Math.PI / 2;
+    scene.add(ring);
+
+    const trailPoints = Array.from({ length: 120 }, () => new THREE.Vector3(0, 0, 0));
+    const trailGeo = new THREE.BufferGeometry().setFromPoints(trailPoints);
+    const trail = new THREE.Line(
+      trailGeo,
+      new THREE.LineBasicMaterial({ color: 0xf8cf78, transparent: true, opacity: 0.75 })
+    );
+    scene.add(trail);
+
+    const targetQuat = new THREE.Quaternion();
+    const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+
+    function onResize() {
+      const w = viewport.clientWidth;
+      const h = viewport.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+
+    window.addEventListener('resize', onResize);
+
+    function pushTrail(point) {
+      trailPoints.shift();
+      trailPoints.push(point.clone());
+      trail.geometry.setFromPoints(trailPoints);
+    }
+
+    function updateFromSensor(orientation) {
+      const a = THREE.MathUtils.degToRad(orientation.alpha || 0);
+      const b = THREE.MathUtils.degToRad(orientation.beta || 0);
+      const g = THREE.MathUtils.degToRad(orientation.gamma || 0);
+
+      euler.set(b, a, -g);
+      targetQuat.setFromEuler(euler);
+
+      const dir = new THREE.Vector3(0, 0.9, 0).applyQuaternion(targetQuat);
+      stylus.position.lerp(dir, 0.22);
+      pushTrail(stylus.position);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      if (mode === 'desktop' && lastOrientation) {
+        updateFromSensor(lastOrientation);
+        stylus.quaternion.slerp(targetQuat, 0.2);
+      } else {
+        stylus.rotation.y += 0.008;
+      }
+
+      ring.rotation.z += 0.006;
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    if (mode === 'mobile') {
+      const startBtn = document.getElementById('startSensors');
+      const alphaVal = document.getElementById('alphaVal');
+      const betaVal = document.getElementById('betaVal');
+      const gammaVal = document.getElementById('gammaVal');
+      const rateVal = document.getElementById('rateVal');
+
+      let sent = 0;
+      let rateStart = performance.now();
+      let lastSend = 0;
+
+      const sendOrientation = (event) => {
+        const now = performance.now();
+        if (now - lastSend < 33) {
+          return;
+        }
+
+        lastSend = now;
+
+        const data = {
+          alpha: event.alpha ?? 0,
+          beta: event.beta ?? 0,
+          gamma: event.gamma ?? 0,
+          hz: 30
+        };
+
+        alphaVal.textContent = data.alpha.toFixed(1);
+        betaVal.textContent = data.beta.toFixed(1);
+        gammaVal.textContent = data.gamma.toFixed(1);
+
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify(data));
+          sent += 1;
+        }
+
+        const elapsed = (now - rateStart) / 1000;
+        if (elapsed > 1) {
+          rateVal.textContent = `${Math.round(sent / elapsed)}/s`;
+          sent = 0;
+          rateStart = now;
+        }
+      };
+
+      startBtn.addEventListener('click', async () => {
+        startBtn.disabled = true;
+        try {
+          if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            const result = await DeviceOrientationEvent.requestPermission();
+            if (result !== 'granted') {
+              throw new Error('Motion permission denied');
+            }
+          }
+
+          window.addEventListener('deviceorientation', sendOrientation);
+          startBtn.textContent = 'Streaming Active';
+          presenceInfo.textContent = 'Motion stream running';
+          presenceInfo.classList.add('ok');
+          presenceInfo.classList.remove('warn');
+        } catch (err) {
+          startBtn.disabled = false;
+          startBtn.textContent = 'Retry Start';
+          presenceInfo.textContent = err.message || 'Unable to start sensors';
+          presenceInfo.classList.add('warn');
+          presenceInfo.classList.remove('ok');
+        }
+      });
+    }
+  </script>
+</body>
+</html>
