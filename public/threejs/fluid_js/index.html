@@ -175,7 +175,7 @@
       <label for="velocityScale">Velocity Scale</label>
       <span class="val" id="velocityScaleVal">1.00</span>
     </div>
-    <input id="velocityScale" type="range" min="0.20" max="2.40" step="0.01" value="1.00" />
+    <input id="velocityScale" type="range" min="0.0" max="0.40" step="0.01" value="1.00" />
 
     <div class="row">
       <label for="drag">Drag</label>
@@ -357,7 +357,7 @@
     const orbitModel = {
       targetDistance: 0.32,
       spring: 6.5,
-      tangentialDrive: 0.58
+      tangentialDrive: 0.42
     };
 
     const mouseBody = {
@@ -485,7 +485,7 @@
       applyOrbitBias(emitters[0], emitters[1], dt);
 
       const damping = Math.max(0.85, 1 - dragAmount);
-      const maxSpeed = 1.8 * velocityScale;
+      const maxSpeed = 1.1 * velocityScale;
 
       for (const p of emitters) {
         p.vx *= damping;
@@ -519,8 +519,8 @@
 
       if (showEmitters) {
         stepEmitters(dt);
-        updateVirtualPointer(pointerSlots.emitterA, emitters[0].x, emitters[0].y, true, 6 * velocityScale);
-        updateVirtualPointer(pointerSlots.emitterB, emitters[1].x, emitters[1].y, true, 6 * velocityScale);
+        updateVirtualPointer(pointerSlots.emitterA, emitters[0].x, emitters[0].y, true, 4 * velocityScale);
+        updateVirtualPointer(pointerSlots.emitterB, emitters[1].x, emitters[1].y, true, 4 * velocityScale);
       } else {
         updateVirtualPointer(pointerSlots.emitterA, emitters[0].x, emitters[0].y, false);
         updateVirtualPointer(pointerSlots.emitterB, emitters[1].x, emitters[1].y, false);
