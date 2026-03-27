@@ -72,7 +72,7 @@
             exportHeight: 1920,
             exportFps: 60,
             exportDuration: 10,
-            exportBitrate: 20, // Mbps
+            exportCrf: 18, // CRF quality (10=best/large, 35=smaller/lossy)
         };
 
         // --- Shaders ---
@@ -519,6 +519,9 @@
         let gui;
         let attractorParams = {};
         let isExporting = false;
+        let exportCancelled = false;
+        let exportController = null;
+        const exportRef = { fn: null }; // mutable ref so button can swap between start/cancel
         let oscillators = [];
         let time = 0;
         let colormapTexture, colormapNames;
@@ -683,8 +686,9 @@
             exportFolder.add(CONFIG, 'exportHeight', [720, 1080, 1920, 2160, 3840]);
             exportFolder.add(CONFIG, 'exportFps', [30, 60]);
             exportFolder.add(CONFIG, 'exportDuration', 1, 300).name("Duration (s)").step(1);
-            exportFolder.add(CONFIG, 'exportBitrate', 1, 100).name("Bitrate (Mbps)").step(1);
-            exportFolder.add({ export: startExport }, 'export').name("START EXPORT");
+            exportFolder.add(CONFIG, 'exportCrf', 10, 35).name("Quality (CRF)").step(1);
+            exportRef.fn = startExport;
+            exportController = exportFolder.add(exportRef, 'fn').name("START EXPORT");
         }
 
         function changeAttractor(name) {
@@ -960,9 +964,18 @@
         }
 
         // --- Export Logic ---
+        function cancelExport() {
+            exportCancelled = true;
+        }
+
         async function startExport() {
             if (isExporting) return;
             isExporting = true;
+            exportCancelled = false;
+
+            // Switch button to cancel
+            exportRef.fn = cancelExport;
+            if (exportController) exportController.name("STOP EXPORT");
             
             const overlay = document.getElementById('overlay');
             const progressFill = document.getElementById('progress-fill');
@@ -974,7 +987,9 @@
             const height = parseInt(CONFIG.exportHeight);
             const fps = CONFIG.exportFps;
             const duration = CONFIG.exportDuration;
-            const bitrate = CONFIG.exportBitrate * 1_000_000;
+            const crf = CONFIG.exportCrf;
+            // High bitrate intermediate — FFmpeg will re-encode to final quality via CRF
+            const intermediateBitrate = 200_000_000;
             
             const muxer = new Mp4Muxer.Muxer({
                 target: new Mp4Muxer.ArrayBufferTarget(),
@@ -992,11 +1007,12 @@
             });
 
             videoEncoder.configure({
-                codec: 'avc1.42E033', // Constrained Baseline, Level 5.1
+                codec: 'avc1.640033', // High Profile Level 5.1 — better gradient handling
                 width: width,
                 height: height,
-                bitrate: bitrate,
+                bitrate: intermediateBitrate,
                 framerate: fps,
+                latencyMode: 'quality',
                 avc: { format: 'avc' }
             });
 
@@ -1019,6 +1035,8 @@
             
             try {
                 for (let i = 0; i < totalFrames; i++) {
+                    if (exportCancelled) break;
+
                     // Update Progress
                     const pct = Math.round((i / totalFrames) * 100);
                     progressFill.style.width = pct + "%";
@@ -1064,79 +1082,90 @@
                     frame.close();
                 }
 
-                await videoEncoder.flush();
-                muxer.finalize();
+                if (exportCancelled) {
+                    videoEncoder.close();
+                    statusText.innerText = "Export cancelled.";
+                } else {
+                    await videoEncoder.flush();
+                    muxer.finalize();
 
-                // 5. Remux with FFmpeg to fix SPS/PPS headers
-                statusText.innerText = "Loading FFmpeg...";
-                await new Promise(r => setTimeout(r, 50));
+                    statusText.innerText = "Loading FFmpeg...";
+                    await new Promise(r => setTimeout(r, 50));
 
-                // Check for COOP/COEP
-                if (!window.crossOriginIsolated) {
-                    console.warn("Page is not cross-origin isolated. FFmpeg might be slow or fail.");
-                }
-
-                const { FFmpeg } = FFmpegWASM;
-                const ffmpeg = new FFmpeg();
-                
-                ffmpeg.on('log', ({ message }) => {
-                    console.log("FFmpeg:", message);
-                    // Update status only for major steps to avoid flickering
-                    if(message.includes("Loading") || message.includes("muxing")) {
-                         statusText.innerText = "FFmpeg: " + message;
+                    if (!window.crossOriginIsolated) {
+                        console.warn("Page is not cross-origin isolated. FFmpeg might be slow or fail.");
                     }
-                });
 
-                // Load single-threaded core to avoid SharedArrayBuffer issues
-                // We load the WASM from CDN because it exceeds Cloudflare Workers 25MB limit
-                // Added ?v=cachebust to force reload after browser crash
-                await ffmpeg.load({
-                    coreURL: "/vendor/ffmpeg/ffmpeg-core.js",
-                    wasmURL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm?v=cachebust_1"
-                });
+                    const { FFmpeg } = FFmpegWASM;
+                    const ffmpeg = new FFmpeg();
+                    
+                    ffmpeg.on('log', ({ message }) => {
+                        console.log("FFmpeg:", message);
+                        if (message.includes('frame=') || message.includes('time=')) {
+                            statusText.innerText = "Encoding: " + message.slice(0, 60);
+                        }
+                    });
 
-                // --- Audio Rendering ---
-                // (audio removed)
+                    await ffmpeg.load({
+                        coreURL: "/vendor/ffmpeg/ffmpeg-core.js",
+                        wasmURL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm?v=cachebust_1"
+                    });
 
-                statusText.innerText = "Remuxing Video...";
-                await ffmpeg.writeFile('input.mp4', new Uint8Array(muxer.target.buffer));
-                
-                try {
-                    await ffmpeg.exec(['-i', 'input.mp4', '-c', 'copy', '-bsf:v', 'h264_mp4toannexb', 'temp.h264']);
+                    statusText.innerText = `Encoding (CRF ${crf}) — this may take a minute...`;
+                    await ffmpeg.writeFile('input.mp4', new Uint8Array(muxer.target.buffer));
                     
-                    const args = ['-r', fps.toString(), '-i', 'temp.h264', '-c', 'copy', '-movflags', '+faststart', 'output.mp4'];
+                    try {
+                        // Extract raw annex-b stream first (works around mp4-muxer header quirks)
+                        await ffmpeg.exec(['-i', 'input.mp4', '-c', 'copy', '-bsf:v', 'h264_mp4toannexb', 'temp.h264']);
+                        
+                        // Re-encode with libx264 CRF for proper quality control.
+                        // High profile + CABAC + no chroma subsampling shortcuts = cleaner gradients.
+                        await ffmpeg.exec([
+                            '-r', fps.toString(),
+                            '-i', 'temp.h264',
+                            '-c:v', 'libx264',
+                            '-crf', String(crf),
+                            '-preset', 'medium',
+                            '-profile:v', 'high',
+                            '-level', '5.1',
+                            '-pix_fmt', 'yuv420p',
+                            '-movflags', '+faststart',
+                            'output.mp4'
+                        ]);
+                    } catch (e) {
+                        console.warn("FFmpeg exec threw (likely Aborted), checking for output...", e);
+                    }
                     
-                    await ffmpeg.exec(args);
-                    
-                } catch (e) {
-                    // Ignore Aborted() error if output exists, it's a known ffmpeg.wasm quirk
-                    console.warn("FFmpeg exec threw error (likely Aborted), checking for output...", e);
+                    statusText.innerText = "Reading Output...";
+                    const data = await ffmpeg.readFile('output.mp4');
+
+                    const blob = new Blob([data.buffer], { type: 'video/mp4' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `attractor_${CONFIG.attractor}_${width}x${height}.mp4`;
+                    a.click();
+                    URL.revokeObjectURL(url);
                 }
-                
-                statusText.innerText = "Reading Output...";
-                const data = await ffmpeg.readFile('output.mp4');
-
-                // 6. Download
-                const blob = new Blob([data.buffer], { type: 'video/mp4' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `attractor_${CONFIG.attractor}_${width}x${height}.mp4`;
-                a.click();
-                URL.revokeObjectURL(url);
 
             } catch (err) {
-                console.error(err);
-                alert("Export failed: " + err.message);
+                if (!exportCancelled) {
+                    console.error(err);
+                    alert("Export failed: " + err.message);
+                }
             } finally {
-                // 5. Restore
                 renderer.setPixelRatio(originalPixelRatio);
-                renderer.setSize(originalSize.x, originalSize.y, true); // Restore style too
+                renderer.setSize(originalSize.x, originalSize.y, true);
                 camera.aspect = originalAspect;
                 camera.updateProjectionMatrix();
                 
                 overlay.style.display = 'none';
                 isExporting = false;
+                exportCancelled = false;
+
+                // Restore button
+                exportRef.fn = startExport;
+                if (exportController) exportController.name("START EXPORT");
                 
                 animate();
             }
