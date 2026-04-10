@@ -88,5 +88,11 @@
     "title": "Verbs Galaxy - Roots Edition",
     "description": "Explore 350+ verb roots in a 3D galaxy with search, audio pronunciations, and conjugation panels.",
     "category": "threejs"
+  },
+  {
+    "path": "/threejs/virtual_8bit_calculator/",
+    "title": "Virtual 8-bit Logic Calculator",
+    "description": "Interactive 8-bit calculator with Three.js logic-gate visualization, binary conversion, and animated signal paths.",
+    "category": "threejs"
   }
 ]

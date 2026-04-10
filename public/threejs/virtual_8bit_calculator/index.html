@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Virtual 8-bit Logic Calculator</title>
+  <meta
+    name="description"
+    content="Interactive 8-bit calculator with Three.js logic-gate visualization, binary conversion, and animated signal paths."
+  />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
+    :root {
+      --bg-0: #03080f;
+      --bg-1: #0f1f2b;
+      --panel: rgba(9, 18, 27, 0.8);
+      --border: rgba(104, 194, 255, 0.55);
+      --text: #dff4ff;
+      --muted: #88a6ba;
+      --hot: #2bf5b6;
+      --warn: #ffcc33;
+      --wire-off: #2a3d4f;
+      --wire-on: #00d9ff;
+      --wire-pulse: #5afff4;
+      --gate-off: #173149;
+      --gate-on: #1ecf9b;
+      --danger: #ff6f61;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 25% 12%, rgba(0, 160, 255, 0.16), transparent 48%),
+        radial-gradient(circle at 80% 90%, rgba(43, 245, 182, 0.15), transparent 40%),
+        linear-gradient(160deg, var(--bg-1), var(--bg-0));
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      padding: 1.25rem;
+      display: grid;
+      place-items: center;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.03) 0px,
+        rgba(255, 255, 255, 0.03) 1px,
+        transparent 2px,
+        transparent 4px
+      );
+      pointer-events: none;
+      opacity: 0.25;
+      mix-blend-mode: screen;
+    }
+
+    .app {
+      width: min(1300px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: clamp(0.9rem, 2vw, 1.4rem);
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45), inset 0 0 24px rgba(0, 201, 255, 0.08);
+      backdrop-filter: blur(8px);
+      display: grid;
+      gap: 0.9rem;
+    }
+
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      border-bottom: 1px solid rgba(125, 190, 229, 0.22);
+      padding-bottom: 0.8rem;
+    }
+
+    .title {
+      font-family: 'Press Start 2P', cursive;
+      font-size: clamp(0.75rem, 2vw, 1rem);
+      line-height: 1.6;
+      text-transform: uppercase;
+      color: #edf9ff;
+      text-shadow: 0 0 16px rgba(73, 208, 255, 0.45);
+    }
+
+    .status-pill {
+      border: 1px solid rgba(109, 185, 233, 0.5);
+      padding: 0.35rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: minmax(290px, 380px) minmax(0, 1fr);
+      gap: 1rem;
+    }
+
+    .panel {
+      border: 1px solid rgba(103, 171, 219, 0.25);
+      border-radius: 14px;
+      background: rgba(3, 14, 24, 0.65);
+      padding: 0.85rem;
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .label {
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .input-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.55rem;
+    }
+
+    .input-wrap {
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    input,
+    select,
+    button {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid rgba(131, 199, 243, 0.42);
+      background: rgba(7, 17, 28, 0.94);
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.94rem;
+      padding: 0.55rem 0.6rem;
+    }
+
+    input:focus,
+    select:focus,
+    button:focus {
+      outline: none;
+      border-color: var(--hot);
+      box-shadow: 0 0 0 2px rgba(43, 245, 182, 0.18);
+    }
+
+    .ops {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.55rem;
+      align-items: end;
+    }
+
+    .cta {
+      background: linear-gradient(120deg, #0b3656, #11516f 55%, #167959);
+      border: 1px solid rgba(103, 246, 198, 0.4);
+      color: #ebfffb;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.18s ease, filter 0.18s ease;
+      min-width: 104px;
+    }
+
+    .cta:hover {
+      transform: translateY(-2px);
+      filter: brightness(1.07);
+    }
+
+    .cta:active {
+      transform: translateY(0);
+    }
+
+    .result-grid {
+      display: grid;
+      gap: 0.55rem;
+    }
+
+    .result-box {
+      border: 1px solid rgba(105, 188, 232, 0.25);
+      border-radius: 8px;
+      background: rgba(7, 18, 30, 0.85);
+      padding: 0.55rem;
+      display: grid;
+      gap: 0.3rem;
+    }
+
+    .value {
+      font-size: 1.08rem;
+      color: #f4fbff;
+      letter-spacing: 0.06em;
+    }
+
+    .value.binary {
+      font-family: 'Press Start 2P', cursive;
+      font-size: 0.74rem;
+      line-height: 1.7;
+      color: #95ffec;
+      text-shadow: 0 0 10px rgba(43, 245, 182, 0.4);
+      word-break: break-all;
+    }
+
+    .note {
+      border-left: 2px solid rgba(86, 175, 228, 0.45);
+      padding-left: 0.55rem;
+      color: var(--muted);
+      font-size: 0.77rem;
+      line-height: 1.45;
+    }
+
+    .error {
+      color: var(--danger);
+      font-size: 0.78rem;
+      min-height: 1.2em;
+    }
+
+    .viewer {
+      position: relative;
+      min-height: 520px;
+      border: 1px solid rgba(96, 170, 219, 0.24);
+      border-radius: 14px;
+      background: linear-gradient(150deg, rgba(4, 14, 24, 0.95), rgba(2, 7, 13, 0.96));
+      overflow: hidden;
+    }
+
+    .viewer canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .legend {
+      position: absolute;
+      left: 0.7rem;
+      bottom: 0.7rem;
+      display: flex;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+      background: rgba(4, 13, 22, 0.78);
+      border: 1px solid rgba(100, 174, 222, 0.22);
+      border-radius: 8px;
+      padding: 0.45rem;
+      font-size: 0.7rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: var(--muted);
+    }
+
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 99px;
+      flex: 0 0 10px;
+    }
+
+    .swatch.inactive {
+      background: var(--wire-off);
+    }
+
+    .swatch.active {
+      background: var(--wire-on);
+    }
+
+    .swatch.pulse {
+      background: var(--wire-pulse);
+    }
+
+    @media (max-width: 980px) {
+      .content {
+        grid-template-columns: 1fr;
+      }
+
+      .viewer {
+        min-height: 440px;
+      }
+    }
+
+    @media (max-width: 560px) {
+      body {
+        padding: 0.6rem;
+      }
+
+      .input-row {
+        grid-template-columns: 1fr;
+      }
+
+      .ops {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="title-row">
+      <h1 class="title">Virtual 8-bit Logic Calculator</h1>
+      <div class="status-pill" id="status">Idle</div>
+    </div>
+
+    <section class="content">
+      <aside class="panel">
+        <div class="label">Input (0 to 255)</div>
+        <div class="input-row">
+          <div class="input-wrap">
+            <label class="label" for="inputA">A</label>
+            <input id="inputA" type="number" min="0" max="255" value="42" />
+          </div>
+          <div class="input-wrap">
+            <label class="label" for="inputB">B</label>
+            <input id="inputB" type="number" min="0" max="255" value="21" />
+          </div>
+        </div>
+
+        <div class="ops">
+          <div class="input-wrap">
+            <label class="label" for="operation">Operation</label>
+            <select id="operation">
+              <option value="ADD">ADD (+)</option>
+              <option value="SUB">SUB (-)</option>
+              <option value="AND">AND (&amp;)</option>
+              <option value="OR">OR (|)</option>
+              <option value="XOR">XOR (^)</option>
+            </select>
+          </div>
+          <button class="cta" id="calcBtn" type="button">Compute</button>
+        </div>
+
+        <div class="error" id="errorText"></div>
+
+        <div class="result-grid">
+          <div class="result-box">
+            <div class="label">A (binary)</div>
+            <div class="value binary" id="binaryA">00101010</div>
+          </div>
+          <div class="result-box">
+            <div class="label">B (binary)</div>
+            <div class="value binary" id="binaryB">00010101</div>
+          </div>
+          <div class="result-box">
+            <div class="label">Result (binary)</div>
+            <div class="value binary" id="binaryOut">00111111</div>
+          </div>
+          <div class="result-box">
+            <div class="label">Result (decimal)</div>
+            <div class="value" id="decimalOut">63</div>
+          </div>
+          <div class="result-box">
+            <div class="label">Carry / Borrow</div>
+            <div class="value" id="carryOut">0</div>
+          </div>
+        </div>
+
+        <p class="note">
+          For ADD and SUB, the Three.js graph uses a ripple-carry style gate path across 8 bits.
+          For bitwise operations, active paths follow the selected logic route on every bit lane.
+        </p>
+      </aside>
+
+      <section class="viewer" id="viewer">
+        <div class="legend">
+          <div class="legend-item"><span class="swatch inactive"></span>Inactive wire</div>
+          <div class="legend-item"><span class="swatch active"></span>Active wire</div>
+          <div class="legend-item"><span class="swatch pulse"></span>Signal pulse</div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+    const MAX_VAL = 255;
+    const BIT_COUNT = 8;
+
+    const inputAEl = document.getElementById('inputA');
+    const inputBEl = document.getElementById('inputB');
+    const operationEl = document.getElementById('operation');
+    const calcBtn = document.getElementById('calcBtn');
+    const binaryAEl = document.getElementById('binaryA');
+    const binaryBEl = document.getElementById('binaryB');
+    const binaryOutEl = document.getElementById('binaryOut');
+    const decimalOutEl = document.getElementById('decimalOut');
+    const carryOutEl = document.getElementById('carryOut');
+    const errorTextEl = document.getElementById('errorText');
+    const statusEl = document.getElementById('status');
+
+    const viewer = document.getElementById('viewer');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x030914);
+    scene.fog = new THREE.Fog(0x030914, 24, 85);
+
+    const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 180);
+    camera.position.set(6, 0, 44);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    viewer.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.enablePan = false;
+    controls.minDistance = 28;
+    controls.maxDistance = 70;
+    controls.maxPolarAngle = Math.PI / 2.05;
+
+    const ambient = new THREE.AmbientLight(0x99bbdd, 0.52);
+    scene.add(ambient);
+
+    const keyLight = new THREE.PointLight(0x35c7ff, 1.3, 90);
+    keyLight.position.set(7, 8, 20);
+    scene.add(keyLight);
+
+    const rimLight = new THREE.PointLight(0x35ffc6, 0.9, 100);
+    rimLight.position.set(-10, -5, 16);
+    scene.add(rimLight);
+
+    const starGeom = new THREE.BufferGeometry();
+    const starCount = 750;
+    const stars = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i += 1) {
+      const idx = i * 3;
+      stars[idx] = (Math.random() - 0.5) * 130;
+      stars[idx + 1] = (Math.random() - 0.5) * 90;
+      stars[idx + 2] = (Math.random() - 0.5) * 120;
+    }
+    starGeom.setAttribute('position', new THREE.BufferAttribute(stars, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0x29699a, size: 0.23, transparent: true, opacity: 0.75 });
+    const starField = new THREE.Points(starGeom, starMat);
+    scene.add(starField);
+
+    const groups = {
+      gates: new THREE.Group(),
+      wires: new THREE.Group(),
+      labels: new THREE.Group(),
+      pulses: new THREE.Group()
+    };
+    scene.add(groups.gates, groups.wires, groups.labels, groups.pulses);
+
+    const wireBaseColor = new THREE.Color(0x2a3d4f);
+    const wireOnColor = new THREE.Color(0x00d9ff);
+    const gateOffColor = new THREE.Color(0x173149);
+    const gateOnColor = new THREE.Color(0x1ecf9b);
+
+    const rows = [];
+    const activePulses = [];
+    const pulseQueue = [];
+    let pulseClock = 0;
+
+    function makeLabelTexture(text, color = '#d8edff') {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'rgba(2, 10, 16, 0.0)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = '700 28px IBM Plex Mono';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = color;
+      ctx.shadowColor = 'rgba(44, 200, 255, 0.7)';
+      ctx.shadowBlur = 10;
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 2);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    function addTextLabel(text, position, scale = 2.1, color) {
+      const material = new THREE.SpriteMaterial({ map: makeLabelTexture(text, color), transparent: true, depthWrite: false });
+      const sprite = new THREE.Sprite(material);
+      sprite.position.copy(position);
+      sprite.scale.set(scale * 2, scale * 0.5, 1);
+      groups.labels.add(sprite);
+      return sprite;
+    }
+
+    function buildWire(start, end, key) {
+      const geometry = new THREE.BufferGeometry().setFromPoints([start, end]);
+      const material = new THREE.LineBasicMaterial({ color: wireBaseColor.clone(), transparent: true, opacity: 0.82 });
+      const line = new THREE.Line(geometry, material);
+      line.userData = { key, start: start.clone(), end: end.clone() };
+      groups.wires.add(line);
+      return line;
+    }
+
+    function buildGate(name, position) {
+      const geometry = new THREE.BoxGeometry(1.4, 0.86, 0.55);
+      const material = new THREE.MeshStandardMaterial({
+        color: gateOffColor.clone(),
+        emissive: new THREE.Color(0x06131e),
+        roughness: 0.45,
+        metalness: 0.25
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(position);
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.userData = { name, activeUntil: 0 };
+      groups.gates.add(mesh);
+      return mesh;
+    }
+
+    function addBackdropGrid() {
+      const grid = new THREE.GridHelper(78, 28, 0x124160, 0x0a2538);
+      grid.rotation.x = Math.PI / 2;
+      grid.position.set(0, 0, -2.5);
+      grid.material.opacity = 0.22;
+      grid.material.transparent = true;
+      scene.add(grid);
+
+      const slab = new THREE.Mesh(
+        new THREE.PlaneGeometry(76, 26),
+        new THREE.MeshBasicMaterial({ color: 0x041321, transparent: true, opacity: 0.36 })
+      );
+      slab.position.set(0, 0, -2.8);
+      scene.add(slab);
+    }
+
+    function makeCircuit() {
+      addBackdropGrid();
+
+      addTextLabel('A', new THREE.Vector3(-24.8, 10, 0.2), 1.9, '#7ce5ff');
+      addTextLabel('B', new THREE.Vector3(-24.8, -10.4, 0.2), 1.9, '#7ce5ff');
+      addTextLabel('SUM / OUT', new THREE.Vector3(24, 10, 0.2), 2.5, '#91ffd5');
+      addTextLabel('CARRY FLOW', new THREE.Vector3(13, 13.3, 0.2), 2.6, '#ffd76c');
+
+      for (let bit = 0; bit < BIT_COUNT; bit += 1) {
+        const y = 10 - bit * 2.9;
+
+        const nodes = {
+          aIn: new THREE.Vector3(-22, y + 0.8, 0),
+          bIn: new THREE.Vector3(-22, y - 0.8, 0),
+          modeTap: new THREE.Vector3(-15.5, y - 1.7, 0),
+          cinIn: new THREE.Vector3(-9, y + 1.7, 0),
+          xorBOut: new THREE.Vector3(-12.2, y - 0.8, 0),
+          xorSumOut: new THREE.Vector3(-3.2, y + 0.8, 0),
+          and1Out: new THREE.Vector3(2.8, y + 1.45, 0),
+          and2Out: new THREE.Vector3(8.4, y, 0),
+          orOut: new THREE.Vector3(14.6, y + 1.45, 0),
+          out: new THREE.Vector3(22, y + 0.8, 0)
+        };
+
+        const gates = {
+          xorB: buildGate('XOR(B,MODE)', new THREE.Vector3(-12.2, y - 0.8, 0)),
+          xorSum: buildGate('XOR(S, CIN)', new THREE.Vector3(-3.2, y + 0.8, 0)),
+          and1: buildGate('AND1', new THREE.Vector3(2.8, y + 1.45, 0)),
+          and2: buildGate('AND2', new THREE.Vector3(8.4, y, 0)),
+          or1: buildGate('OR', new THREE.Vector3(14.6, y + 1.45, 0))
+        };
+
+        addTextLabel(String(7 - bit), new THREE.Vector3(-26.3, y, 0.4), 1.1, '#7db6d4');
+
+        const wires = {
+          aToXorSum: buildWire(nodes.aIn, new THREE.Vector3(-4.1, y + 0.8, 0), 'aToXorSum'),
+          bToXorB: buildWire(nodes.bIn, new THREE.Vector3(-13.2, y - 0.8, 0), 'bToXorB'),
+          modeToXorB: buildWire(nodes.modeTap, new THREE.Vector3(-12.2, y - 1.2, 0), 'modeToXorB'),
+          xorBToXorSum: buildWire(nodes.xorBOut, new THREE.Vector3(-4.1, y + 0.8, 0), 'xorBToXorSum'),
+          cinToXorSum: buildWire(nodes.cinIn, new THREE.Vector3(-3.2, y + 1.22, 0), 'cinToXorSum'),
+          xorSumToOut: buildWire(nodes.xorSumOut, nodes.out, 'xorSumToOut'),
+          aToAnd1: buildWire(nodes.aIn, new THREE.Vector3(1.8, y + 1.45, 0), 'aToAnd1'),
+          xorBToAnd2: buildWire(nodes.xorBOut, new THREE.Vector3(7.4, y, 0), 'xorBToAnd2'),
+          cinToAnd2: buildWire(nodes.cinIn, new THREE.Vector3(8.4, y + 0.4, 0), 'cinToAnd2'),
+          and1ToOr: buildWire(nodes.and1Out, new THREE.Vector3(13.6, y + 1.45, 0), 'and1ToOr'),
+          and2ToOr: buildWire(nodes.and2Out, new THREE.Vector3(13.6, y + 1.05, 0), 'and2ToOr'),
+          carryToNext: buildWire(nodes.orOut, new THREE.Vector3(17.8, y + 1.45, 0), 'carryToNext')
+        };
+
+        if (bit < BIT_COUNT - 1) {
+          const yNext = 10 - (bit + 1) * 2.9;
+          wires.downCarry = buildWire(
+            new THREE.Vector3(17.8, y + 1.45, 0),
+            new THREE.Vector3(-9, yNext + 1.7, 0),
+            'downCarry'
+          );
+        }
+
+        rows.push({ bit, y, nodes, gates, wires });
+      }
+
+      addTextLabel('BIT 7', new THREE.Vector3(-26.4, 10, 0.4), 0.88, '#7ca9c6');
+      addTextLabel('BIT 0', new THREE.Vector3(-26.4, -10.3, 0.4), 0.88, '#7ca9c6');
+    }
+
+    function toBinary8(value) {
+      return (value & 0xff).toString(2).padStart(8, '0');
+    }
+
+    function clampByte(value) {
+      if (Number.isNaN(value)) return null;
+      return Math.max(0, Math.min(MAX_VAL, Math.floor(value)));
+    }
+
+    function readInputs() {
+      const a = clampByte(Number(inputAEl.value));
+      const b = clampByte(Number(inputBEl.value));
+
+      if (a === null || b === null) {
+        return { error: 'A and B must be numbers from 0 to 255.' };
+      }
+
+      if (String(a) !== inputAEl.value.trim()) inputAEl.value = String(a);
+      if (String(b) !== inputBEl.value.trim()) inputBEl.value = String(b);
+
+      return { a, b, operation: operationEl.value };
+    }
+
+    function clearVisualState() {
+      for (const row of rows) {
+        for (const key of Object.keys(row.wires)) {
+          row.wires[key].material.color.copy(wireBaseColor);
+          row.wires[key].material.opacity = 0.83;
+        }
+
+        for (const key of Object.keys(row.gates)) {
+          row.gates[key].material.color.copy(gateOffColor);
+          row.gates[key].material.emissive.setHex(0x06131e);
+          row.gates[key].userData.activeUntil = 0;
+        }
+      }
+
+      for (const pulse of activePulses) {
+        groups.pulses.remove(pulse.mesh);
+        pulse.mesh.geometry.dispose();
+        pulse.mesh.material.dispose();
+      }
+      activePulses.length = 0;
+      pulseQueue.length = 0;
+      pulseClock = 0;
+    }
+
+    function colorWire(wire, active) {
+      wire.material.color.copy(active ? wireOnColor : wireBaseColor);
+      wire.material.opacity = active ? 0.98 : 0.75;
+    }
+
+    function igniteGate(gate, isActive, now, duration = 0.55) {
+      if (!isActive) return;
+      gate.material.color.copy(gateOnColor);
+      gate.material.emissive.setHex(0x0f5944);
+      gate.userData.activeUntil = Math.max(gate.userData.activeUntil, now + duration);
+    }
+
+    function queuePulseOnWire(wire, startTime, colorHex = 0x5afff4) {
+      pulseQueue.push({ wire, startTime, colorHex });
+    }
+
+    function spawnPulse(entry) {
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.17, 10, 10),
+        new THREE.MeshBasicMaterial({ color: entry.colorHex, transparent: true, opacity: 0.95 })
+      );
+      sphere.position.copy(entry.wire.userData.start);
+      groups.pulses.add(sphere);
+
+      activePulses.push({
+        mesh: sphere,
+        wire: entry.wire,
+        t: 0,
+        speed: 2.6,
+        done: false
+      });
+    }
+
+    function computeResult(a, b, op) {
+      if (op === 'ADD') {
+        const sum = a + b;
+        return {
+          value: sum & 0xff,
+          carry: sum > 0xff ? 1 : 0,
+          borrow: 0
+        };
+      }
+
+      if (op === 'SUB') {
+        const diff = a - b;
+        return {
+          value: (diff + 256) & 0xff,
+          carry: a >= b ? 1 : 0,
+          borrow: a < b ? 1 : 0
+        };
+      }
+
+      if (op === 'AND') {
+        return { value: a & b, carry: 0, borrow: 0 };
+      }
+
+      if (op === 'OR') {
+        return { value: a | b, carry: 0, borrow: 0 };
+      }
+
+      return { value: a ^ b, carry: 0, borrow: 0 };
+    }
+
+    function applyLogicAnimation(a, b, op, now) {
+      const modeBit = op === 'SUB' ? 1 : 0;
+      let carry = modeBit;
+      const modeUsesCarryChain = op === 'ADD' || op === 'SUB';
+
+      for (let bit = 0; bit < BIT_COUNT; bit += 1) {
+        const row = rows[BIT_COUNT - 1 - bit];
+        const aBit = (a >> bit) & 1;
+        const bBit = (b >> bit) & 1;
+
+        let outBit = 0;
+        let carryOut = 0;
+
+        if (op === 'ADD' || op === 'SUB') {
+          const bPrime = bBit ^ modeBit;
+          const xorPre = aBit ^ bPrime;
+          const sumBit = xorPre ^ carry;
+          const and1 = aBit & bPrime;
+          const and2 = carry & xorPre;
+          carryOut = and1 | and2;
+          outBit = sumBit;
+
+          colorWire(row.wires.aToXorSum, !!aBit);
+          colorWire(row.wires.bToXorB, !!bBit);
+          colorWire(row.wires.modeToXorB, !!modeBit);
+          colorWire(row.wires.xorBToXorSum, !!bPrime);
+          colorWire(row.wires.cinToXorSum, !!carry);
+          colorWire(row.wires.xorSumToOut, !!sumBit);
+          colorWire(row.wires.aToAnd1, !!aBit);
+          colorWire(row.wires.xorBToAnd2, !!xorPre);
+          colorWire(row.wires.cinToAnd2, !!carry);
+          colorWire(row.wires.and1ToOr, !!and1);
+          colorWire(row.wires.and2ToOr, !!and2);
+          colorWire(row.wires.carryToNext, !!carryOut);
+          if (row.wires.downCarry) colorWire(row.wires.downCarry, !!carryOut);
+
+          igniteGate(row.gates.xorB, true, now, 0.7);
+          igniteGate(row.gates.xorSum, true, now, 0.7);
+          igniteGate(row.gates.and1, !!(aBit | bPrime), now, 0.7);
+          igniteGate(row.gates.and2, !!(carry | xorPre), now, 0.7);
+          igniteGate(row.gates.or1, !!(and1 | and2), now, 0.7);
+
+          const t = bit * 0.26;
+          if (aBit) queuePulseOnWire(row.wires.aToXorSum, t);
+          if (bBit) queuePulseOnWire(row.wires.bToXorB, t + 0.03);
+          if (modeBit) queuePulseOnWire(row.wires.modeToXorB, t + 0.05, 0xffcc33);
+          if (bPrime) queuePulseOnWire(row.wires.xorBToXorSum, t + 0.09);
+          if (carry) {
+            queuePulseOnWire(row.wires.cinToXorSum, t + 0.12, 0xffd66b);
+            queuePulseOnWire(row.wires.cinToAnd2, t + 0.15, 0xffd66b);
+          }
+          if (sumBit) queuePulseOnWire(row.wires.xorSumToOut, t + 0.2, 0x5affb8);
+          if (and1) queuePulseOnWire(row.wires.and1ToOr, t + 0.23);
+          if (and2) queuePulseOnWire(row.wires.and2ToOr, t + 0.25);
+          if (carryOut) {
+            queuePulseOnWire(row.wires.carryToNext, t + 0.28, 0xffd66b);
+            if (row.wires.downCarry) queuePulseOnWire(row.wires.downCarry, t + 0.31, 0xffd66b);
+          }
+
+          carry = carryOut;
+        } else {
+          if (op === 'AND') outBit = aBit & bBit;
+          if (op === 'OR') outBit = aBit | bBit;
+          if (op === 'XOR') outBit = aBit ^ bBit;
+
+          const activeA = !!aBit;
+          const activeB = !!bBit;
+          const passXor = op === 'XOR';
+          const passAnd = op === 'AND';
+          const passOr = op === 'OR';
+
+          colorWire(row.wires.aToXorSum, passXor ? activeA : false);
+          colorWire(row.wires.bToXorB, activeB);
+          colorWire(row.wires.modeToXorB, false);
+          colorWire(row.wires.xorBToXorSum, passXor ? activeB : false);
+          colorWire(row.wires.cinToXorSum, false);
+          colorWire(row.wires.aToAnd1, passAnd || passOr ? activeA : false);
+          colorWire(row.wires.xorBToAnd2, passAnd ? activeB : false);
+          colorWire(row.wires.cinToAnd2, false);
+          colorWire(row.wires.and1ToOr, passOr ? activeA : passAnd ? !!(aBit & bBit) : false);
+          colorWire(row.wires.and2ToOr, passOr ? activeB : passAnd ? !!(aBit & bBit) : false);
+          colorWire(row.wires.carryToNext, false);
+          if (row.wires.downCarry) colorWire(row.wires.downCarry, false);
+          colorWire(row.wires.xorSumToOut, !!outBit);
+
+          igniteGate(row.gates.xorB, activeB, now, 0.45);
+          igniteGate(row.gates.xorSum, passXor && (activeA || activeB), now, 0.45);
+          igniteGate(row.gates.and1, (passAnd || passOr) && (activeA || activeB), now, 0.45);
+          igniteGate(row.gates.and2, passAnd && (activeA || activeB), now, 0.45);
+          igniteGate(row.gates.or1, passOr && (activeA || activeB), now, 0.45);
+
+          const t = bit * 0.16;
+          if (activeA && (passXor || passAnd || passOr)) queuePulseOnWire(row.wires.aToXorSum, t);
+          if (activeB) queuePulseOnWire(row.wires.bToXorB, t + 0.03);
+          if (passXor && activeB) queuePulseOnWire(row.wires.xorBToXorSum, t + 0.07);
+          if (passAnd && (aBit & bBit)) {
+            queuePulseOnWire(row.wires.xorBToAnd2, t + 0.1);
+            queuePulseOnWire(row.wires.and2ToOr, t + 0.14);
+          }
+          if (passOr && (aBit || bBit)) {
+            if (aBit) queuePulseOnWire(row.wires.and1ToOr, t + 0.11, 0x6ad1ff);
+            if (bBit) queuePulseOnWire(row.wires.and2ToOr, t + 0.12, 0x6ad1ff);
+          }
+          if (outBit) queuePulseOnWire(row.wires.xorSumToOut, t + 0.2, 0x7effbf);
+        }
+      }
+
+      statusEl.textContent = modeUsesCarryChain ? 'Ripple Carry Active' : 'Bitwise Gate Scan';
+    }
+
+    function updateOutput(a, b, op) {
+      const result = computeResult(a, b, op);
+      const outBinary = toBinary8(result.value);
+
+      binaryAEl.textContent = toBinary8(a);
+      binaryBEl.textContent = toBinary8(b);
+      binaryOutEl.textContent = outBinary;
+      decimalOutEl.textContent = String(result.value);
+
+      if (op === 'SUB') {
+        carryOutEl.textContent = `${result.carry} (borrow ${result.borrow})`;
+      } else {
+        carryOutEl.textContent = String(result.carry);
+      }
+
+      return result;
+    }
+
+    function runCalculation() {
+      const state = readInputs();
+      if (state.error) {
+        errorTextEl.textContent = state.error;
+        return;
+      }
+
+      const { a, b, operation } = state;
+      errorTextEl.textContent = '';
+
+      clearVisualState();
+      updateOutput(a, b, operation);
+      applyLogicAnimation(a, b, operation, pulseClock);
+    }
+
+    function resizeRenderer() {
+      const width = viewer.clientWidth;
+      const height = viewer.clientHeight;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+
+    function tick(delta) {
+      pulseClock += delta;
+
+      for (let i = pulseQueue.length - 1; i >= 0; i -= 1) {
+        const entry = pulseQueue[i];
+        if (pulseClock >= entry.startTime) {
+          spawnPulse(entry);
+          pulseQueue.splice(i, 1);
+        }
+      }
+
+      for (let i = activePulses.length - 1; i >= 0; i -= 1) {
+        const pulse = activePulses[i];
+        pulse.t += delta * pulse.speed;
+
+        if (pulse.t >= 1) {
+          groups.pulses.remove(pulse.mesh);
+          pulse.mesh.geometry.dispose();
+          pulse.mesh.material.dispose();
+          activePulses.splice(i, 1);
+          continue;
+        }
+
+        pulse.mesh.position.lerpVectors(
+          pulse.wire.userData.start,
+          pulse.wire.userData.end,
+          pulse.t
+        );
+        pulse.mesh.scale.setScalar(1 + Math.sin(pulse.t * Math.PI) * 0.35);
+        pulse.mesh.material.opacity = 0.9 - pulse.t * 0.38;
+      }
+
+      for (const row of rows) {
+        for (const key of Object.keys(row.gates)) {
+          const gate = row.gates[key];
+          if (gate.userData.activeUntil > pulseClock) {
+            continue;
+          }
+          gate.material.color.lerp(gateOffColor, 0.09);
+          gate.material.emissive.lerp(new THREE.Color(0x06131e), 0.12);
+        }
+      }
+
+      starField.rotation.z += delta * 0.01;
+      starField.rotation.x += delta * 0.004;
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    function init() {
+      makeCircuit();
+      resizeRenderer();
+      runCalculation();
+
+      calcBtn.addEventListener('click', runCalculation);
+      inputAEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') runCalculation();
+      });
+      inputBEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') runCalculation();
+      });
+      operationEl.addEventListener('change', runCalculation);
+
+      window.addEventListener('resize', resizeRenderer);
+
+      let last = performance.now();
+      function animate(now) {
+        const delta = Math.min((now - last) / 1000, 0.05);
+        last = now;
+        tick(delta);
+        requestAnimationFrame(animate);
+      }
+      requestAnimationFrame(animate);
+    }
+
+    init();
+  </script>
+</body>
+</html>
