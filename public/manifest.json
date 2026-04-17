@@ -66,6 +66,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/terrain_raymarch/",
+    "title": "Terrain Raymarch",
+    "description": "Raymarched sinusoidal terrain with multi-octave noise, rotate2D warping, and arrow-key directional navigation.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/text_effects_studio/",
     "title": "Text Effects Studio",
     "description": "Design stylized neon, chrome, and bloom-heavy text renders with realtime Three.js post-processing.",

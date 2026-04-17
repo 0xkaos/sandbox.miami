@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Raymarched sinusoidal terrain with multi-octave noise, rotate2D warping, and arrow-key directional navigation.">
+    <title>Terrain Raymarch</title>
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Space Grotesk", "Segoe UI", sans-serif; background: #04050a; color: #edf2ff; }
+        canvas { width: 100vw; height: 100vh; display: block; }
+
+        .hud {
+            position: fixed; top: 14px; left: 14px; z-index: 10;
+            width: min(340px, calc(100vw - 28px));
+            border: 1px solid rgba(255,255,255,0.14); border-radius: 16px;
+            background: rgba(8,10,18,0.82); backdrop-filter: blur(10px);
+            padding: 14px 16px;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+            pointer-events: none;
+        }
+        .hud h1 { font-size: 1rem; margin: 0; letter-spacing: .08em; text-transform: uppercase; }
+        .hud p  { margin: 8px 0 0; font-size: .8rem; line-height: 1.45; color: rgba(237,242,255,0.82); }
+        .hud small { display: block; margin-top: 10px; font-size: .7rem; letter-spacing: .06em; color: rgba(237,242,255,0.58); }
+
+        .toggle {
+            position: fixed; right: 14px; top: 14px; z-index: 12;
+            border: 1px solid rgba(255,255,255,0.16); border-radius: 999px;
+            background: rgba(8,10,18,0.7); color: #eaf1ff;
+            padding: 8px 14px; font-size: .78rem; letter-spacing: .07em;
+            text-transform: uppercase; cursor: pointer; backdrop-filter: blur(8px);
+        }
+        .toggle:hover { background: rgba(18,22,34,0.92); }
+
+        @media (max-width: 760px) {
+            .hud { width: calc(100vw - 24px); left: 12px; top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); border-radius: 16px; padding: 12px 14px; }
+            .toggle { top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+    <aside class="hud" id="hud">
+        <h1>Terrain Raymarch</h1>
+        <p>Raymarched sinusoidal terrain with multi-octave noise and rotate2D warping. Fly through with arrow keys.</p>
+        <small>Arrow keys: navigate &nbsp;|&nbsp; Mouse: look</small>
+    </aside>
+    <button class="toggle" id="toggle-hud" type="button">Hide HUD</button>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        /* ── DOM ── */
+        const app = document.getElementById('app');
+        const hud = document.getElementById('hud');
+        const toggleBtn = document.getElementById('toggle-hud');
+        let hudVisible = true;
+        toggleBtn.addEventListener('click', () => {
+            hudVisible = !hudVisible;
+            hud.style.display = hudVisible ? '' : 'none';
+            toggleBtn.textContent = hudVisible ? 'Hide HUD' : 'Show HUD';
+        });
+
+        /* ── Renderer / Camera ── */
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        app.appendChild(renderer.domElement);
+
+        const scene  = new THREE.Scene();
+        const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+        /* ── Uniforms ── */
+        const uniforms = {
+            uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+            uTime:       { value: 0 },
+            uOffset:     { value: new THREE.Vector2(0, 0) },  // arrow-key navigation
+            uMouse:      { value: new THREE.Vector2(0, 0) },  // mouse look offset
+        };
+
+        /* ── Shaders ── */
+        const vertexShader = /* glsl */ `
+            void main() {
+                gl_Position = vec4(position, 1.0);
+            }
+        `;
+
+        const fragmentShader = /* glsl */ `
+            precision highp float;
+
+            uniform vec2  uResolution;
+            uniform float uTime;
+            uniform vec2  uOffset;
+            uniform vec2  uMouse;
+
+            /* ── rotate2D helper ── */
+            mat2 rotate2D(float angle) {
+                float c = cos(angle), s = sin(angle);
+                return mat2(c, -s, s, c);
+            }
+
+            void main() {
+                vec2 r  = uResolution;
+                vec2 FC = gl_FragCoord.xy;
+                float t = uTime;
+
+                vec4 o = vec4(0.0);
+
+                for (float e, i = 0.0, a, w, x, g = 0.0, h; i++ < 90.0;
+                     o += 0.01 - 0.02 / exp(max(0.0, e) * 3000.0) / h) {
+
+                    // Ray setup – screen coords → ray position
+                    // uOffset.x = lateral, uOffset.y = forward/altitude
+                    vec3 p = vec3(
+                        (FC.xy - 0.5 * r) / r.y * g + 2.0 + vec2(uOffset.x, 0.0) + uMouse * 0.5,
+                        g + uOffset.y
+                    );
+
+                    // Tilt the view
+                    p.zy *= rotate2D(0.5);
+
+                    e = p.y;
+                    h = e + p.x * 0.3;
+
+                    // Scroll through terrain
+                    p.z += t;
+
+                    // Multi-octave sinusoidal terrain
+                    for (a = 0.6; a > 0.001; a *= 0.7) {
+                        p.xz *= rotate2D(5.0);
+                        x = (p.x + p.z) / a + t + t;
+                        e -= w = exp(sin(x) - 3.0) * a;
+                        h += abs(dot(sin(p.xz / a * 0.3) * a, r / r));
+                    }
+
+                    g += e = min(e, h * 0.5 - 1.0);
+                }
+
+                gl_FragColor = o;
+            }
+        `;
+
+        /* ── Fullscreen quad ── */
+        const quad = new THREE.Mesh(
+            new THREE.PlaneGeometry(2, 2),
+            new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader })
+        );
+        scene.add(quad);
+
+        /* ── Arrow-key navigation ── */
+        const keys = {};
+        window.addEventListener('keydown', e => { keys[e.code] = true; });
+        window.addEventListener('keyup',   e => { keys[e.code] = false; });
+
+        const NAV_SPEED = 1.2;
+        function updateNav(dt) {
+            if (keys['ArrowLeft'])  uniforms.uOffset.value.x -= NAV_SPEED * dt;
+            if (keys['ArrowRight']) uniforms.uOffset.value.x += NAV_SPEED * dt;
+            if (keys['ArrowUp'])    uniforms.uOffset.value.y += NAV_SPEED * dt;
+            if (keys['ArrowDown'])  uniforms.uOffset.value.y -= NAV_SPEED * dt;
+        }
+
+        /* ── Mouse look ── */
+        renderer.domElement.addEventListener('mousemove', e => {
+            uniforms.uMouse.value.set(
+                (e.clientX / window.innerWidth  - 0.5) * 2.0,
+                (e.clientY / window.innerHeight - 0.5) * -2.0
+            );
+        });
+
+        /* ── Resize ── */
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
+        });
+
+        /* ── Render loop ── */
+        const clock = new THREE.Clock();
+        (function tick() {
+            requestAnimationFrame(tick);
+            const dt = clock.getDelta();
+            uniforms.uTime.value = clock.getElapsedTime() * 0.4;
+            updateNav(dt);
+            renderer.render(scene, camera);
+        })();
+    </script>
+</body>
+</html>
