@@ -44,7 +44,7 @@
     <aside class="hud" id="hud">
         <h1>Terrain Raymarch</h1>
         <p>Raymarched sinusoidal terrain with multi-octave noise and rotate2D warping. Fly through with arrow keys.</p>
-        <small>Arrow keys: navigate &nbsp;|&nbsp; Mouse: look</small>
+        <small>Arrows: move &nbsp;|&nbsp; Ctrl+Arrows: look &nbsp;|&nbsp; Click: mouse look &nbsp;|&nbsp; Esc: release</small>
     </aside>
     <button class="toggle" id="toggle-hud" type="button">Hide HUD</button>
 
@@ -84,8 +84,9 @@
         const uniforms = {
             uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
             uTime:       { value: 0 },
-            uOffset:     { value: new THREE.Vector2(0, 0) },  // arrow-key navigation
-            uMouse:      { value: new THREE.Vector2(0, 0) },  // mouse look offset
+            uCamPos:     { value: new THREE.Vector3(2.0, 1.5, 0.0) },
+            uYaw:        { value: 0.0 },
+            uPitch:      { value: -0.35 },
         };
 
         /* ── Shaders ── */
@@ -100,8 +101,9 @@
 
             uniform vec2  uResolution;
             uniform float uTime;
-            uniform vec2  uOffset;
-            uniform vec2  uMouse;
+            uniform vec3  uCamPos;
+            uniform float uYaw;
+            uniform float uPitch;
 
             /* ── rotate2D helper ── */
             mat2 rotate2D(float angle) {
@@ -114,26 +116,23 @@
                 vec2 FC = gl_FragCoord.xy;
                 float t = uTime;
 
+                // Build ray from screen UV + camera angles
+                vec2 uv = (FC.xy - 0.5 * r) / r.y;
+                vec3 rd = normalize(vec3(uv, 1.0));
+                rd.yz *= rotate2D(uPitch);
+                rd.xz *= rotate2D(uYaw);
+
+                vec3 ro = uCamPos;
+
                 vec4 o = vec4(0.0);
 
                 for (float e, i = 0.0, a, w, x, g = 0.0, h; i++ < 90.0;
                      o += 0.01 - 0.02 / exp(max(0.0, e) * 3000.0) / h) {
 
-                    // Ray setup – screen coords → ray position
-                    // uOffset.x = lateral, uOffset.y = forward/altitude
-                    vec3 p = vec3(
-                        (FC.xy - 0.5 * r) / r.y * g + 2.0 + vec2(uOffset.x, 0.0) + uMouse * 0.5,
-                        g + uOffset.y
-                    );
-
-                    // Tilt the view
-                    p.zy *= rotate2D(0.5);
+                    vec3 p = ro + rd * g;
 
                     e = p.y;
                     h = e + p.x * 0.3;
-
-                    // Scroll through terrain
-                    p.z += t;
 
                     // Multi-octave sinusoidal terrain
                     for (a = 0.6; a > 0.001; a *= 0.7) {
@@ -157,26 +156,110 @@
         );
         scene.add(quad);
 
-        /* ── Arrow-key navigation ── */
-        const keys = {};
-        window.addEventListener('keydown', e => { keys[e.code] = true; });
-        window.addEventListener('keyup',   e => { keys[e.code] = false; });
+        /* ── Camera state ── */
+        const cam = {
+            pos: new THREE.Vector3(2.0, 1.5, 0.0),
+            yaw: 0,
+            pitch: -0.35,
+        };
 
-        const NAV_SPEED = 1.2;
-        function updateNav(dt) {
-            if (keys['ArrowLeft'])  uniforms.uOffset.value.x -= NAV_SPEED * dt;
-            if (keys['ArrowRight']) uniforms.uOffset.value.x += NAV_SPEED * dt;
-            if (keys['ArrowUp'])    uniforms.uOffset.value.y += NAV_SPEED * dt;
-            if (keys['ArrowDown'])  uniforms.uOffset.value.y -= NAV_SPEED * dt;
+        const NAV_SPEED   = 2.0;
+        const LOOK_SPEED  = 1.2;
+        const MOUSE_SENS  = 0.002;
+        const MIN_CLEAR   = 0.35;   // minimum clearance above terrain
+
+        /* ── JS-side terrain height (mirrors shader octaves) ── */
+        function terrainHeight(px, pz, t) {
+            let height = 0;
+            for (let a = 0.6; a > 0.001; a *= 0.7) {
+                const c = Math.cos(5.0), s = Math.sin(5.0);
+                const nx = c * px - s * pz;
+                const nz = s * px + c * pz;
+                px = nx; pz = nz;
+                const x = (px + pz) / a + t + t;
+                height += Math.exp(Math.sin(x) - 3.0) * a;
+            }
+            return height;
         }
 
-        /* ── Mouse look ── */
-        renderer.domElement.addEventListener('mousemove', e => {
-            uniforms.uMouse.value.set(
-                (e.clientX / window.innerWidth  - 0.5) * 2.0,
-                (e.clientY / window.innerHeight - 0.5) * -2.0
-            );
+        /* ── Input ── */
+        const keys = {};
+        window.addEventListener('keydown', e => {
+            keys[e.code] = true;
+            keys['ctrl'] = e.ctrlKey;
+            if (e.code.startsWith('Arrow')) e.preventDefault();
         });
+        window.addEventListener('keyup', e => {
+            keys[e.code] = false;
+            keys['ctrl'] = e.ctrlKey;
+        });
+
+        /* ── Pointer-lock mouse look ── */
+        renderer.domElement.addEventListener('click', () => {
+            renderer.domElement.requestPointerLock();
+        });
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement === renderer.domElement) {
+                cam.yaw   -= e.movementX * MOUSE_SENS;
+                cam.pitch -= e.movementY * MOUSE_SENS;
+                cam.pitch  = Math.max(-1.3, Math.min(0.8, cam.pitch));
+            }
+        });
+
+        /* ── Navigation update ── */
+        function updateNav(dt) {
+            const t = uniforms.uTime.value;
+
+            if (keys['ctrl']) {
+                // Ctrl + Arrow = angle adjustment
+                if (keys['ArrowLeft'])  cam.yaw   += LOOK_SPEED * dt;
+                if (keys['ArrowRight']) cam.yaw   -= LOOK_SPEED * dt;
+                if (keys['ArrowUp'])    cam.pitch += LOOK_SPEED * dt;
+                if (keys['ArrowDown'])  cam.pitch -= LOOK_SPEED * dt;
+            } else {
+                // Arrow = directional movement in camera-relative XZ
+                const fwdX = -Math.sin(cam.yaw);
+                const fwdZ =  Math.cos(cam.yaw);
+                const rgtX =  fwdZ;
+                const rgtZ = -fwdX;
+
+                if (keys['ArrowUp']) {
+                    cam.pos.x += fwdX * NAV_SPEED * dt;
+                    cam.pos.z += fwdZ * NAV_SPEED * dt;
+                }
+                if (keys['ArrowDown']) {
+                    cam.pos.x -= fwdX * NAV_SPEED * dt;
+                    cam.pos.z -= fwdZ * NAV_SPEED * dt;
+                }
+                if (keys['ArrowLeft']) {
+                    cam.pos.x -= rgtX * NAV_SPEED * dt;
+                    cam.pos.z -= rgtZ * NAV_SPEED * dt;
+                }
+                if (keys['ArrowRight']) {
+                    cam.pos.x += rgtX * NAV_SPEED * dt;
+                    cam.pos.z += rgtZ * NAV_SPEED * dt;
+                }
+            }
+
+            // Clamp pitch
+            cam.pitch = Math.max(-1.3, Math.min(0.8, cam.pitch));
+
+            // Collision: keep camera above terrain surface
+            const th = terrainHeight(cam.pos.x, cam.pos.z, t);
+            const floor = th + MIN_CLEAR;
+            if (cam.pos.y < floor) {
+                cam.pos.y += (floor - cam.pos.y) * Math.min(1.0, 8.0 * dt); // smooth push-up
+            } else {
+                // Gently settle toward hover height so camera doesn't float forever
+                const hover = th + 0.9;
+                cam.pos.y += (hover - cam.pos.y) * Math.min(1.0, 1.5 * dt);
+            }
+
+            // Push to uniforms
+            uniforms.uCamPos.value.copy(cam.pos);
+            uniforms.uYaw.value   = cam.yaw;
+            uniforms.uPitch.value = cam.pitch;
+        }
 
         /* ── Resize ── */
         window.addEventListener('resize', () => {
@@ -188,7 +271,7 @@
         const clock = new THREE.Clock();
         (function tick() {
             requestAnimationFrame(tick);
-            const dt = clock.getDelta();
+            const dt = Math.min(clock.getDelta(), 0.05); // cap large dt
             uniforms.uTime.value = clock.getElapsedTime() * 0.4;
             updateNav(dt);
             renderer.render(scene, camera);
