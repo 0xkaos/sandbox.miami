@@ -544,11 +544,13 @@ function initParticleMode() {
                 p.x += p.vx;
                 p.y += p.vy;
 
-                // soft wrapping
-                if (p.x < -50) p.x = W + 50;
-                if (p.x > W + 50) p.x = -50;
-                if (p.y < -50) p.y = H + 50;
-                if (p.y > H + 50) p.y = -50;
+                // soft edge steering — push particles back gently instead of teleporting
+                const margin = 60;
+                const steer = 0.15;
+                if (p.x < margin)      p.vx += (margin - p.x) * steer * dt;
+                if (p.x > W - margin)  p.vx -= (p.x - (W - margin)) * steer * dt;
+                if (p.y < margin)      p.vy += (margin - p.y) * steer * dt;
+                if (p.y > H - margin)  p.vy -= (p.y - (H - margin)) * steer * dt;
             }
           } // end substeps
 
@@ -560,22 +562,62 @@ function initParticleMode() {
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.strokeStyle = `hsla(${hue}, 60%, 65%, 0.12)`;
-            ctx.beginPath();
+
+            // draw ribbon as segments, skipping any large gaps
+            const maxSeg = 80; // max pixel distance between consecutive points
             if (chain.length > 2) {
-                ctx.moveTo(chain[0].x, chain[0].y);
-                for (let i = 1; i < chain.length - 1; i++) {
-                    const xc = (chain[i].x + chain[i+1].x) / 2;
-                    const yc = (chain[i].y + chain[i+1].y) / 2;
-                    ctx.quadraticCurveTo(chain[i].x, chain[i].y, xc, yc);
+                let drawing = false;
+                for (let i = 0; i < chain.length - 1; i++) {
+                    const a = chain[i], b = chain[i+1];
+                    const dx = b.x - a.x, dy = b.y - a.y;
+                    if (dx*dx + dy*dy > maxSeg*maxSeg) {
+                        // gap too large — stroke what we have and start fresh
+                        if (drawing) { ctx.stroke(); drawing = false; }
+                        continue;
+                    }
+                    if (!drawing) {
+                        ctx.beginPath();
+                        ctx.moveTo(a.x, a.y);
+                        drawing = true;
+                    }
+                    if (i < chain.length - 2) {
+                        const c = chain[i+2];
+                        const xc = (b.x + c.x) / 2, yc = (b.y + c.y) / 2;
+                        ctx.quadraticCurveTo(b.x, b.y, xc, yc);
+                    } else {
+                        ctx.lineTo(b.x, b.y);
+                    }
                 }
-                ctx.lineTo(chain[chain.length-1].x, chain[chain.length-1].y);
+                if (drawing) ctx.stroke();
             }
-            ctx.stroke();
 
             // draw thinner bright core
             ctx.lineWidth = ribW * 0.35;
             ctx.strokeStyle = `hsla(${hue}, 72%, 80%, 0.18)`;
-            ctx.stroke();
+            if (chain.length > 2) {
+                let drawing = false;
+                for (let i = 0; i < chain.length - 1; i++) {
+                    const a = chain[i], b = chain[i+1];
+                    const dx = b.x - a.x, dy = b.y - a.y;
+                    if (dx*dx + dy*dy > maxSeg*maxSeg) {
+                        if (drawing) { ctx.stroke(); drawing = false; }
+                        continue;
+                    }
+                    if (!drawing) {
+                        ctx.beginPath();
+                        ctx.moveTo(a.x, a.y);
+                        drawing = true;
+                    }
+                    if (i < chain.length - 2) {
+                        const c = chain[i+2];
+                        const xc = (b.x + c.x) / 2, yc = (b.y + c.y) / 2;
+                        ctx.quadraticCurveTo(b.x, b.y, xc, yc);
+                    } else {
+                        ctx.lineTo(b.x, b.y);
+                    }
+                }
+                if (drawing) ctx.stroke();
+            }
             ctx.restore();
         }
     }
