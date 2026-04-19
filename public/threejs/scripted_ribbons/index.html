@@ -82,13 +82,13 @@
         </div>
 
         <div id="particleControls" style="display:none">
-            <div class="row"><label>Ribbons</label><div class="slider-wrap"><input type="range" id="numRibbons" min="3" max="30" value="12" step="1"></div><output id="numRibbonsVal">12</output></div>
+            <div class="row"><label>Ribbons</label><div class="slider-wrap"><input type="range" id="numRibbons" min="1" max="12" value="6" step="1"></div><output id="numRibbonsVal">6</output></div>
             <div class="row"><label>Particles/Chain</label><div class="slider-wrap"><input type="range" id="chainLen" min="8" max="60" value="28" step="1"></div><output id="chainLenVal">28</output></div>
             <div class="row"><label>Spring K</label><div class="slider-wrap"><input type="range" id="springK" min="0.02" max="1" value="0.2" step="0.02"></div><output id="springKVal">0.2</output></div>
             <div class="row"><label>Flow Strength</label><div class="slider-wrap"><input type="range" id="flowStr" min="0.2" max="8" value="2" step="0.1"></div><output id="flowStrVal">2</output></div>
             <div class="row"><label>Damping</label><div class="slider-wrap"><input type="range" id="damping" min="0" max="1" value="0.5" step="0.01"></div><output id="dampingVal">0.5</output></div>
             <div class="row"><label>Ribbon Width</label><div class="slider-wrap"><input type="range" id="ribWidth" min="1" max="20" value="6" step="0.5"></div><output id="ribWidthVal">6</output></div>
-            <div class="row"><label>Trail Alpha</label><div class="slider-wrap"><input type="range" id="trailAlpha" min="0.005" max="0.12" value="0.03" step="0.005"></div><output id="trailAlphaVal">0.03</output></div>
+            <div class="row"><label>Trail Alpha</label><div class="slider-wrap"><input type="range" id="trailAlpha" min="0.002" max="0.12" value="0.02" step="0.002"></div><output id="trailAlphaVal">0.02</output></div>
         </div>
 
         <div class="buttons">
@@ -443,12 +443,19 @@ function initParticleMode() {
         const L = +$('chainLen').value;
         ribbons = [];
         initHues(N);
+        const spacing = 12;
         for (let r = 0; r < N; r++) {
-            const cx = Math.random() * W;
-            const cy = Math.random() * H;
+            // start from right side, spread vertically
+            const startX = W * (0.6 + Math.random() * 0.35);
+            const startY = (r + 0.5) / N * H * 0.8 + H * 0.1 + (Math.random() - 0.5) * 40;
             const chain = [];
             for (let p = 0; p < L; p++) {
-                chain.push({ x: cx + (Math.random()-0.5)*20, y: cy + (Math.random()-0.5)*20, vx: 0, vy: 0 });
+                // string particles left-to-right so ribbon has horizontal shape
+                chain.push({
+                    x: startX - p * spacing + (Math.random() - 0.5) * 6,
+                    y: startY + (Math.random() - 0.5) * 8,
+                    vx: 0, vy: 0
+                });
             }
             ribbons.push(chain);
         }
@@ -479,9 +486,13 @@ function initParticleMode() {
         const ribW = +$('ribWidth').value;
         const maxVel = 4;
 
-        // fade previous frame
-        ctx.fillStyle = `rgba(4,5,10,${trailAlpha})`;
+        // fade previous frame — use destination-in for true black fade (no grey residue)
+        const trailRetain = 1 - trailAlpha;
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.fillStyle = `rgba(0,0,0,${trailRetain})`;
         ctx.fillRect(0, 0, W, H);
+        ctx.restore();
 
         const noiseScale = 0.003;
 
@@ -499,9 +510,9 @@ function initParticleMode() {
             for (let i = 0; i < chain.length; i++) {
                 const p = chain[i];
 
-                // curl noise force
+                // curl noise force + gentle leftward drift
                 const c = curlNoise(p.x * noiseScale, p.y * noiseScale, time * 0.4);
-                p._fx += c.x * flowStr;
+                p._fx += c.x * flowStr - 0.3 * flowStr;
                 p._fy += c.y * flowStr;
 
                 // spring to next neighbor only (symmetric pair)
