@@ -109,8 +109,16 @@
    UI wiring
    ═══════════════════════════════════════════ */
 const $ = id => document.getElementById(id);
-const canvas = $('c');
+let canvas = $('c');
 const panel = $('panel');
+
+function freshCanvas() {
+    const c = document.createElement('canvas');
+    c.id = 'c';
+    canvas.replaceWith(c);
+    canvas = c;
+    return c;
+}
 
 $('togglePanel').onclick = () => {
     const vis = panel.style.display !== 'none';
@@ -156,6 +164,7 @@ $('savePng').onclick = () => {
    1. FRAGMENT SHADER MODE (pure GPU)
    ═══════════════════════════════════════════ */
 function initShaderMode() {
+    freshCanvas();
     const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: true });
     if (!gl) { alert('WebGL2 required'); return () => {}; }
 
@@ -369,6 +378,7 @@ function initShaderMode() {
    2. PARTICLE + SPRING MODE (CPU sim, Canvas 2D)
    ═══════════════════════════════════════════ */
 function initParticleMode() {
+    freshCanvas();
     const ctx = canvas.getContext('2d');
     let dpr = Math.min(devicePixelRatio, 2);
     let W, H;
