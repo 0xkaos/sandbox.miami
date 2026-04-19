@@ -60,6 +60,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/scripted_ribbons/",
+    "title": "Scripted Ribbons",
+    "description": "Perlin flow particle ribbons — translucent, spring-connected ribbon chains pushed by curl noise flow fields, inspired by Anthony Mattox's Scripted Ribbons (~2009).",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/sequencer_editor/",
     "title": "Audio Sequencer Editor",
     "description": "No description available.",
