@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Generative ribbon growth system with branching, turning, collision avoidance, and organic decay — ported from a Processing sketch.">
+    <title>Ribbon Growth</title>
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; overflow: hidden; background: #04050a; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #ui {
+            position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 10px; z-index: 10;
+            font-family: "Space Grotesk", system-ui, sans-serif;
+        }
+        #ui button {
+            padding: 8px 18px; border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 8px; background: rgba(8,10,18,0.82);
+            color: #edf2ff; font-size: 0.82rem; cursor: pointer;
+            backdrop-filter: blur(8px); transition: background .15s;
+        }
+        #ui button:hover { background: rgba(40,50,80,0.7); }
+        #info {
+            position: fixed; top: 14px; left: 14px; z-index: 10;
+            font-family: "Share Tech Mono", monospace; font-size: 0.72rem;
+            color: rgba(237,242,255,0.5); pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">RIBBON GROWTH</div>
+    <div id="ui">
+        <button id="btnRestart">Restart</button>
+        <button id="btnPause">Pause</button>
+        <button id="btnPalette">Palette</button>
+    </div>
+    <canvas id="c"></canvas>
+
+    <script>
+    (() => {
+        /* ── config ───────────────────────────────────────────── */
+        let ribbonWidth = 10;
+        let ribbonSpacing = 2;
+        const MAX_RIBBONS = 600;
+
+        const palettes = [
+            ['#ff6b6b', '#feca57', '#48dbfb', '#ff9ff3', '#54a0ff'],
+            ['#1dd1a1', '#ffeaa7', '#dfe6e9', '#fd79a8', '#6c5ce7'],
+            ['#f8b500', '#fc5185', '#3fc1c9', '#364f6b', '#f5f5f5'],
+            ['#0f3460', '#16213e', '#e94560', '#533483', '#1a1a2e'],
+            ['#2d6a4f', '#40916c', '#52b788', '#74c69d', '#95d5b2'],
+        ];
+        let paletteIdx = 0;
+        let colors = palettes[paletteIdx];
+
+        /* ── canvas ───────────────────────────────────────────── */
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+
+        function resize() {
+            const dpr = devicePixelRatio || 1;
+            W = innerWidth; H = innerHeight;
+            canvas.width = W * dpr; canvas.height = H * dpr;
+            canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        /* ── helpers ──────────────────────────────────────────── */
+        const randBool   = () => Math.random() < 0.5;
+        const randInt    = (n) => Math.floor(Math.random() * n);
+        const sometimes  = (pct) => Math.random() * 100 < pct;
+
+        /* ── Ribbon ───────────────────────────────────────────── */
+        class Ribbon {
+            constructor(parent, x, y, vertical, direction, col) {
+                this.parent = parent;
+                this.loc = { x, y };
+                this.end = { x, y };
+                this.col = col;
+                this.length = 0;
+                this.growing = true;
+                this.branching = false;
+                this.dying = false;
+                this.dead = false;
+                this.age = 0;
+                this.vertical = vertical;
+                this.direction = direction;
+                this.rStart = randBool();
+                this.rEnd = this.rStart;
+            }
+
+            grow() {
+                if (!this.growing) return;
+                this.length += this.direction ? 1 : -1;
+                if (!this.branching && Math.abs(this.length) > ribbonWidth * 5) {
+                    this.branching = true;
+                }
+            }
+
+            update() {
+                this.age++;
+
+                if (this.dying) {
+                    this.length += this.direction ? -1 : 1;
+                    if (this.vertical) {
+                        this.loc.y += this.direction ? 1 : -1;
+                    } else {
+                        this.loc.x += this.direction ? 1 : -1;
+                    }
+                    if (Math.abs(this.length) <= 1) this.dead = true;
+                }
+
+                if (this.growing) {
+                    if (Math.abs(this.length) > ribbonWidth * 5) {
+                        if (sometimes(3)) {
+                            this.turn();
+                        } else if (this.branching && sometimes(12)) {
+                            this.branch();
+                        } else if (Math.abs(this.length) > ribbonWidth * 5 && sometimes(0.6)) {
+                            this.stopGrowing();
+                        }
+                    }
+                    if (this.vertical) {
+                        this.end.y = this.loc.y + this.length;
+                    } else {
+                        this.end.x = this.loc.x + this.length;
+                    }
+                } else {
+                    if (this.branching) {
+                        if (sometimes(1)) {
+                            this.branch();
+                        } else if (sometimes(1)) {
+                            this.branching = false;
+                        }
+                    }
+                }
+
+                if (this.age > 300) this.die();
+            }
+
+            die() { this.dying = true; }
+
+            render() {
+                ctx.fillStyle = colors[this.col % colors.length];
+                ctx.beginPath();
+                const rw2 = ribbonWidth / 2;
+                const lx = this.loc.x, ly = this.loc.y, len = this.length;
+
+                if (this.vertical) {
+                    if (!this.rStart) {
+                        ctx.moveTo(lx + rw2, ly - rw2);
+                        ctx.lineTo(lx - rw2, ly + rw2);
+                    } else {
+                        ctx.moveTo(lx + rw2, ly + rw2);
+                        ctx.lineTo(lx - rw2, ly - rw2);
+                    }
+                    if (!this.rEnd) {
+                        ctx.lineTo(lx - rw2, ly + len + rw2);
+                        ctx.lineTo(lx + rw2, ly + len - rw2);
+                    } else {
+                        ctx.lineTo(lx - rw2, ly + len - rw2);
+                        ctx.lineTo(lx + rw2, ly + len + rw2);
+                    }
+                } else {
+                    if (!this.rStart) {
+                        ctx.moveTo(lx + rw2, ly - rw2);
+                        ctx.lineTo(lx - rw2, ly + rw2);
+                    } else {
+                        ctx.moveTo(lx - rw2, ly - rw2);
+                        ctx.lineTo(lx + rw2, ly + rw2);
+                    }
+                    if (!this.rEnd) {
+                        ctx.lineTo(lx + len - rw2, ly + rw2);
+                        ctx.lineTo(lx + len + rw2, ly - rw2);
+                    } else {
+                        ctx.lineTo(lx + len + rw2, ly + rw2);
+                        ctx.lineTo(lx + len - rw2, ly - rw2);
+                    }
+                }
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            stopGrowing() {
+                this.growing = false;
+                if (Math.abs(this.length) < ribbonWidth * 2) this.die();
+            }
+
+            turn() {
+                this.stopGrowing();
+                let nx, ny;
+                if (this.vertical) {
+                    nx = this.loc.x; ny = this.loc.y + this.length;
+                } else {
+                    nx = this.loc.x + this.length; ny = this.loc.y;
+                }
+                const newR = this.parent.addRibbon(nx, ny, !this.vertical, randBool(), this.col, this);
+                if (newR) {
+                    const match = this.direction === newR.direction;
+                    this.rEnd = match;
+                    newR.rStart = match;
+                    newR.rEnd = match;
+                }
+            }
+
+            branch() {
+                if (this.vertical) {
+                    this.parent.addRibbon(
+                        this.loc.x + ribbonWidth + ribbonSpacing,
+                        this.loc.y + this.length,
+                        this.vertical, randBool(), randInt(colors.length)
+                    );
+                } else {
+                    this.parent.addRibbon(
+                        this.loc.x + this.length,
+                        this.loc.y + ribbonWidth + ribbonSpacing,
+                        this.vertical, randBool(), randInt(colors.length)
+                    );
+                }
+            }
+
+            dodge() {
+                if (sometimes(90)) { this.turn(); } else { this.stopGrowing(); }
+            }
+
+            /* ── collision ── */
+            endCollide(R) {
+                const rws = ribbonWidth + ribbonSpacing;
+                if (this.loc.x === R.end.x && this.loc.y === R.end.y) return false;
+                return (
+                    (Math.abs(this.end.x - R.end.x) < rws && Math.abs(this.end.y - R.end.y) < rws) ||
+                    (Math.abs(this.loc.x - R.loc.x) < rws && Math.abs(this.loc.y - R.loc.y) < rws) ||
+                    (Math.abs(this.end.x - R.loc.x) < rws && Math.abs(this.end.y - R.loc.y) < rws) ||
+                    (Math.abs(this.loc.x - R.end.x) < rws && Math.abs(this.loc.y - R.end.y) < rws)
+                );
+            }
+
+            collide(R) {
+                if (this.loc.x === R.end.x && this.loc.y === R.end.y) return false;
+                const rws = ribbonWidth + ribbonSpacing;
+                const ex = this.end.x, ey = this.end.y;
+                const rlx = R.loc.x, rly = R.loc.y, rex = R.end.x, rey = R.end.y;
+
+                if (this.vertical === R.vertical) {
+                    if (R.vertical && R.direction) {
+                        if (ex < rlx + rws && ex > rlx - rws && ey > rly - rws && ey < rey + rws) return true;
+                    } else if (R.vertical && !R.direction) {
+                        if (ex < rlx + rws && ex > rlx - rws && ey < rly + rws && ey > rey - rws) return true;
+                    } else if (!R.vertical && R.direction) {
+                        if (ey < rly + rws && ey > rly - rws && ex > rlx - rws && ex < rex + rws) return true;
+                    } else {
+                        if (ey < rly + rws && ey > rly - rws && ex < rlx + rws && ex > rex - rws) return true;
+                    }
+                } else {
+                    if (R.vertical && R.direction) {
+                        if (ex <= rlx + rws && ex >= rlx - rws && ey >= rly - rws && ey <= rey + rws) return true;
+                    } else if (R.vertical && !R.direction) {
+                        if (ex <= rlx + rws && ex >= rlx - rws && ey <= rly + rws && ey >= rey - rws) return true;
+                    } else if (!R.vertical && R.direction) {
+                        if (ey <= rly + rws && ey >= rly - rws && ex >= rlx - rws && ex <= rex + rws) return true;
+                    } else {
+                        if (ey <= rly + rws && ey >= rly - rws && ex <= rlx + rws && ex >= rex - rws) return true;
+                    }
+                }
+                return false;
+            }
+        }
+
+        /* ── RibbonSet ────────────────────────────────────────── */
+        class RibbonSet {
+            constructor() { this.ribbons = []; }
+
+            addRibbon(x, y, vertical, direction, col, source) {
+                if (this.ribbons.length >= MAX_RIBBONS) return null;
+                const r = new Ribbon(this, x, y, vertical, direction, col);
+                // check collision with existing ribbons before adding
+                for (const other of this.ribbons) {
+                    if (other.dead || other === source) continue;
+                    if (r.endCollide(other)) return null;
+                }
+                this.ribbons.push(r);
+                return r;
+            }
+
+            update() {
+                for (const r of this.ribbons) {
+                    if (r.dead) continue;
+                    r.grow();
+                    // collision check for growing ribbons
+                    if (r.growing) {
+                        for (const other of this.ribbons) {
+                            if (other === r || other.dead) continue;
+                            if (r.collide(other)) { r.dodge(); break; }
+                        }
+                    }
+                    r.update();
+                }
+                // remove dead ribbons periodically
+                if (this.ribbons.length > 100) {
+                    this.ribbons = this.ribbons.filter(r => !r.dead);
+                }
+            }
+
+            render() {
+                for (const r of this.ribbons) {
+                    if (!r.dead) r.render();
+                }
+            }
+
+            alive() { return this.ribbons.some(r => !r.dead); }
+            count() { return this.ribbons.filter(r => !r.dead).length; }
+        }
+
+        /* ── main ─────────────────────────────────────────────── */
+        let set;
+        let paused = false;
+
+        function seed() {
+            set = new RibbonSet();
+            // spawn a few initial ribbons near the centre
+            const cx = W / 2, cy = H / 2;
+            for (let i = 0; i < 4; i++) {
+                const v = randBool();
+                const d = randBool();
+                const ox = (Math.random() - 0.5) * 60;
+                const oy = (Math.random() - 0.5) * 60;
+                set.addRibbon(cx + ox, cy + oy, v, d, randInt(colors.length));
+            }
+        }
+        seed();
+
+        function frame() {
+            requestAnimationFrame(frame);
+            if (paused) return;
+
+            ctx.fillStyle = 'rgba(4,5,10,0.12)';
+            ctx.fillRect(0, 0, W, H);
+
+            set.update();
+            set.render();
+
+            // auto restart when all ribbons are dead
+            if (!set.alive()) seed();
+        }
+        frame();
+
+        /* ── UI ───────────────────────────────────────────────── */
+        document.getElementById('btnRestart').addEventListener('click', () => {
+            ctx.clearRect(0, 0, W, H);
+            seed();
+        });
+        document.getElementById('btnPause').addEventListener('click', (e) => {
+            paused = !paused;
+            e.target.textContent = paused ? 'Play' : 'Pause';
+        });
+        document.getElementById('btnPalette').addEventListener('click', () => {
+            paletteIdx = (paletteIdx + 1) % palettes.length;
+            colors = palettes[paletteIdx];
+        });
+
+        /* click to spawn a ribbon at pointer */
+        canvas.addEventListener('click', (e) => {
+            if (paused) return;
+            set.addRibbon(e.clientX, e.clientY, randBool(), randBool(), randInt(colors.length));
+        });
+    })();
+    </script>
+</body>
+</html>

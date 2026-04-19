@@ -42,6 +42,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/ribbon_growth/",
+    "title": "Ribbon Growth",
+    "description": "Generative ribbon growth system with branching, turning, collision avoidance, and organic decay — ported from a Processing sketch.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/script_editor/",
     "title": "Script Editor",
     "description": "Create and refine vector stroke data for script characters with live playback and editing tools.",
