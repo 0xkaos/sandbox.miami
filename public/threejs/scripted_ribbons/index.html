@@ -464,14 +464,16 @@ function initParticleMode() {
         if (!alive) return;
         requestAnimationFrame(step);
 
-        const dt = 0.016;
-        time += dt;
+        const frameDt = 0.016;
+        const SUBSTEPS = 6;
+        const dt = frameDt / SUBSTEPS;
         const K = +$('springK').value;
         const flowStr = +$('flowStr').value;
-        const damp = +$('damping').value;
+        const damp = Math.pow(+$('damping').value, 1 / SUBSTEPS); // per-substep damping
         const restLen = 8;
         const trailAlpha = +$('trailAlpha').value;
         const ribW = +$('ribWidth').value;
+        const maxVel = 12; // velocity clamp
 
         // fade previous frame
         ctx.fillStyle = `rgba(4,5,10,${trailAlpha})`;
@@ -482,48 +484,61 @@ function initParticleMode() {
         for (let r = 0; r < ribbons.length; r++) {
             const chain = ribbons[r];
 
-            // physics
+          for (let sub = 0; sub < SUBSTEPS; sub++) {
+            time += dt;
+
+            // accumulate forces
+            for (let i = 0; i < chain.length; i++) {
+                chain[i]._fx = 0; chain[i]._fy = 0;
+            }
+
             for (let i = 0; i < chain.length; i++) {
                 const p = chain[i];
+
                 // curl noise force
                 const c = curlNoise(p.x * noiseScale, p.y * noiseScale, time * 0.4);
-                p.vx += c.x * flowStr * dt;
-                p.vy += c.y * flowStr * dt;
+                p._fx += c.x * flowStr;
+                p._fy += c.y * flowStr;
 
-                // spring to previous
-                if (i > 0) {
-                    const prev = chain[i-1];
-                    const dx = prev.x - p.x, dy = prev.y - p.y;
-                    const dist = Math.sqrt(dx*dx + dy*dy) || 0.001;
-                    const f = K * (dist - restLen);
-                    const fx = f * dx / dist, fy = f * dy / dist;
-                    p.vx += fx; p.vy += fy;
-                    prev.vx -= fx * 0.5; prev.vy -= fy * 0.5;
-                }
-                // spring to next
+                // spring to next neighbor only (symmetric pair)
                 if (i < chain.length - 1) {
                     const next = chain[i+1];
                     const dx = next.x - p.x, dy = next.y - p.y;
                     const dist = Math.sqrt(dx*dx + dy*dy) || 0.001;
                     const f = K * (dist - restLen);
                     const fx = f * dx / dist, fy = f * dy / dist;
-                    p.vx += fx; p.vy += fy;
+                    p._fx += fx;   p._fy += fy;
+                    next._fx -= fx; next._fy -= fy;
                 }
 
-                // repulsion from other nearby particles (within-chain only, for perf)
-                for (let j = 0; j < chain.length; j++) {
-                    if (Math.abs(j - i) < 3) continue;
+                // soft repulsion from non-adjacent chain particles
+                for (let j = i + 3; j < chain.length; j++) {
                     const q = chain[j];
                     const dx = p.x - q.x, dy = p.y - q.y;
                     const d2 = dx*dx + dy*dy;
-                    if (d2 < 2500 && d2 > 0.01) {
-                        const inv = 0.8 / d2;
-                        p.vx += dx * inv; p.vy += dy * inv;
+                    if (d2 < 2500) {
+                        const inv = 0.5 / (d2 + 20); // +20 prevents singularity
+                        p._fx += dx * inv; p._fy += dy * inv;
+                        q._fx -= dx * inv; q._fy -= dy * inv;
                     }
                 }
+            }
 
-                p.vx *= damp; p.vy *= damp;
-                p.x += p.vx; p.y += p.vy;
+            // integrate
+            for (let i = 0; i < chain.length; i++) {
+                const p = chain[i];
+                p.vx = (p.vx + p._fx * dt) * damp;
+                p.vy = (p.vy + p._fy * dt) * damp;
+
+                // clamp velocity
+                const v2 = p.vx*p.vx + p.vy*p.vy;
+                if (v2 > maxVel*maxVel) {
+                    const s = maxVel / Math.sqrt(v2);
+                    p.vx *= s; p.vy *= s;
+                }
+
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
 
                 // soft wrapping
                 if (p.x < -50) p.x = W + 50;
@@ -531,6 +546,7 @@ function initParticleMode() {
                 if (p.y < -50) p.y = H + 50;
                 if (p.y > H + 50) p.y = -50;
             }
+          } // end substeps
 
             // draw ribbon as smooth thick curve
             const hue = hues[r];
