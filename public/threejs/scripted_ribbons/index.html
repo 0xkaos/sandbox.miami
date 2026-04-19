@@ -465,15 +465,15 @@ function initParticleMode() {
         requestAnimationFrame(step);
 
         const frameDt = 0.016;
-        const SUBSTEPS = 6;
+        const SUBSTEPS = 4;
         const dt = frameDt / SUBSTEPS;
-        const K = +$('springK').value;
-        const flowStr = +$('flowStr').value;
-        const damp = Math.pow(+$('damping').value, 1 / SUBSTEPS); // per-substep damping
+        const K = +$('springK').value * 80;   // scale slider to useful range
+        const flowStr = +$('flowStr').value * 60;
+        const damp = Math.pow(+$('damping').value, 1 / SUBSTEPS);
         const restLen = 8;
         const trailAlpha = +$('trailAlpha').value;
         const ribW = +$('ribWidth').value;
-        const maxVel = 12; // velocity clamp
+        const maxVel = 300;
 
         // fade previous frame
         ctx.fillStyle = `rgba(4,5,10,${trailAlpha})`;
@@ -517,7 +517,7 @@ function initParticleMode() {
                     const dx = p.x - q.x, dy = p.y - q.y;
                     const d2 = dx*dx + dy*dy;
                     if (d2 < 2500) {
-                        const inv = 0.5 / (d2 + 20); // +20 prevents singularity
+                        const inv = 8.0 / (d2 + 20); // +20 prevents singularity
                         p._fx += dx * inv; p._fy += dy * inv;
                         q._fx -= dx * inv; q._fy -= dy * inv;
                     }
@@ -537,8 +537,8 @@ function initParticleMode() {
                     p.vx *= s; p.vy *= s;
                 }
 
-                p.x += p.vx * dt;
-                p.y += p.vy * dt;
+                p.x += p.vx;
+                p.y += p.vy;
 
                 // soft wrapping
                 if (p.x < -50) p.x = W + 50;
