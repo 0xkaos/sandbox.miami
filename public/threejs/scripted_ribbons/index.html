@@ -84,9 +84,9 @@
         <div id="particleControls" style="display:none">
             <div class="row"><label>Ribbons</label><div class="slider-wrap"><input type="range" id="numRibbons" min="3" max="30" value="12" step="1"></div><output id="numRibbonsVal">12</output></div>
             <div class="row"><label>Particles/Chain</label><div class="slider-wrap"><input type="range" id="chainLen" min="8" max="60" value="28" step="1"></div><output id="chainLenVal">28</output></div>
-            <div class="row"><label>Spring K</label><div class="slider-wrap"><input type="range" id="springK" min="0.02" max="2" value="0.25" step="0.02"></div><output id="springKVal">0.25</output></div>
-            <div class="row"><label>Flow Strength</label><div class="slider-wrap"><input type="range" id="flowStr" min="0.2" max="10" value="2.5" step="0.1"></div><output id="flowStrVal">2.5</output></div>
-            <div class="row"><label>Damping</label><div class="slider-wrap"><input type="range" id="damping" min="0.9" max="0.999" value="0.97" step="0.001"></div><output id="dampingVal">0.97</output></div>
+            <div class="row"><label>Spring K</label><div class="slider-wrap"><input type="range" id="springK" min="0.02" max="1" value="0.2" step="0.02"></div><output id="springKVal">0.2</output></div>
+            <div class="row"><label>Flow Strength</label><div class="slider-wrap"><input type="range" id="flowStr" min="0.2" max="8" value="2" step="0.1"></div><output id="flowStrVal">2</output></div>
+            <div class="row"><label>Damping</label><div class="slider-wrap"><input type="range" id="damping" min="0" max="1" value="0.5" step="0.01"></div><output id="dampingVal">0.5</output></div>
             <div class="row"><label>Ribbon Width</label><div class="slider-wrap"><input type="range" id="ribWidth" min="1" max="20" value="6" step="0.5"></div><output id="ribWidthVal">6</output></div>
             <div class="row"><label>Trail Alpha</label><div class="slider-wrap"><input type="range" id="trailAlpha" min="0.005" max="0.12" value="0.03" step="0.005"></div><output id="trailAlphaVal">0.03</output></div>
         </div>
@@ -469,11 +469,15 @@ function initParticleMode() {
         const dt = frameDt / SUBSTEPS;
         const K = +$('springK').value;
         const flowStr = +$('flowStr').value;
-        const damp = Math.pow(+$('damping').value, 1 / SUBSTEPS);
+        // slider 0 = no damping (wild), 1 = heavy damping (calm)
+        // map to per-frame velocity retention: 0.98 (slider=0) down to 0.78 (slider=1)
+        const dampSlider = +$('damping').value;
+        const retention = 0.78 + (1 - dampSlider) * 0.20;
+        const damp = Math.pow(retention, 1 / SUBSTEPS);
         const restLen = 8;
         const trailAlpha = +$('trailAlpha').value;
         const ribW = +$('ribWidth').value;
-        const maxVel = 6;
+        const maxVel = 4;
 
         // fade previous frame
         ctx.fillStyle = `rgba(4,5,10,${trailAlpha})`;
