@@ -9,7 +9,8 @@
         :root { color-scheme: dark; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { height: 100%; overflow: hidden; background: #04050a; font-family: "Space Grotesk", system-ui, sans-serif; color: #edf2ff; }
-        canvas { display: block; width: 100vw; height: 100vh; }
+        canvas { display: block; width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        #bg { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #04050a; z-index: 0; }
 
         .panel {
             position: fixed; top: 14px; left: 14px;
@@ -50,6 +51,7 @@
     </style>
 </head>
 <body>
+    <div id="bg"></div>
     <canvas id="c"></canvas>
     <button class="toggle-btn" id="togglePanel">Hide Controls</button>
 
@@ -379,7 +381,7 @@ function initShaderMode() {
    ═══════════════════════════════════════════ */
 function initParticleMode() {
     freshCanvas();
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     let dpr = Math.min(devicePixelRatio, 2);
     let W, H;
 
@@ -388,8 +390,7 @@ function initParticleMode() {
         W = innerWidth; H = innerHeight;
         canvas.width = W * dpr; canvas.height = H * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.fillStyle = '#04050a';
-        ctx.fillRect(0, 0, W, H);
+        ctx.clearRect(0, 0, W, H);
     }
     resize();
     window.addEventListener('resize', resize);
@@ -459,13 +460,13 @@ function initParticleMode() {
             }
             ribbons.push(chain);
         }
-        ctx.fillStyle = '#04050a';
-        ctx.fillRect(0, 0, W, H);
+        ctx.clearRect(0, 0, W, H);
     }
     spawnRibbons();
 
     let alive = true;
     let time = 0;
+    let scrubCounter = 0;
 
     function step() {
         if (!alive) return;
@@ -486,13 +487,27 @@ function initParticleMode() {
         const ribW = +$('ribWidth').value;
         const maxVel = 4;
 
-        // fade previous frame — use destination-in for true black fade (no grey residue)
+        // fade previous frame — multiply alpha down toward transparent
+        // Periodic pixel scrub: every 60 frames, zero out near-black pixels
+        // that 8-bit quantization can never fully fade
         const trailRetain = 1 - trailAlpha;
         ctx.save();
         ctx.globalCompositeOperation = 'destination-in';
         ctx.fillStyle = `rgba(0,0,0,${trailRetain})`;
         ctx.fillRect(0, 0, W, H);
         ctx.restore();
+
+        if (++scrubCounter >= 60) {
+            scrubCounter = 0;
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+                if (d[i] < 4 && d[i+1] < 4 && d[i+2] < 4) {
+                    d[i] = d[i+1] = d[i+2] = d[i+3] = 0;
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
 
         const noiseScale = 0.003;
 
