@@ -30,6 +30,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/mandelbrot_zoomer/",
+    "title": "Mandelbrot Zoomer Lab",
+    "description": "High-quality Mandelbrot zoomer with smooth coloring, palette cycling, and live controls for center and zoom speed.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/mandelbulb_realtime/",
     "title": "Realtime Mandelbulb Lab",
     "description": "Realtime raymarched mandelbulb fractal with live controls for formula, animation, color grading, and camera path.",
