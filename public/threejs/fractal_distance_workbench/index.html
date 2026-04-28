@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Three.js WebGL fractal distance workbench with Mandelbrot, Julia, Burning Ship, Tricorn, Multibrot, Celtic, Buffalo, Phoenix, and procedural gradient controls.">
+    <title>Fractal Distance Workbench</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --ink: #eef6f2;
+            --muted: rgba(238, 246, 242, 0.68);
+            --panel: rgba(9, 12, 14, 0.72);
+            --line: rgba(238, 246, 242, 0.14);
+            --green: #8ef0b0;
+            --amber: #ffc86b;
+            --blue: #7dc6ff;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: #050607;
+            color: var(--ink);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        #stage {
+            position: fixed;
+            inset: 0;
+            background:
+                linear-gradient(150deg, rgba(125, 198, 255, 0.12), transparent 42%),
+                linear-gradient(330deg, rgba(255, 200, 107, 0.08), transparent 44%),
+                #050607;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            touch-action: none;
+            cursor: grab;
+        }
+
+        canvas:active {
+            cursor: grabbing;
+        }
+
+        .hud {
+            position: fixed;
+            left: 16px;
+            bottom: 16px;
+            z-index: 4;
+            display: grid;
+            grid-template-columns: repeat(4, auto);
+            gap: 8px;
+            align-items: center;
+            max-width: calc(100vw - 32px);
+            padding: 10px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--panel);
+            backdrop-filter: blur(14px);
+            box-shadow: 0 16px 60px rgba(0, 0, 0, 0.34);
+        }
+
+        .stat {
+            min-width: 116px;
+            padding: 8px 10px;
+            border-left: 2px solid var(--green);
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .stat:nth-child(2) {
+            border-left-color: var(--amber);
+        }
+
+        .stat:nth-child(3) {
+            border-left-color: var(--blue);
+        }
+
+        .stat:nth-child(4) {
+            border-left-color: rgba(255, 255, 255, 0.42);
+        }
+
+        .label {
+            display: block;
+            color: var(--muted);
+            font-size: 0.64rem;
+            letter-spacing: 0.12em;
+            line-height: 1;
+            text-transform: uppercase;
+        }
+
+        .value {
+            display: block;
+            margin-top: 5px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+            font-size: 0.82rem;
+            white-space: nowrap;
+        }
+
+        .actions {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            z-index: 5;
+            display: flex;
+            gap: 8px;
+        }
+
+        button {
+            width: 38px;
+            height: 38px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(9, 12, 14, 0.76);
+            color: var(--ink);
+            cursor: pointer;
+            backdrop-filter: blur(14px);
+        }
+
+        button:hover {
+            border-color: rgba(142, 240, 176, 0.55);
+            background: rgba(16, 22, 20, 0.92);
+        }
+
+        .dg.ac {
+            z-index: 6 !important;
+        }
+
+        @media (max-width: 780px) {
+            .hud {
+                left: 10px;
+                right: 10px;
+                bottom: 10px;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .stat {
+                min-width: 0;
+            }
+
+            .actions {
+                right: 10px;
+                top: 10px;
+                bottom: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main id="stage"></main>
+    <section class="hud" aria-label="Fractal status">
+        <div class="stat">
+            <span class="label">Formula</span>
+            <span class="value" id="stat-formula">Mandelbrot</span>
+        </div>
+        <div class="stat">
+            <span class="label">Scale</span>
+            <span class="value" id="stat-scale">2.80e+0</span>
+        </div>
+        <div class="stat">
+            <span class="label">Center</span>
+            <span class="value" id="stat-center">-0.7436, 0.1318</span>
+        </div>
+        <div class="stat">
+            <span class="label">Color</span>
+            <span class="value" id="stat-color">distance + orbit</span>
+        </div>
+    </section>
+    <div class="actions" aria-label="Fractal actions">
+        <button type="button" id="reset" title="Reset view" aria-label="Reset view">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path d="M4 12a8 8 0 1 0 2.35-5.65L4 8.7V3H9.7L7.77 4.93A10 10 0 1 1 2 12h2Z" fill="currentColor"/>
+            </svg>
+        </button>
+        <button type="button" id="capture" title="Save PNG" aria-label="Save PNG">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path d="M5 20h14v-2H5v2ZM12 3v10.17l3.59-3.58L17 11l-5 5-5-5 1.41-1.41L11 12.17V3h1Z" fill="currentColor"/>
+            </svg>
+        </button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+        const FORMULAS = {
+            Mandelbrot: 0,
+            Julia: 1,
+            'Burning Ship': 2,
+            Tricorn: 3,
+            Multibrot: 4,
+            Celtic: 5,
+            Buffalo: 6,
+            Perpendicular: 7,
+            'Phoenix Julia': 8
+        };
+
+        const PRESETS = {
+            Mandelbrot: { cx: -0.743643887037151, cy: 0.13182590420533, scale: 2.8, jx: -0.8, jy: 0.156, power: 2.0 },
+            Julia: { cx: 0.0, cy: 0.0, scale: 2.6, jx: -0.7269, jy: 0.1889, power: 2.0 },
+            'Burning Ship': { cx: -1.765, cy: -0.034, scale: 0.42, jx: -0.8, jy: 0.156, power: 2.0 },
+            Tricorn: { cx: -0.22, cy: 0.02, scale: 2.3, jx: -0.8, jy: 0.156, power: 2.0 },
+            Multibrot: { cx: 0.0, cy: 0.0, scale: 2.1, jx: -0.8, jy: 0.156, power: 3.0 },
+            Celtic: { cx: -0.26, cy: 0.0, scale: 2.2, jx: -0.8, jy: 0.156, power: 2.0 },
+            Buffalo: { cx: -0.34, cy: -0.08, scale: 2.2, jx: -0.8, jy: 0.156, power: 2.0 },
+            Perpendicular: { cx: -0.47, cy: -0.18, scale: 1.9, jx: -0.8, jy: 0.156, power: 2.0 },
+            'Phoenix Julia': { cx: 0.0, cy: 0.0, scale: 2.7, jx: 0.5667, jy: 0.0, power: 2.0 }
+        };
+
+        const GRADIENT_PRESETS = {
+            'Fract Function': {
+                biasR: 0.50, biasG: 0.48, biasB: 0.44,
+                ampR: 0.52, ampG: 0.46, ampB: 0.56,
+                freqR: 1.00, freqG: 1.34, freqB: 1.92,
+                phaseR: 0.06, phaseG: 0.38, phaseB: 0.72
+            },
+            'Copper Ice': {
+                biasR: 0.55, biasG: 0.46, biasB: 0.40,
+                ampR: 0.50, ampG: 0.34, ampB: 0.52,
+                freqR: 0.82, freqG: 1.18, freqB: 1.74,
+                phaseR: 0.02, phaseG: 0.30, phaseB: 0.67
+            },
+            'Viridian Heat': {
+                biasR: 0.42, biasG: 0.52, biasB: 0.45,
+                ampR: 0.58, ampG: 0.43, ampB: 0.48,
+                freqR: 1.45, freqG: 0.98, freqB: 1.62,
+                phaseR: 0.86, phaseG: 0.16, phaseB: 0.58
+            },
+            'Ink Bloom': {
+                biasR: 0.38, biasG: 0.42, biasB: 0.54,
+                ampR: 0.46, ampG: 0.52, ampB: 0.47,
+                freqR: 1.10, freqG: 1.76, freqB: 0.94,
+                phaseR: 0.74, phaseG: 0.08, phaseB: 0.44
+            }
+        };
+
+        const stage = document.getElementById('stage');
+        const statFormula = document.getElementById('stat-formula');
+        const statScale = document.getElementById('stat-scale');
+        const statCenter = document.getElementById('stat-center');
+        const statColor = document.getElementById('stat-color');
+
+        const renderer = new THREE.WebGLRenderer({
+            antialias: false,
+            preserveDrawingBuffer: true,
+            powerPreference: 'high-performance'
+        });
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        stage.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        const clock = new THREE.Clock();
+
+        const params = {
+            formula: 'Mandelbrot',
+            centerX: PRESETS.Mandelbrot.cx,
+            centerY: PRESETS.Mandelbrot.cy,
+            scale: PRESETS.Mandelbrot.scale,
+            iterations: 520,
+            escapeRadius: 80,
+            power: 2.0,
+            juliaX: PRESETS.Mandelbrot.jx,
+            juliaY: PRESETS.Mandelbrot.jy,
+            phoenix: -0.48,
+            animate: true,
+            drift: 0.045,
+            zoomRate: 0.0,
+            gradientPreset: 'Fract Function',
+            gradientScale: 4.6,
+            gradientShift: 0.0,
+            gradientSpeed: 0.08,
+            gradientFract: 0.62,
+            distanceWeight: 0.44,
+            distanceScale: 32.0,
+            contourWeight: 0.28,
+            contourFrequency: 18.0,
+            orbitWeight: 0.22,
+            orbitRadius: 0.62,
+            stripeWeight: 0.18,
+            stripeFrequency: 9.0,
+            edgeBoost: 0.38,
+            gamma: 0.92,
+            interior: '#050607',
+            resetView() {
+                applyFormulaPreset(params.formula, false);
+            },
+            randomizeGradient() {
+                params.biasR = 0.34 + Math.random() * 0.32;
+                params.biasG = 0.34 + Math.random() * 0.32;
+                params.biasB = 0.34 + Math.random() * 0.32;
+                params.ampR = 0.32 + Math.random() * 0.34;
+                params.ampG = 0.32 + Math.random() * 0.34;
+                params.ampB = 0.32 + Math.random() * 0.34;
+                params.freqR = 0.72 + Math.random() * 1.9;
+                params.freqG = 0.72 + Math.random() * 1.9;
+                params.freqB = 0.72 + Math.random() * 1.9;
+                params.phaseR = Math.random();
+                params.phaseG = Math.random();
+                params.phaseB = Math.random();
+                syncGui();
+                syncUniforms();
+            }
+        };
+        Object.assign(params, GRADIENT_PRESETS['Fract Function']);
+
+        function parseHexColor(hex) {
+            const value = Number.parseInt(hex.replace('#', ''), 16);
+            return [
+                ((value >> 16) & 255) / 255,
+                ((value >> 8) & 255) / 255,
+                (value & 255) / 255
+            ];
+        }
+
+        const uniforms = {
+            uResolution: { value: new THREE.Vector2(1, 1) },
+            uCenter: { value: new THREE.Vector2(params.centerX, params.centerY) },
+            uScale: { value: params.scale },
+            uTime: { value: 0 },
+            uFormula: { value: FORMULAS[params.formula] },
+            uIterations: { value: params.iterations },
+            uEscapeRadius: { value: params.escapeRadius },
+            uPower: { value: params.power },
+            uJulia: { value: new THREE.Vector2(params.juliaX, params.juliaY) },
+            uPhoenix: { value: params.phoenix },
+            uBias: { value: new THREE.Vector3(params.biasR, params.biasG, params.biasB) },
+            uAmp: { value: new THREE.Vector3(params.ampR, params.ampG, params.ampB) },
+            uFreq: { value: new THREE.Vector3(params.freqR, params.freqG, params.freqB) },
+            uPhase: { value: new THREE.Vector3(params.phaseR, params.phaseG, params.phaseB) },
+            uGradient: { value: new THREE.Vector4(params.gradientScale, params.gradientShift, params.gradientFract, params.gamma) },
+            uDistance: { value: new THREE.Vector4(params.distanceWeight, params.distanceScale, params.edgeBoost, params.contourWeight) },
+            uOrbit: { value: new THREE.Vector4(params.orbitWeight, params.orbitRadius, params.stripeWeight, params.stripeFrequency) },
+            uContourFrequency: { value: params.contourFrequency },
+            uInterior: { value: new THREE.Vector3(...parseHexColor(params.interior)) }
+        };
+
+        const material = new THREE.ShaderMaterial({
+            uniforms,
+            vertexShader: `
+                varying vec2 vUv;
+
+                void main() {
+                    vUv = uv;
+                    gl_Position = vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                precision highp float;
+
+                uniform vec2 uResolution;
+                uniform vec2 uCenter;
+                uniform float uScale;
+                uniform float uTime;
+                uniform int uFormula;
+                uniform int uIterations;
+                uniform float uEscapeRadius;
+                uniform float uPower;
+                uniform vec2 uJulia;
+                uniform float uPhoenix;
+                uniform vec3 uBias;
+                uniform vec3 uAmp;
+                uniform vec3 uFreq;
+                uniform vec3 uPhase;
+                uniform vec4 uGradient;
+                uniform vec4 uDistance;
+                uniform vec4 uOrbit;
+                uniform float uContourFrequency;
+                uniform vec3 uInterior;
+
+                const float TAU = 6.28318530718;
+
+                vec2 cmul(vec2 a, vec2 b) {
+                    return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+                }
+
+                vec2 cpow(vec2 z, float p) {
+                    float r = max(length(z), 1e-18);
+                    float a = atan(z.y, z.x);
+                    float rp = pow(r, p);
+                    return vec2(cos(a * p), sin(a * p)) * rp;
+                }
+
+                vec3 cosineGradient(float t) {
+                    vec3 raw = uBias + uAmp * cos(TAU * (uFreq * t + uPhase));
+                    vec3 wrapped = fract(raw + uGradient.z * sin(TAU * t + vec3(0.0, 0.21, 0.47)));
+                    return mix(clamp(raw, 0.0, 1.0), wrapped, uGradient.z);
+                }
+
+                vec2 formulaStep(vec2 z, vec2 c, vec2 prevZ) {
+                    if (uFormula == 2) {
+                        vec2 a = abs(z);
+                        return vec2(a.x * a.x - a.y * a.y, 2.0 * a.x * a.y) + c;
+                    }
+
+                    if (uFormula == 3) {
+                        vec2 q = vec2(z.x, -z.y);
+                        return cmul(q, q) + c;
+                    }
+
+                    if (uFormula == 4) {
+                        return cpow(z, max(2.0, uPower)) + c;
+                    }
+
+                    if (uFormula == 5) {
+                        return vec2(abs(z.x * z.x - z.y * z.y), 2.0 * z.x * z.y) + c;
+                    }
+
+                    if (uFormula == 6) {
+                        return vec2(abs(z.x * z.x - z.y * z.y), -abs(2.0 * z.x * z.y)) + c;
+                    }
+
+                    if (uFormula == 7) {
+                        return vec2(z.x * z.x - z.y * z.y, -2.0 * abs(z.x) * z.y) + c;
+                    }
+
+                    if (uFormula == 8) {
+                        return cmul(z, z) + c + uPhoenix * prevZ;
+                    }
+
+                    return cmul(z, z) + c;
+                }
+
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / uResolution.xy;
+                    vec2 p = uv * 2.0 - 1.0;
+                    p.x *= uResolution.x / uResolution.y;
+
+                    vec2 point = uCenter + p * uScale;
+                    vec2 c = point;
+                    vec2 z = vec2(0.0);
+
+                    if (uFormula == 1 || uFormula == 8) {
+                        z = point;
+                        c = uJulia;
+                    }
+
+                    vec2 dz = (uFormula == 1 || uFormula == 8) ? vec2(1.0, 0.0) : vec2(0.0);
+                    vec2 prevZ = vec2(0.0);
+                    float escape2 = uEscapeRadius * uEscapeRadius;
+                    float smoothIter = 0.0;
+                    float trap = 10.0;
+                    float stripe = 0.0;
+                    float escaped = 0.0;
+                    int iter = 0;
+
+                    for (int i = 0; i < 2800; i++) {
+                        if (i >= uIterations) {
+                            break;
+                        }
+
+                        float derivativePower = (uFormula == 4) ? max(2.0, uPower) : 2.0;
+                        vec2 derivFactor = derivativePower * cpow(z, derivativePower - 1.0);
+                        dz = cmul(derivFactor, dz) + ((uFormula == 1 || uFormula == 8) ? vec2(0.0) : vec2(1.0, 0.0));
+
+                        vec2 nextZ = formulaStep(z, c, prevZ);
+                        prevZ = z;
+                        z = nextZ;
+
+                        float radius = length(z);
+                        trap = min(trap, min(abs(radius - uOrbit.y), min(abs(z.x), abs(z.y))));
+                        stripe += 0.5 + 0.5 * sin(uOrbit.w * atan(z.y, z.x) + 0.55 * log(max(radius, 1e-6)));
+
+                        if (dot(z, z) > escape2) {
+                            float base = (uFormula == 4) ? max(2.0, uPower) : 2.0;
+                            float logZn = log(max(radius, 1.00001));
+                            float nu = log(logZn / log(base)) / log(base);
+                            smoothIter = float(i) + 1.0 - nu;
+                            escaped = 1.0;
+                            iter = i;
+                            break;
+                        }
+                    }
+
+                    if (escaped < 0.5) {
+                        float interiorEdge = exp(-24.0 * trap);
+                        gl_FragColor = vec4(mix(uInterior, cosineGradient(trap * 2.0 + uTime * 0.02) * 0.34, interiorEdge), 1.0);
+                        return;
+                    }
+
+                    float iterationT = smoothIter / float(max(uIterations, 1));
+                    float dzLen = max(length(dz), 1e-7);
+                    float zLen = max(length(z), 1e-7);
+                    float dist = 0.5 * log(zLen) * zLen / dzLen;
+                    float distanceSignal = exp(-abs(dist) * uDistance.y);
+                    float edge = pow(clamp(distanceSignal, 0.0, 1.0), 0.42);
+                    float contour = 0.5 + 0.5 * cos(TAU * (log(max(abs(dist), 1e-8)) * uContourFrequency));
+                    float orbitSignal = exp(-trap * 18.0);
+                    float stripeSignal = stripe / float(max(iter + 1, 1));
+
+                    float metric = iterationT * uGradient.x + uGradient.y + uTime * 0.015;
+                    metric += distanceSignal * uDistance.x;
+                    metric += contour * uDistance.w;
+                    metric += orbitSignal * uOrbit.x;
+                    metric += stripeSignal * uOrbit.z;
+
+                    vec3 color = cosineGradient(metric);
+                    color = mix(color, color * (0.58 + 1.45 * edge), uDistance.z);
+                    color += contour * uDistance.w * 0.12;
+                    color += orbitSignal * uOrbit.x * vec3(0.22, 0.30, 0.24);
+                    color = mix(uInterior * 0.35, color, smoothstep(0.0, 0.26, iterationT));
+                    color = pow(max(color, 0.0), vec3(max(uGradient.w, 0.25)));
+
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
+        });
+
+        scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
+
+        function applyGradientPreset(name) {
+            Object.assign(params, GRADIENT_PRESETS[name]);
+            syncGui();
+            syncUniforms();
+        }
+
+        function applyFormulaPreset(name, keepScale = true) {
+            const preset = PRESETS[name] || PRESETS.Mandelbrot;
+            params.centerX = preset.cx;
+            params.centerY = preset.cy;
+            params.juliaX = preset.jx;
+            params.juliaY = preset.jy;
+            params.power = preset.power;
+            if (!keepScale) {
+                params.scale = preset.scale;
+            }
+            syncGui();
+            syncUniforms();
+        }
+
+        function syncUniforms() {
+            const interior = parseHexColor(params.interior);
+            uniforms.uCenter.value.set(params.centerX, params.centerY);
+            uniforms.uScale.value = params.scale;
+            uniforms.uFormula.value = FORMULAS[params.formula];
+            uniforms.uIterations.value = params.iterations;
+            uniforms.uEscapeRadius.value = params.escapeRadius;
+            uniforms.uPower.value = params.power;
+            uniforms.uJulia.value.set(params.juliaX, params.juliaY);
+            uniforms.uPhoenix.value = params.phoenix;
+            uniforms.uBias.value.set(params.biasR, params.biasG, params.biasB);
+            uniforms.uAmp.value.set(params.ampR, params.ampG, params.ampB);
+            uniforms.uFreq.value.set(params.freqR, params.freqG, params.freqB);
+            uniforms.uPhase.value.set(params.phaseR, params.phaseG, params.phaseB);
+            uniforms.uGradient.value.set(params.gradientScale, params.gradientShift, params.gradientFract, params.gamma);
+            uniforms.uDistance.value.set(params.distanceWeight, params.distanceScale, params.edgeBoost, params.contourWeight);
+            uniforms.uOrbit.value.set(params.orbitWeight, params.orbitRadius, params.stripeWeight, params.stripeFrequency);
+            uniforms.uContourFrequency.value = params.contourFrequency;
+            uniforms.uInterior.value.set(interior[0], interior[1], interior[2]);
+
+            statFormula.textContent = params.formula;
+            statScale.textContent = params.scale.toExponential(3);
+            statCenter.textContent = `${params.centerX.toFixed(5)}, ${params.centerY.toFixed(5)}`;
+            statColor.textContent = `d ${params.distanceWeight.toFixed(2)} / o ${params.orbitWeight.toFixed(2)}`;
+        }
+
+        function resize() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            renderer.setSize(width, height, false);
+            uniforms.uResolution.value.set(width * renderer.getPixelRatio(), height * renderer.getPixelRatio());
+        }
+
+        function zoomAt(clientX, clientY, factor) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+            const ny = 1 - ((clientY - rect.top) / rect.height) * 2;
+            const aspect = rect.width / rect.height;
+            const before = new THREE.Vector2(params.centerX + nx * aspect * params.scale, params.centerY + ny * params.scale);
+            params.scale *= factor;
+            const after = new THREE.Vector2(params.centerX + nx * aspect * params.scale, params.centerY + ny * params.scale);
+            params.centerX += before.x - after.x;
+            params.centerY += before.y - after.y;
+            syncGui();
+            syncUniforms();
+        }
+
+        let dragging = false;
+        let lastPointer = new THREE.Vector2();
+
+        renderer.domElement.addEventListener('pointerdown', (event) => {
+            dragging = true;
+            lastPointer.set(event.clientX, event.clientY);
+            renderer.domElement.setPointerCapture(event.pointerId);
+        });
+
+        renderer.domElement.addEventListener('pointermove', (event) => {
+            if (!dragging) return;
+            const rect = renderer.domElement.getBoundingClientRect();
+            const dx = event.clientX - lastPointer.x;
+            const dy = event.clientY - lastPointer.y;
+            params.centerX -= (dx / rect.height) * 2.0 * params.scale;
+            params.centerY += (dy / rect.height) * 2.0 * params.scale;
+            lastPointer.set(event.clientX, event.clientY);
+            syncGui();
+            syncUniforms();
+        });
+
+        renderer.domElement.addEventListener('pointerup', (event) => {
+            dragging = false;
+            renderer.domElement.releasePointerCapture(event.pointerId);
+        });
+
+        renderer.domElement.addEventListener('wheel', (event) => {
+            event.preventDefault();
+            const factor = Math.exp(Math.sign(event.deltaY) * 0.18);
+            zoomAt(event.clientX, event.clientY, factor);
+        }, { passive: false });
+
+        document.getElementById('reset').addEventListener('click', () => params.resetView());
+        document.getElementById('capture').addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = `fractal-distance-${params.formula.toLowerCase().replaceAll(' ', '-')}.png`;
+            link.href = renderer.domElement.toDataURL('image/png');
+            link.click();
+        });
+
+        const gui = new GUI({ title: 'Fractal Workbench', width: 340 });
+        const viewFolder = gui.addFolder('View');
+        const formulaFolder = gui.addFolder('Formula');
+        const gradientFolder = gui.addFolder('Gradient Function');
+        const distanceFolder = gui.addFolder('Distance Field');
+        const orbitFolder = gui.addFolder('Orbit Layers');
+
+        viewFolder.add(params, 'animate').name('Animate');
+        viewFolder.add(params, 'drift', -0.3, 0.3, 0.001).name('Color Drift');
+        viewFolder.add(params, 'zoomRate', -0.9, 0.9, 0.001).name('Auto Zoom');
+        viewFolder.add(params, 'scale', 0.0000001, 4.0, 0.0000001).name('Scale').onChange(syncUniforms);
+        viewFolder.add(params, 'centerX', -3, 3, 0.000001).name('Center X').onChange(syncUniforms);
+        viewFolder.add(params, 'centerY', -3, 3, 0.000001).name('Center Y').onChange(syncUniforms);
+        viewFolder.add(params, 'resetView').name('Reset View');
+
+        formulaFolder.add(params, 'formula', Object.keys(FORMULAS)).name('Formula').onChange((name) => applyFormulaPreset(name, false));
+        formulaFolder.add(params, 'iterations', 48, 2200, 1).name('Iterations').onChange(syncUniforms);
+        formulaFolder.add(params, 'escapeRadius', 4, 240, 1).name('Escape').onChange(syncUniforms);
+        formulaFolder.add(params, 'power', 2, 9, 0.01).name('Power').onChange(syncUniforms);
+        formulaFolder.add(params, 'juliaX', -1.6, 1.6, 0.0001).name('Julia X').onChange(syncUniforms);
+        formulaFolder.add(params, 'juliaY', -1.6, 1.6, 0.0001).name('Julia Y').onChange(syncUniforms);
+        formulaFolder.add(params, 'phoenix', -1.2, 1.2, 0.001).name('Phoenix').onChange(syncUniforms);
+
+        gradientFolder.add(params, 'gradientPreset', Object.keys(GRADIENT_PRESETS)).name('Preset').onChange(applyGradientPreset);
+        gradientFolder.add(params, 'gradientScale', 0.2, 14.0, 0.01).name('Scale').onChange(syncUniforms);
+        gradientFolder.add(params, 'gradientShift', -6.0, 6.0, 0.01).name('Shift').onChange(syncUniforms);
+        gradientFolder.add(params, 'gradientFract', 0.0, 1.0, 0.01).name('Fract Mix').onChange(syncUniforms);
+        gradientFolder.add(params, 'gradientSpeed', -1.0, 1.0, 0.001).name('Speed');
+        gradientFolder.add(params, 'gamma', 0.35, 1.8, 0.01).name('Gamma').onChange(syncUniforms);
+        gradientFolder.addColor(params, 'interior').name('Interior').onChange(syncUniforms);
+        gradientFolder.add(params, 'biasR', 0, 1, 0.001).name('Bias R').onChange(syncUniforms);
+        gradientFolder.add(params, 'biasG', 0, 1, 0.001).name('Bias G').onChange(syncUniforms);
+        gradientFolder.add(params, 'biasB', 0, 1, 0.001).name('Bias B').onChange(syncUniforms);
+        gradientFolder.add(params, 'ampR', 0, 1, 0.001).name('Amp R').onChange(syncUniforms);
+        gradientFolder.add(params, 'ampG', 0, 1, 0.001).name('Amp G').onChange(syncUniforms);
+        gradientFolder.add(params, 'ampB', 0, 1, 0.001).name('Amp B').onChange(syncUniforms);
+        gradientFolder.add(params, 'freqR', 0.05, 4, 0.001).name('Freq R').onChange(syncUniforms);
+        gradientFolder.add(params, 'freqG', 0.05, 4, 0.001).name('Freq G').onChange(syncUniforms);
+        gradientFolder.add(params, 'freqB', 0.05, 4, 0.001).name('Freq B').onChange(syncUniforms);
+        gradientFolder.add(params, 'phaseR', 0, 1, 0.001).name('Phase R').onChange(syncUniforms);
+        gradientFolder.add(params, 'phaseG', 0, 1, 0.001).name('Phase G').onChange(syncUniforms);
+        gradientFolder.add(params, 'phaseB', 0, 1, 0.001).name('Phase B').onChange(syncUniforms);
+        gradientFolder.add(params, 'randomizeGradient').name('Random Gradient');
+
+        distanceFolder.add(params, 'distanceWeight', 0, 1.4, 0.001).name('DE Weight').onChange(syncUniforms);
+        distanceFolder.add(params, 'distanceScale', 1, 120, 0.1).name('DE Scale').onChange(syncUniforms);
+        distanceFolder.add(params, 'edgeBoost', 0, 1.4, 0.001).name('Edge Boost').onChange(syncUniforms);
+        distanceFolder.add(params, 'contourWeight', 0, 1.2, 0.001).name('Contour').onChange(syncUniforms);
+        distanceFolder.add(params, 'contourFrequency', 1, 42, 0.1).name('Contour Freq').onChange(syncUniforms);
+
+        orbitFolder.add(params, 'orbitWeight', 0, 1.2, 0.001).name('Trap Weight').onChange(syncUniforms);
+        orbitFolder.add(params, 'orbitRadius', 0.05, 2.0, 0.001).name('Trap Radius').onChange(syncUniforms);
+        orbitFolder.add(params, 'stripeWeight', 0, 1.2, 0.001).name('Stripe Weight').onChange(syncUniforms);
+        orbitFolder.add(params, 'stripeFrequency', 1, 40, 0.1).name('Stripe Freq').onChange(syncUniforms);
+
+        const folders = [viewFolder, formulaFolder, gradientFolder, distanceFolder, orbitFolder];
+        function syncGui() {
+            folders.forEach((folder) => folder.controllers.forEach((controller) => controller.updateDisplay()));
+        }
+
+        viewFolder.open();
+        formulaFolder.open();
+        gradientFolder.open();
+        distanceFolder.open();
+
+        function animate() {
+            const delta = clock.getDelta();
+            if (params.animate) {
+                uniforms.uTime.value += delta;
+                params.gradientShift += params.gradientSpeed * delta;
+                if (params.zoomRate !== 0) {
+                    params.scale *= Math.exp(-params.zoomRate * delta);
+                }
+                params.centerX += Math.sin(uniforms.uTime.value * 0.37) * params.drift * params.scale * delta * 0.015;
+                params.centerY += Math.cos(uniforms.uTime.value * 0.31) * params.drift * params.scale * delta * 0.015;
+                syncUniforms();
+            }
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        syncUniforms();
+        animate();
+    </script>
+</body>
+</html>

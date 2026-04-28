@@ -18,6 +18,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/fractal_distance_workbench/",
+    "title": "Fractal Distance Workbench",
+    "description": "Three.js WebGL fractal distance workbench with Mandelbrot, Julia, Burning Ship, Tricorn, Multibrot, Celtic, Buffalo, Phoenix, and procedural gradient controls.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/iphone_stylus/",
     "title": "iPhone 3D Stylus Bridge",
     "description": "Use an iPhone as a 3D stylus controller for a desktop Three.js scene via Cloudflare Worker WebSocket relay.",
