@@ -126,8 +126,8 @@
     <div id="app"></div>
     <aside class="hud" id="hud">
         <h1>Mandelbrot Zoomer Lab</h1>
-        <p>Scroll to zoom manually, drag to pan center, or let autoplay drive a continuous dive. Color is a pale-to-black gradient that palette-cycles as zoom deepens.</p>
-        <small>Render window capped at 1280x1024. Shift + drag pans faster.</small>
+        <p>Continuous deep zoom with high-precision recalc on every frame. Click to redirect center, then let autoplay keep diving while palette bands cycle.</p>
+        <small>Render window capped at 1280x1024. Pan is disabled by design for stable deep zoom.</small>
     </aside>
     <button class="toggle" id="toggle-hud" type="button">Hide HUD</button>
 
@@ -159,23 +159,40 @@
         const scene = new THREE.Scene();
         const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
+        function splitDouble(value) {
+            const hi = Math.fround(value);
+            return [hi, value - hi];
+        }
+
         const params = {
             autoplay: true,
-            zoomSpeed: 0.35,
+            zoomSpeed: 0.38,
             centerX: -0.743643887037151,
             centerY: 0.13182590420533,
-            scale: 2.9,
-            maxIterations: 420,
-            escapeRadius: 64.0,
+            log2Scale: Math.log2(2.9),
+            displayScale: '2.9e+0',
+            zoomDepth: '0.00x',
+            maxIterations: 540,
+            escapeRadius: 96.0,
             palette: 'Aurora',
             paletteDensity: 3.2,
             paletteCycle: 0.5,
             exposure: 1.05,
+            redirectCenter() {
+                params.centerX = params.pendingCenterX;
+                params.centerY = params.pendingCenterY;
+                syncUniforms();
+                syncDisplay();
+            },
+            pendingCenterX: -0.743643887037151,
+            pendingCenterY: 0.13182590420533,
             resetView() {
                 params.centerX = -0.743643887037151;
                 params.centerY = 0.13182590420533;
-                params.scale = 2.9;
-                params.zoomSpeed = 0.35;
+                params.pendingCenterX = params.centerX;
+                params.pendingCenterY = params.centerY;
+                params.log2Scale = Math.log2(2.9);
+                params.zoomSpeed = 0.38;
                 syncUniforms();
                 syncDisplay();
             }
@@ -191,8 +208,10 @@
 
         const uniforms = {
             uResolution: { value: new THREE.Vector2(1, 1) },
-            uCenter: { value: new THREE.Vector2(params.centerX, params.centerY) },
-            uScale: { value: params.scale },
+            uCenterX: { value: new THREE.Vector2(0, 0) },
+            uCenterY: { value: new THREE.Vector2(0, 0) },
+            uScaleDS: { value: new THREE.Vector2(0, 0) },
+            uLog2Scale: { value: params.log2Scale },
             uMaxIterations: { value: params.maxIterations },
             uEscapeRadius: { value: params.escapeRadius },
             uPaletteId: { value: paletteIds[params.palette] },
@@ -214,17 +233,69 @@
             fragmentShader: `
                 precision highp float;
 
-                varying vec2 vUv;
-
                 uniform vec2 uResolution;
-                uniform vec2 uCenter;
-                uniform float uScale;
+                uniform vec2 uCenterX;
+                uniform vec2 uCenterY;
+                uniform vec2 uScaleDS;
+                uniform float uLog2Scale;
                 uniform int uMaxIterations;
                 uniform float uEscapeRadius;
                 uniform int uPaletteId;
                 uniform float uPaletteDensity;
                 uniform float uPaletteShift;
                 uniform float uExposure;
+
+                vec2 quickTwoSum(float a, float b) {
+                    float s = a + b;
+                    return vec2(s, b - (s - a));
+                }
+
+                vec2 twoSum(float a, float b) {
+                    float s = a + b;
+                    float bb = s - a;
+                    float err = (a - (s - bb)) + (b - bb);
+                    return vec2(s, err);
+                }
+
+                vec2 split(float a) {
+                    const float c = 4097.0;
+                    float t = c * a;
+                    float hi = t - (t - a);
+                    float lo = a - hi;
+                    return vec2(hi, lo);
+                }
+
+                vec2 twoProd(float a, float b) {
+                    float p = a * b;
+                    vec2 sa = split(a);
+                    vec2 sb = split(b);
+                    float err = ((sa.x * sb.x - p) + sa.x * sb.y + sa.y * sb.x) + sa.y * sb.y;
+                    return vec2(p, err);
+                }
+
+                vec2 dsAdd(vec2 a, vec2 b) {
+                    vec2 s = twoSum(a.x, b.x);
+                    return quickTwoSum(s.x, s.y + a.y + b.y);
+                }
+
+                vec2 dsSub(vec2 a, vec2 b) {
+                    vec2 s = twoSum(a.x, -b.x);
+                    return quickTwoSum(s.x, s.y + a.y - b.y);
+                }
+
+                vec2 dsMul(vec2 a, vec2 b) {
+                    vec2 p = twoProd(a.x, b.x);
+                    return quickTwoSum(p.x, p.y + a.x * b.y + a.y * b.x);
+                }
+
+                vec2 dsMulFloat(vec2 a, float b) {
+                    vec2 p = twoProd(a.x, b);
+                    return quickTwoSum(p.x, p.y + a.y * b);
+                }
+
+                float dsToFloat(vec2 a) {
+                    return a.x + a.y;
+                }
 
                 vec3 paletteColor(float t, int paletteId) {
                     float a = fract(t);
@@ -274,23 +345,30 @@
                 void main() {
                     vec2 uv = (gl_FragCoord.xy / uResolution.xy) * 2.0 - 1.0;
                     uv.x *= uResolution.x / uResolution.y;
-                    vec2 c = uCenter + uv * uScale;
 
-                    vec2 z = vec2(0.0);
+                    vec2 cx = dsAdd(uCenterX, dsMulFloat(uScaleDS, uv.x));
+                    vec2 cy = dsAdd(uCenterY, dsMulFloat(uScaleDS, uv.y));
+
+                    vec2 zx = vec2(0.0, 0.0);
+                    vec2 zy = vec2(0.0, 0.0);
                     float esc2 = uEscapeRadius * uEscapeRadius;
                     float smoothIter = 0.0;
                     int i;
 
-                    for (i = 0; i < 2000; i++) {
+                    for (i = 0; i < 3000; i++) {
                         if (i >= uMaxIterations) {
                             break;
                         }
 
-                        float x = z.x * z.x - z.y * z.y + c.x;
-                        float y = 2.0 * z.x * z.y + c.y;
-                        z = vec2(x, y);
+                        vec2 zx2 = dsMul(zx, zx);
+                        vec2 zy2 = dsMul(zy, zy);
+                        vec2 newX = dsAdd(dsSub(zx2, zy2), cx);
+                        vec2 newY = dsAdd(dsMulFloat(dsMul(zx, zy), 2.0), cy);
 
-                        float m2 = dot(z, z);
+                        zx = newX;
+                        zy = newY;
+
+                        float m2 = dsToFloat(dsAdd(dsMul(zx, zx), dsMul(zy, zy)));
                         if (m2 > esc2) {
                             float m = sqrt(m2);
                             float logZn = log(m);
@@ -306,7 +384,7 @@
                     }
 
                     float t = smoothIter / float(uMaxIterations);
-                    float cycle = (uPaletteShift + log(max(1e-12, 1.0 / uScale)) * 0.15915494);
+                    float cycle = uPaletteShift + (-uLog2Scale) * 0.15915494;
                     float paletteT = t * uPaletteDensity + cycle;
                     vec3 pale = paletteColor(paletteT, uPaletteId);
 
@@ -324,9 +402,6 @@
 
         let renderWidth = 1;
         let renderHeight = 1;
-        let dragging = false;
-        const dragStart = new THREE.Vector2();
-        const centerStart = new THREE.Vector2();
         const clock = new THREE.Clock();
 
         function updateRenderSize() {
@@ -343,114 +418,100 @@
             uniforms.uResolution.value.set(renderWidth, renderHeight);
         }
 
+        function getScaleFromLog2() {
+            return Math.pow(2, params.log2Scale);
+        }
+
         function syncUniforms() {
-            uniforms.uCenter.value.set(params.centerX, params.centerY);
-            uniforms.uScale.value = params.scale;
+            const [cxHi, cxLo] = splitDouble(params.centerX);
+            const [cyHi, cyLo] = splitDouble(params.centerY);
+            const scale = getScaleFromLog2();
+            const [sHi, sLo] = splitDouble(scale);
+
+            uniforms.uCenterX.value.set(cxHi, cxLo);
+            uniforms.uCenterY.value.set(cyHi, cyLo);
+            uniforms.uScaleDS.value.set(sHi, sLo);
+            uniforms.uLog2Scale.value = params.log2Scale;
             uniforms.uMaxIterations.value = params.maxIterations;
             uniforms.uEscapeRadius.value = params.escapeRadius;
             uniforms.uPaletteId.value = paletteIds[params.palette];
             uniforms.uPaletteDensity.value = params.paletteDensity;
             uniforms.uExposure.value = params.exposure;
+
+            params.displayScale = scale.toExponential(3);
+            params.zoomDepth = `${Math.max(0, -params.log2Scale / Math.log2(10)).toFixed(2)}x`;
         }
 
         function syncDisplay() {
             centerFolder.controllers.forEach((controller) => controller.updateDisplay());
             viewFolder.controllers.forEach((controller) => controller.updateDisplay());
             colorFolder.controllers.forEach((controller) => controller.updateDisplay());
+            infoFolder.controllers.forEach((controller) => controller.updateDisplay());
         }
 
-        function zoomAtPoint(clientX, clientY, zoomFactor) {
+        function redirectToPixel(clientX, clientY) {
             const rect = renderer.domElement.getBoundingClientRect();
             const nx = (clientX - rect.left) / rect.width;
             const ny = (clientY - rect.top) / rect.height;
+            const scale = getScaleFromLog2();
             const aspect = renderWidth / renderHeight;
+            const ox = (nx * 2.0 - 1.0) * scale * aspect;
+            const oy = (1.0 - ny * 2.0) * scale;
 
-            const beforeX = params.centerX + (nx * 2.0 - 1.0) * params.scale * aspect;
-            const beforeY = params.centerY + (1.0 - ny * 2.0) * params.scale;
-
-            params.scale *= zoomFactor;
-            params.scale = THREE.MathUtils.clamp(params.scale, 1e-16, 4.0);
-
-            const afterX = params.centerX + (nx * 2.0 - 1.0) * params.scale * aspect;
-            const afterY = params.centerY + (1.0 - ny * 2.0) * params.scale;
-
-            params.centerX += beforeX - afterX;
-            params.centerY += beforeY - afterY;
-
+            params.centerX += ox;
+            params.centerY += oy;
+            params.pendingCenterX = params.centerX;
+            params.pendingCenterY = params.centerY;
             syncUniforms();
             syncDisplay();
         }
+
+        renderer.domElement.addEventListener('click', (event) => {
+            redirectToPixel(event.clientX, event.clientY);
+        });
 
         renderer.domElement.addEventListener('wheel', (event) => {
             event.preventDefault();
             const wheel = Math.sign(event.deltaY);
-            const zoomFactor = wheel > 0 ? 1.06 : 0.94;
-            zoomAtPoint(event.clientX, event.clientY, zoomFactor);
-        }, { passive: false });
-
-        renderer.domElement.addEventListener('pointerdown', (event) => {
-            dragging = true;
-            dragStart.set(event.clientX, event.clientY);
-            centerStart.set(params.centerX, params.centerY);
-            renderer.domElement.setPointerCapture(event.pointerId);
-        });
-
-        renderer.domElement.addEventListener('pointermove', (event) => {
-            if (!dragging) {
-                return;
-            }
-
-            const rect = renderer.domElement.getBoundingClientRect();
-            const aspect = renderWidth / renderHeight;
-            const speed = event.shiftKey ? 1.8 : 1.0;
-            const dx = (event.clientX - dragStart.x) / rect.width;
-            const dy = (event.clientY - dragStart.y) / rect.height;
-
-            params.centerX = centerStart.x - dx * 2.0 * params.scale * aspect * speed;
-            params.centerY = centerStart.y + dy * 2.0 * params.scale * speed;
-
+            params.log2Scale += wheel > 0 ? 0.25 : -0.25;
             syncUniforms();
             syncDisplay();
-        });
+        }, { passive: false });
 
-        renderer.domElement.addEventListener('pointerup', () => {
-            dragging = false;
-        });
-
-        renderer.domElement.addEventListener('pointercancel', () => {
-            dragging = false;
-        });
-
-        const gui = new GUI({ title: 'Mandelbrot Controls', width: 330 });
+        const gui = new GUI({ title: 'Mandelbrot Controls', width: 340 });
         const viewFolder = gui.addFolder('Zoom');
-        const centerFolder = gui.addFolder('Center');
+        const centerFolder = gui.addFolder('Center Redirect');
         const colorFolder = gui.addFolder('Color');
+        const infoFolder = gui.addFolder('Status');
 
         viewFolder.add(params, 'autoplay').name('Autoplay Zoom');
-        viewFolder.add(params, 'zoomSpeed', 0.0, 3.0, 0.01).name('Zoom Speed');
-        viewFolder.add(params, 'scale', 1e-16, 4.0, 0.0).name('Scale').onChange(syncUniforms);
-        viewFolder.add(params, 'maxIterations', 32, 1400, 1).name('Iterations').onChange(syncUniforms);
-        viewFolder.add(params, 'escapeRadius', 4.0, 256.0, 1.0).name('Escape Radius').onChange(syncUniforms);
+        viewFolder.add(params, 'zoomSpeed', 0.0, 2.0, 0.01).name('Zoom Speed');
+        viewFolder.add(params, 'log2Scale', -260.0, 3.0, 0.01).name('Log2 Scale').onChange(syncUniforms);
+        viewFolder.add(params, 'maxIterations', 64, 2200, 1).name('Iterations').onChange(syncUniforms);
+        viewFolder.add(params, 'escapeRadius', 8.0, 256.0, 1.0).name('Escape Radius').onChange(syncUniforms);
         viewFolder.add(params, 'resetView').name('Reset View');
 
-        centerFolder.add(params, 'centerX', -2.5, 1.5, 0.0000000001).name('Center X').onChange(syncUniforms);
-        centerFolder.add(params, 'centerY', -1.5, 1.5, 0.0000000001).name('Center Y').onChange(syncUniforms);
+        centerFolder.add(params, 'pendingCenterX', -2.5, 1.5, 0.000000000001).name('Target X');
+        centerFolder.add(params, 'pendingCenterY', -1.5, 1.5, 0.000000000001).name('Target Y');
+        centerFolder.add(params, 'redirectCenter').name('Redirect');
 
         colorFolder.add(params, 'palette', Object.keys(paletteIds)).name('Palette').onChange(syncUniforms);
-        colorFolder.add(params, 'paletteDensity', 0.2, 9.0, 0.01).name('Palette Density').onChange(syncUniforms);
+        colorFolder.add(params, 'paletteDensity', 0.2, 12.0, 0.01).name('Palette Density').onChange(syncUniforms);
         colorFolder.add(params, 'paletteCycle', -4.0, 4.0, 0.01).name('Cycle Speed');
         colorFolder.add(params, 'exposure', 0.3, 2.3, 0.01).name('Exposure').onChange(syncUniforms);
 
+        infoFolder.add(params, 'displayScale').name('Scale').listen();
+        infoFolder.add(params, 'zoomDepth').name('Depth').listen();
+
         viewFolder.open();
         centerFolder.open();
+        infoFolder.open();
 
         function animate() {
             const delta = clock.getDelta();
 
             if (params.autoplay && params.zoomSpeed > 0) {
-                const zoomPerSecond = Math.exp(params.zoomSpeed * 0.65);
-                params.scale /= Math.pow(zoomPerSecond, delta);
-                params.scale = Math.max(params.scale, 1e-16);
+                params.log2Scale -= params.zoomSpeed * delta * 1.4;
             }
 
             uniforms.uPaletteShift.value += delta * params.paletteCycle;
