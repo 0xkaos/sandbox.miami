@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="High-quality Mandelbrot zoomer with smooth coloring, palette cycling, and live controls for center and zoom speed.">
-    <title>Mandelbrot Zoomer Lab</title>
+    <meta name="description" content="High-quality fractal explorer with deep zoom, Julia and Mandelbrot variants, smooth coloring, and live controls.">
+    <title>Fractal Explorer Lab</title>
     <style>
         :root {
             color-scheme: dark;
@@ -125,8 +125,8 @@
 <body>
     <div id="app"></div>
     <aside class="hud" id="hud">
-        <h1>Mandelbrot Zoomer Lab</h1>
-        <p>Continuous deep zoom with high-precision recalc on every frame. Click to redirect center, then let autoplay keep diving while palette bands cycle.</p>
+        <h1>Fractal Explorer Lab</h1>
+        <p>Continuous deep zoom with high-precision recalc, multiple fractal formulas, and live controls. Click to redirect center while autoplay keeps diving.</p>
         <small>Render window capped at 1280x1024. Pan is disabled by design for stable deep zoom.</small>
     </aside>
     <button class="toggle" id="toggle-hud" type="button">Hide HUD</button>
@@ -146,6 +146,7 @@
 
         const MAX_RENDER_W = 1280;
         const MAX_RENDER_H = 1024;
+        const LOG2_10 = Math.log2(10);
 
         const app = document.getElementById('app');
         const hud = document.getElementById('hud');
@@ -164,34 +165,61 @@
             return [hi, value - hi];
         }
 
+        function parseHexColor(hex) {
+            const normalized = hex.startsWith('#') ? hex.slice(1) : hex;
+            const value = parseInt(normalized, 16);
+            return [
+                ((value >> 16) & 255) / 255,
+                ((value >> 8) & 255) / 255,
+                (value & 255) / 255
+            ];
+        }
+
+        const fractalIds = {
+            Mandelbrot: 0,
+            Julia: 1,
+            'Burning Ship': 2,
+            Tricorn: 3,
+            Multibrot: 4
+        };
+
+        const presets = {
+            Mandelbrot: { centerX: -0.743643887037151, centerY: 0.13182590420533, log2Scale: Math.log2(2.9), juliaCx: -0.8, juliaCy: 0.156 },
+            Julia: { centerX: 0.0, centerY: 0.0, log2Scale: Math.log2(1.9), juliaCx: -0.8, juliaCy: 0.156 },
+            'Burning Ship': { centerX: -1.76005, centerY: -0.025, log2Scale: Math.log2(0.95), juliaCx: -0.8, juliaCy: 0.156 },
+            Tricorn: { centerX: -0.1, centerY: 0.0, log2Scale: Math.log2(2.2), juliaCx: -0.8, juliaCy: 0.156 },
+            Multibrot: { centerX: 0.0, centerY: 0.0, log2Scale: Math.log2(2.2), juliaCx: -0.8, juliaCy: 0.156 }
+        };
+
         const params = {
+            fractal: 'Mandelbrot',
             autoplay: true,
             zoomSpeed: 0.38,
-            centerX: -0.743643887037151,
-            centerY: 0.13182590420533,
-            log2Scale: Math.log2(2.9),
+            centerX: presets.Mandelbrot.centerX,
+            centerY: presets.Mandelbrot.centerY,
+            log2Scale: presets.Mandelbrot.log2Scale,
             displayScale: '2.9e+0',
             zoomDepth: '0.00x',
-            maxIterations: 540,
+            maxIterations: 700,
             escapeRadius: 96.0,
+            power: 2.0,
+            juliaCx: presets.Mandelbrot.juliaCx,
+            juliaCy: presets.Mandelbrot.juliaCy,
             palette: 'Aurora',
             paletteDensity: 3.2,
             paletteCycle: 0.5,
             exposure: 1.05,
+            interiorColor: '#07090f',
             redirectCenter() {
                 params.centerX = params.pendingCenterX;
                 params.centerY = params.pendingCenterY;
                 syncUniforms();
                 syncDisplay();
             },
-            pendingCenterX: -0.743643887037151,
-            pendingCenterY: 0.13182590420533,
+            pendingCenterX: presets.Mandelbrot.centerX,
+            pendingCenterY: presets.Mandelbrot.centerY,
             resetView() {
-                params.centerX = -0.743643887037151;
-                params.centerY = 0.13182590420533;
-                params.pendingCenterX = params.centerX;
-                params.pendingCenterY = params.centerY;
-                params.log2Scale = Math.log2(2.9);
+                applyPreset(params.fractal, true);
                 params.zoomSpeed = 0.38;
                 syncUniforms();
                 syncDisplay();
@@ -214,6 +242,10 @@
             uLog2Scale: { value: params.log2Scale },
             uMaxIterations: { value: params.maxIterations },
             uEscapeRadius: { value: params.escapeRadius },
+            uFractalType: { value: fractalIds[params.fractal] },
+            uPower: { value: params.power },
+            uJuliaC: { value: new THREE.Vector2(params.juliaCx, params.juliaCy) },
+            uInteriorColor: { value: new THREE.Vector3(...parseHexColor(params.interiorColor)) },
             uPaletteId: { value: paletteIds[params.palette] },
             uPaletteDensity: { value: params.paletteDensity },
             uPaletteShift: { value: 0.0 },
@@ -240,6 +272,10 @@
                 uniform float uLog2Scale;
                 uniform int uMaxIterations;
                 uniform float uEscapeRadius;
+                uniform int uFractalType;
+                uniform float uPower;
+                uniform vec2 uJuliaC;
+                uniform vec3 uInteriorColor;
                 uniform int uPaletteId;
                 uniform float uPaletteDensity;
                 uniform float uPaletteShift;
@@ -337,6 +373,21 @@
                     return mix(c2, c3, x - 2.0);
                 }
 
+                vec2 cmul(vec2 a, vec2 b) {
+                    return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+                }
+
+                vec2 cpow(vec2 z, float p) {
+                    float r = length(z);
+                    if (r < 1e-20) {
+                        return vec2(0.0);
+                    }
+                    float theta = atan(z.y, z.x);
+                    float rp = pow(r, p);
+                    float t = theta * p;
+                    return vec2(rp * cos(t), rp * sin(t));
+                }
+
                 vec3 toneMap(vec3 c, float exposure) {
                     c = vec3(1.0) - exp(-c * exposure);
                     return pow(c, vec3(0.95));
@@ -348,38 +399,69 @@
 
                     vec2 cx = dsAdd(uCenterX, dsMulFloat(uScaleDS, uv.x));
                     vec2 cy = dsAdd(uCenterY, dsMulFloat(uScaleDS, uv.y));
+                    vec2 c = vec2(dsToFloat(cx), dsToFloat(cy));
 
-                    vec2 zx = vec2(0.0, 0.0);
-                    vec2 zy = vec2(0.0, 0.0);
+                    vec2 zx = vec2(0.0);
+                    vec2 zy = vec2(0.0);
+                    if (uFractalType == 1) {
+                        zx = cx;
+                        zy = cy;
+                        c = uJuliaC;
+                    }
+
                     float esc2 = uEscapeRadius * uEscapeRadius;
                     float smoothIter = 0.0;
                     int i;
 
-                    for (i = 0; i < 3000; i++) {
+                    for (i = 0; i < 3600; i++) {
                         if (i >= uMaxIterations) {
                             break;
                         }
 
-                        vec2 zx2 = dsMul(zx, zx);
-                        vec2 zy2 = dsMul(zy, zy);
-                        vec2 newX = dsAdd(dsSub(zx2, zy2), cx);
-                        vec2 newY = dsAdd(dsMulFloat(dsMul(zx, zy), 2.0), cy);
+                        if (uFractalType == 0 || uFractalType == 1) {
+                            vec2 zx2 = dsMul(zx, zx);
+                            vec2 zy2 = dsMul(zy, zy);
+                            vec2 newX = dsAdd(dsSub(zx2, zy2), vec2(c.x, 0.0));
+                            vec2 newY = dsAdd(dsMulFloat(dsMul(zx, zy), 2.0), vec2(c.y, 0.0));
+                            zx = newX;
+                            zy = newY;
+                        } else if (uFractalType == 2) {
+                            vec2 azx = vec2(abs(dsToFloat(zx)), 0.0);
+                            vec2 azy = vec2(abs(dsToFloat(zy)), 0.0);
+                            vec2 zx2 = dsMul(azx, azx);
+                            vec2 zy2 = dsMul(azy, azy);
+                            vec2 newX = dsAdd(dsSub(zx2, zy2), vec2(c.x, 0.0));
+                            vec2 newY = dsAdd(dsMulFloat(dsMul(azx, azy), 2.0), vec2(c.y, 0.0));
+                            zx = newX;
+                            zy = newY;
+                        } else {
+                            vec2 zf = vec2(dsToFloat(zx), dsToFloat(zy));
+                            vec2 nz;
+                            if (uFractalType == 3) {
+                                vec2 conjZ = vec2(zf.x, -zf.y);
+                                nz = cmul(conjZ, conjZ) + c;
+                            } else {
+                                nz = cpow(zf, max(uPower, 2.0)) + c;
+                            }
+                            zx = vec2(nz.x, 0.0);
+                            zy = vec2(nz.y, 0.0);
+                        }
 
-                        zx = newX;
-                        zy = newY;
-
-                        float m2 = dsToFloat(dsAdd(dsMul(zx, zx), dsMul(zy, zy)));
+                        float zxf = dsToFloat(zx);
+                        float zyf = dsToFloat(zy);
+                        float m2 = zxf * zxf + zyf * zyf;
                         if (m2 > esc2) {
                             float m = sqrt(m2);
+                            float smoothBase = (uFractalType == 4) ? max(uPower, 2.0) : 2.0;
                             float logZn = log(m);
-                            float nu = log(logZn / log(2.0)) / log(2.0);
+                            float nu = log(logZn / log(smoothBase)) / log(smoothBase);
                             smoothIter = float(i) + 1.0 - nu;
                             break;
                         }
                     }
 
                     if (i >= uMaxIterations) {
-                        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                        gl_FragColor = vec4(uInteriorColor, 1.0);
                         return;
                     }
 
@@ -389,7 +471,7 @@
                     vec3 pale = paletteColor(paletteT, uPaletteId);
 
                     float shade = pow(clamp(t, 0.0, 1.0), 1.1);
-                    vec3 color = mix(vec3(0.0), pale, shade);
+                    vec3 color = mix(uInteriorColor * 0.55, pale, shade);
                     color *= 0.78 + 0.22 * sin(6.28318 * (paletteT + 0.17));
 
                     gl_FragColor = vec4(toneMap(max(color, 0.0), uExposure), 1.0);
@@ -422,11 +504,25 @@
             return Math.pow(2, params.log2Scale);
         }
 
+        function applyPreset(fractalName, preserveZoom = false) {
+            const preset = presets[fractalName] || presets.Mandelbrot;
+            params.centerX = preset.centerX;
+            params.centerY = preset.centerY;
+            params.pendingCenterX = preset.centerX;
+            params.pendingCenterY = preset.centerY;
+            params.juliaCx = preset.juliaCx;
+            params.juliaCy = preset.juliaCy;
+            if (!preserveZoom) {
+                params.log2Scale = preset.log2Scale;
+            }
+        }
+
         function syncUniforms() {
             const [cxHi, cxLo] = splitDouble(params.centerX);
             const [cyHi, cyLo] = splitDouble(params.centerY);
             const scale = getScaleFromLog2();
             const [sHi, sLo] = splitDouble(scale);
+            const interiorColor = parseHexColor(params.interiorColor);
 
             uniforms.uCenterX.value.set(cxHi, cxLo);
             uniforms.uCenterY.value.set(cyHi, cyLo);
@@ -434,15 +530,20 @@
             uniforms.uLog2Scale.value = params.log2Scale;
             uniforms.uMaxIterations.value = params.maxIterations;
             uniforms.uEscapeRadius.value = params.escapeRadius;
+            uniforms.uFractalType.value = fractalIds[params.fractal];
+            uniforms.uPower.value = params.power;
+            uniforms.uJuliaC.value.set(params.juliaCx, params.juliaCy);
+            uniforms.uInteriorColor.value.set(interiorColor[0], interiorColor[1], interiorColor[2]);
             uniforms.uPaletteId.value = paletteIds[params.palette];
             uniforms.uPaletteDensity.value = params.paletteDensity;
             uniforms.uExposure.value = params.exposure;
 
             params.displayScale = scale.toExponential(3);
-            params.zoomDepth = `${Math.max(0, -params.log2Scale / Math.log2(10)).toFixed(2)}x`;
+            params.zoomDepth = `${Math.max(0, -params.log2Scale / LOG2_10).toFixed(2)}x`;
         }
 
         function syncDisplay() {
+            fractalFolder.controllers.forEach((controller) => controller.updateDisplay());
             centerFolder.controllers.forEach((controller) => controller.updateDisplay());
             viewFolder.controllers.forEach((controller) => controller.updateDisplay());
             colorFolder.controllers.forEach((controller) => controller.updateDisplay());
@@ -478,17 +579,27 @@
             syncDisplay();
         }, { passive: false });
 
-        const gui = new GUI({ title: 'Mandelbrot Controls', width: 340 });
+        const gui = new GUI({ title: 'Fractal Controls', width: 350 });
+        const fractalFolder = gui.addFolder('Fractal');
         const viewFolder = gui.addFolder('Zoom');
         const centerFolder = gui.addFolder('Center Redirect');
         const colorFolder = gui.addFolder('Color');
         const infoFolder = gui.addFolder('Status');
 
+        fractalFolder.add(params, 'fractal', Object.keys(fractalIds)).name('Type').onChange((value) => {
+            applyPreset(value);
+            syncUniforms();
+            syncDisplay();
+        });
+        fractalFolder.add(params, 'power', 2.0, 8.0, 0.05).name('Power').onChange(syncUniforms);
+        fractalFolder.add(params, 'juliaCx', -1.5, 1.5, 0.0001).name('Julia Cx').onChange(syncUniforms);
+        fractalFolder.add(params, 'juliaCy', -1.5, 1.5, 0.0001).name('Julia Cy').onChange(syncUniforms);
+
         viewFolder.add(params, 'autoplay').name('Autoplay Zoom');
         viewFolder.add(params, 'zoomSpeed', 0.0, 2.0, 0.01).name('Zoom Speed');
         viewFolder.add(params, 'log2Scale', -260.0, 3.0, 0.01).name('Log2 Scale').onChange(syncUniforms);
-        viewFolder.add(params, 'maxIterations', 64, 2200, 1).name('Iterations').onChange(syncUniforms);
-        viewFolder.add(params, 'escapeRadius', 8.0, 256.0, 1.0).name('Escape Radius').onChange(syncUniforms);
+        viewFolder.add(params, 'maxIterations', 64, 3000, 1).name('Iterations').onChange(syncUniforms);
+        viewFolder.add(params, 'escapeRadius', 8.0, 512.0, 1.0).name('Escape Radius').onChange(syncUniforms);
         viewFolder.add(params, 'resetView').name('Reset View');
 
         centerFolder.add(params, 'pendingCenterX', -2.5, 1.5, 0.000000000001).name('Target X');
@@ -499,10 +610,12 @@
         colorFolder.add(params, 'paletteDensity', 0.2, 12.0, 0.01).name('Palette Density').onChange(syncUniforms);
         colorFolder.add(params, 'paletteCycle', -4.0, 4.0, 0.01).name('Cycle Speed');
         colorFolder.add(params, 'exposure', 0.3, 2.3, 0.01).name('Exposure').onChange(syncUniforms);
+        colorFolder.addColor(params, 'interiorColor').name('Interior Color').onChange(syncUniforms);
 
         infoFolder.add(params, 'displayScale').name('Scale').listen();
         infoFolder.add(params, 'zoomDepth').name('Depth').listen();
 
+        fractalFolder.open();
         viewFolder.open();
         centerFolder.open();
         infoFolder.open();

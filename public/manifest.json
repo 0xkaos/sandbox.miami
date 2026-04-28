@@ -31,8 +31,8 @@
   },
   {
     "path": "/threejs/mandelbrot_zoomer/",
-    "title": "Mandelbrot Zoomer Lab",
-    "description": "High-quality Mandelbrot zoomer with smooth coloring, palette cycling, and live controls for center and zoom speed.",
+    "title": "Fractal Explorer Lab",
+    "description": "High-quality fractal explorer with deep zoom, Julia and Mandelbrot variants, smooth coloring, and live controls.",
     "category": "threejs"
   },
   {
