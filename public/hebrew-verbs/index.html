@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Searchable Hebrew verb conjugation tables with bilingual lookup, roots, binyan metadata, and clickable pronunciation audio.">
+    <title>Hebrew Verb Tables</title>
+    <style>
+        @font-face {
+            font-family: "HeeboLocal";
+            src: url("/fonts/Heebo-VariableFont_wght.ttf") format("truetype");
+            font-weight: 100 900;
+        }
+
+        @font-face {
+            font-family: "NotoHebrew";
+            src: url("/fonts/NotoSerifHebrew-VariableFont_wdth,wght.ttf") format("truetype");
+            font-weight: 100 900;
+        }
+
+        :root {
+            --bg: #f5f1e8;
+            --surface: #fffdf8;
+            --surface-2: #ebe5d8;
+            --ink: #1c2430;
+            --muted: #66727f;
+            --line: #d7d0c3;
+            --line-strong: #aeb8b1;
+            --teal: #006d77;
+            --teal-strong: #004f57;
+            --rose: #9d2945;
+            --amber: #b66d12;
+            --focus: #0c7d84;
+            --shadow: 0 18px 50px rgba(50, 45, 37, 0.12);
+            --radius: 8px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            color-scheme: light;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                linear-gradient(90deg, rgba(0, 109, 119, 0.06) 1px, transparent 1px),
+                linear-gradient(rgba(157, 41, 69, 0.045) 1px, transparent 1px),
+                var(--bg);
+            background-size: 36px 36px;
+            color: var(--ink);
+            font-family: HeeboLocal, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            letter-spacing: 0;
+        }
+
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+        }
+
+        .app {
+            width: min(1500px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 24px 0 40px;
+        }
+
+        .masthead {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 24px;
+            align-items: end;
+            padding: 20px 0 18px;
+            border-bottom: 2px solid var(--ink);
+        }
+
+        .eyebrow {
+            margin: 0 0 8px;
+            color: var(--teal);
+            font-size: 0.82rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            margin: 0;
+            max-width: 12ch;
+            font-size: clamp(2.25rem, 7vw, 5.8rem);
+            line-height: 0.92;
+            font-weight: 900;
+        }
+
+        .masthead-copy {
+            margin: 0;
+            max-width: 43rem;
+            color: var(--muted);
+            font-size: 1rem;
+            line-height: 1.55;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(96px, 1fr));
+            gap: 8px;
+            min-width: min(100%, 360px);
+        }
+
+        .stat {
+            min-height: 82px;
+            padding: 12px;
+            border: 1px solid var(--line-strong);
+            border-radius: var(--radius);
+            background: rgba(255, 253, 248, 0.78);
+        }
+
+        .stat-value {
+            display: block;
+            font-size: 1.65rem;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .stat-label {
+            display: block;
+            margin-top: 7px;
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .controls {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            margin: 18px 0;
+            padding: 12px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: rgba(255, 253, 248, 0.94);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(12px);
+        }
+
+        .control-grid {
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) repeat(4, minmax(130px, 0.32fr));
+            gap: 10px;
+            align-items: end;
+        }
+
+        .field {
+            display: grid;
+            gap: 6px;
+        }
+
+        label {
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        input,
+        select {
+            width: 100%;
+            height: 44px;
+            border: 1px solid var(--line-strong);
+            border-radius: var(--radius);
+            background: var(--surface);
+            color: var(--ink);
+            padding: 0 12px;
+            outline: none;
+        }
+
+        input:focus,
+        select:focus,
+        button:focus-visible {
+            border-color: var(--focus);
+            box-shadow: 0 0 0 3px rgba(12, 125, 132, 0.18);
+            outline: none;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(280px, 0.35fr) minmax(0, 1fr);
+            gap: 18px;
+            align-items: start;
+        }
+
+        .verb-list {
+            position: sticky;
+            top: 92px;
+            max-height: calc(100vh - 116px);
+            overflow: auto;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: rgba(255, 253, 248, 0.72);
+        }
+
+        .list-header {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px;
+            border-bottom: 1px solid var(--line);
+            background: var(--surface);
+        }
+
+        .list-header strong {
+            font-size: 0.9rem;
+        }
+
+        .list-header span {
+            color: var(--muted);
+            font-size: 0.82rem;
+        }
+
+        .verb-items {
+            display: grid;
+            gap: 8px;
+            padding: 8px;
+        }
+
+        .verb-card {
+            display: grid;
+            gap: 9px;
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: var(--surface);
+            color: inherit;
+            text-align: left;
+        }
+
+        .verb-card:hover {
+            border-color: var(--teal);
+        }
+
+        .verb-card.is-active {
+            border-color: var(--teal-strong);
+            background: #eef8f6;
+            box-shadow: inset 4px 0 0 var(--teal);
+        }
+
+        .verb-topline {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .verb-title {
+            font-size: 1rem;
+            font-weight: 900;
+        }
+
+        .verb-hebrew {
+            direction: rtl;
+            font-family: NotoHebrew, HeeboLocal, serif;
+            font-size: 1.35rem;
+            font-weight: 800;
+            line-height: 1.1;
+        }
+
+        .verb-meta,
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .verb-meta {
+            color: var(--muted);
+            font-size: 0.84rem;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            min-height: 24px;
+            border: 1px solid var(--line-strong);
+            border-radius: 999px;
+            padding: 2px 8px;
+            color: var(--ink);
+            background: #faf7ef;
+            font-size: 0.76rem;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .chip.teal {
+            border-color: rgba(0, 109, 119, 0.32);
+            color: var(--teal-strong);
+            background: rgba(0, 109, 119, 0.08);
+        }
+
+        .chip.rose {
+            border-color: rgba(157, 41, 69, 0.3);
+            color: var(--rose);
+            background: rgba(157, 41, 69, 0.08);
+        }
+
+        .detail {
+            min-width: 0;
+        }
+
+        .verb-summary {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 18px;
+            align-items: start;
+            padding: clamp(16px, 3vw, 26px);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: var(--surface);
+            box-shadow: var(--shadow);
+        }
+
+        .summary-main {
+            min-width: 0;
+        }
+
+        .summary-title-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: baseline;
+        }
+
+        .summary-title {
+            margin: 0;
+            font-size: clamp(1.55rem, 3vw, 2.65rem);
+            line-height: 1;
+        }
+
+        .summary-hebrew {
+            direction: rtl;
+            font-family: NotoHebrew, HeeboLocal, serif;
+            font-size: clamp(2.2rem, 5vw, 4.8rem);
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .root-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 14px 0 12px;
+        }
+
+        .root-letter {
+            display: grid;
+            place-items: center;
+            width: 44px;
+            height: 44px;
+            border: 2px solid var(--ink);
+            border-radius: var(--radius);
+            background: #f5ebd5;
+            direction: rtl;
+            font-family: NotoHebrew, HeeboLocal, serif;
+            font-size: 1.45rem;
+            font-weight: 900;
+        }
+
+        .summary-copy {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.55;
+        }
+
+        .summary-side {
+            display: grid;
+            gap: 8px;
+            min-width: 190px;
+        }
+
+        .play-main {
+            height: 44px;
+            border: 1px solid var(--teal-strong);
+            border-radius: var(--radius);
+            background: var(--teal);
+            color: white;
+            font-weight: 900;
+        }
+
+        .play-main:hover {
+            background: var(--teal-strong);
+        }
+
+        .meta-table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 0.86rem;
+        }
+
+        .meta-table th,
+        .meta-table td {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--line);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .meta-table th {
+            width: 76px;
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 900;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .tense-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 18px 0 12px;
+        }
+
+        .tab-button {
+            min-height: 38px;
+            border: 1px solid var(--line-strong);
+            border-radius: var(--radius);
+            background: var(--surface);
+            color: var(--ink);
+            padding: 0 12px;
+            font-weight: 900;
+        }
+
+        .tab-button:hover,
+        .tab-button.is-active {
+            border-color: var(--teal-strong);
+            background: var(--teal);
+            color: white;
+        }
+
+        .tense-section {
+            margin-bottom: 18px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: var(--surface);
+            overflow: hidden;
+        }
+
+        .tense-section[hidden] {
+            display: none;
+        }
+
+        .tense-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--line);
+            background: #f6f1e7;
+        }
+
+        .tense-heading h3 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 900;
+            text-transform: capitalize;
+        }
+
+        .tense-heading span {
+            color: var(--muted);
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        .forms-table {
+            width: 100%;
+            min-width: 720px;
+            border-collapse: collapse;
+        }
+
+        .forms-table th,
+        .forms-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--line);
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        .forms-table th {
+            color: var(--muted);
+            background: var(--surface);
+            font-size: 0.74rem;
+            font-weight: 900;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .forms-table tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .pronoun {
+            direction: rtl;
+            min-width: 76px;
+            color: var(--teal-strong);
+            font-family: NotoHebrew, HeeboLocal, serif;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .form-hebrew {
+            direction: rtl;
+            font-family: NotoHebrew, HeeboLocal, serif;
+            font-size: 1.36rem;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .translit {
+            font-weight: 800;
+        }
+
+        .phonetic,
+        .meaning {
+            color: var(--muted);
+        }
+
+        .audio-cell {
+            width: 60px;
+            text-align: right;
+        }
+
+        .audio-button {
+            display: inline-grid;
+            place-items: center;
+            width: 38px;
+            height: 34px;
+            border: 1px solid var(--line-strong);
+            border-radius: var(--radius);
+            background: #f7fbfa;
+            color: var(--teal-strong);
+            font-weight: 900;
+        }
+
+        .audio-button:hover {
+            border-color: var(--teal);
+            background: #e3f4f1;
+        }
+
+        .audio-button.is-playing {
+            border-color: var(--rose);
+            background: rgba(157, 41, 69, 0.09);
+            color: var(--rose);
+        }
+
+        .empty-state,
+        .loading-state {
+            padding: 28px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: var(--surface);
+            color: var(--muted);
+            text-align: center;
+        }
+
+        .error-state {
+            border-color: rgba(157, 41, 69, 0.4);
+            color: var(--rose);
+        }
+
+        @media (max-width: 1120px) {
+            .masthead,
+            .layout,
+            .verb-summary {
+                grid-template-columns: 1fr;
+            }
+
+            .control-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .verb-list {
+                position: relative;
+                top: auto;
+                max-height: 420px;
+            }
+        }
+
+        @media (max-width: 680px) {
+            .app {
+                width: min(100% - 20px, 1500px);
+                padding-top: 12px;
+            }
+
+            .masthead {
+                gap: 14px;
+            }
+
+            .stats,
+            .control-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .controls {
+                position: relative;
+            }
+
+            .summary-side {
+                min-width: 0;
+            }
+
+            .forms-table {
+                min-width: 660px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="app">
+        <header class="masthead">
+            <div>
+                <p class="eyebrow">Hebrew Verb Dataset</p>
+                <h1>Verb Tables</h1>
+            </div>
+            <div>
+                <p class="masthead-copy">
+                    Search roots, infinitives, Hebrew forms, transliterations, and English meanings. Select a verb to compare every tense and play the matching pronunciation files.
+                </p>
+                <div class="stats" aria-label="Dataset summary">
+                    <div class="stat">
+                        <span class="stat-value" id="verb-count">--</span>
+                        <span class="stat-label">Verbs</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value" id="form-count">--</span>
+                        <span class="stat-label">Forms</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value" id="audio-count">--</span>
+                        <span class="stat-label">Audio</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <section class="controls" aria-label="Search and filters">
+            <div class="control-grid">
+                <div class="field">
+                    <label for="search-input">Search</label>
+                    <input id="search-input" type="search" autocomplete="off" placeholder="write, כותב, katav, פעל">
+                </div>
+                <div class="field">
+                    <label for="binyan-filter">Binyan</label>
+                    <select id="binyan-filter">
+                        <option value="">All binyanim</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="tense-filter">Tense</label>
+                    <select id="tense-filter">
+                        <option value="">All tenses</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="difficulty-filter">Difficulty</label>
+                    <select id="difficulty-filter">
+                        <option value="">All levels</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="frequency-filter">Frequency</label>
+                    <select id="frequency-filter">
+                        <option value="">All frequencies</option>
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <div class="layout">
+            <aside class="verb-list" aria-label="Verb results">
+                <div class="list-header">
+                    <strong>Results</strong>
+                    <span id="result-count">Loading</span>
+                </div>
+                <div class="verb-items" id="verb-items">
+                    <div class="loading-state">Loading verbs...</div>
+                </div>
+            </aside>
+
+            <section class="detail" id="detail" aria-live="polite">
+                <div class="loading-state">Loading conjugation tables...</div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        const TENSE_ORDER = ["past", "present", "future", "imperative", "inf"];
+        const TENSE_LABELS = {
+            past: "Past",
+            present: "Present",
+            future: "Future",
+            imperative: "Imperative",
+            inf: "Infinitive",
+        };
+        const DATA_URL = "verbs.trimmed.json";
+        const HEBREW_MARKS = /[\u0591-\u05C7]/g;
+
+        const state = {
+            verbs: [],
+            filtered: [],
+            selectedSlug: "",
+            activeTense: "all",
+            audio: new Audio(),
+            activeButton: null,
+        };
+
+        const els = {
+            search: document.getElementById("search-input"),
+            binyan: document.getElementById("binyan-filter"),
+            tense: document.getElementById("tense-filter"),
+            difficulty: document.getElementById("difficulty-filter"),
+            frequency: document.getElementById("frequency-filter"),
+            verbItems: document.getElementById("verb-items"),
+            resultCount: document.getElementById("result-count"),
+            detail: document.getElementById("detail"),
+            verbCount: document.getElementById("verb-count"),
+            formCount: document.getElementById("form-count"),
+            audioCount: document.getElementById("audio-count"),
+        };
+
+        function stripMarks(value) {
+            return String(value || "").normalize("NFKD").replace(HEBREW_MARKS, "");
+        }
+
+        function normalize(value) {
+            return stripMarks(value)
+                .toLowerCase()
+                .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
+                .replace(/\s+/g, " ")
+                .trim();
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? "").replace(/[&<>"']/g, char => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#039;",
+            }[char]));
+        }
+
+        function tenseLabel(value) {
+            return TENSE_LABELS[value] || String(value || "").replace(/_/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+        }
+
+        function compactList(values) {
+            return values.filter(Boolean).join(", ");
+        }
+
+        function getRowsForVerb(verb) {
+            return Object.entries(verb.conjugations || {}).flatMap(([tense, rows]) => {
+                if (!Array.isArray(rows)) return [];
+                return rows.map(row => ({ ...row, tense }));
+            });
+        }
+
+        function buildSearchText(slug, verb, rows) {
+            const translationValues = Object.values(verb.translations || {});
+            const rowValues = rows.flatMap(row => [row.prn, row.frm, row.trn, row.phn, row.trl, row.tense]);
+            return normalize([
+                slug,
+                verb.inf,
+                verb.bn,
+                verb.bnE,
+                verb.rtm,
+                verb.difficulty,
+                verb.frequency,
+                ...(verb.rt || []),
+                ...(verb.mng || []),
+                ...translationValues,
+                ...rowValues,
+            ].join(" "));
+        }
+
+        function prepareData(raw) {
+            return Object.entries(raw).map(([slug, verb]) => {
+                const rows = getRowsForVerb(verb);
+                const meanings = Array.isArray(verb.mng) ? verb.mng : [];
+                return {
+                    ...verb,
+                    slug,
+                    rows,
+                    primaryMeaning: verb.translations?.en || meanings[0] || slug,
+                    meaningLine: compactList(meanings),
+                    searchText: buildSearchText(slug, verb, rows),
+                };
+            }).sort((a, b) => a.primaryMeaning.localeCompare(b.primaryMeaning));
+        }
+
+        function populateSelect(select, values, formatter = value => value) {
+            const options = [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+            for (const value of options) {
+                const option = document.createElement("option");
+                option.value = value;
+                option.textContent = formatter(value);
+                select.append(option);
+            }
+        }
+
+        function setupFilters() {
+            populateSelect(els.binyan, state.verbs.map(verb => verb.bnE));
+            populateSelect(els.difficulty, state.verbs.map(verb => verb.difficulty));
+            populateSelect(els.frequency, state.verbs.map(verb => verb.frequency));
+            populateSelect(els.tense, TENSE_ORDER.filter(tense => state.verbs.some(verb => verb.conjugations?.[tense])), tenseLabel);
+        }
+
+        function updateStats() {
+            const allRows = state.verbs.flatMap(verb => verb.rows);
+            const audioRows = allRows.filter(row => row.aud);
+            els.verbCount.textContent = state.verbs.length.toLocaleString();
+            els.formCount.textContent = allRows.length.toLocaleString();
+            els.audioCount.textContent = audioRows.length.toLocaleString();
+        }
+
+        function filterVerbs() {
+            const query = normalize(els.search.value);
+            const binyan = els.binyan.value;
+            const tense = els.tense.value;
+            const difficulty = els.difficulty.value;
+            const frequency = els.frequency.value;
+            const queryTokens = query ? query.split(" ").filter(Boolean) : [];
+            if (tense) state.activeTense = tense;
+
+            state.filtered = state.verbs.filter(verb => {
+                if (queryTokens.length && !queryTokens.every(token => verb.searchText.includes(token))) return false;
+                if (binyan && verb.bnE !== binyan) return false;
+                if (difficulty && verb.difficulty !== difficulty) return false;
+                if (frequency && verb.frequency !== frequency) return false;
+                if (tense && !Array.isArray(verb.conjugations?.[tense])) return false;
+                return true;
+            });
+
+            if (!state.filtered.some(verb => verb.slug === state.selectedSlug)) {
+                state.selectedSlug = state.filtered[0]?.slug || "";
+            }
+
+            renderList();
+            renderDetail();
+        }
+
+        function renderList() {
+            els.resultCount.textContent = `${state.filtered.length.toLocaleString()} of ${state.verbs.length.toLocaleString()}`;
+            if (!state.filtered.length) {
+                els.verbItems.innerHTML = '<div class="empty-state">No matching verbs.</div>';
+                return;
+            }
+
+            els.verbItems.innerHTML = state.filtered.map(verb => {
+                const root = (verb.rt || []).join("");
+                const activeClass = verb.slug === state.selectedSlug ? " is-active" : "";
+                return `
+                    <button class="verb-card${activeClass}" type="button" data-slug="${escapeHtml(verb.slug)}">
+                        <span class="verb-topline">
+                            <span class="verb-title">${escapeHtml(verb.primaryMeaning)}</span>
+                            <span class="verb-hebrew">${escapeHtml(verb.inf || root)}</span>
+                        </span>
+                        <span class="verb-meta">${escapeHtml(verb.slug)} / ${escapeHtml(root)} / ${escapeHtml(verb.bnE || "Binyan")}</span>
+                        <span class="chips">
+                            ${verb.frequency ? `<span class="chip teal">${escapeHtml(verb.frequency)}</span>` : ""}
+                            ${verb.difficulty ? `<span class="chip rose">${escapeHtml(verb.difficulty)}</span>` : ""}
+                        </span>
+                    </button>
+                `;
+            }).join("");
+        }
+
+        function getSelectedVerb() {
+            return state.verbs.find(verb => verb.slug === state.selectedSlug) || state.filtered[0] || state.verbs[0];
+        }
+
+        function renderDetail() {
+            const verb = getSelectedVerb();
+            if (!verb) {
+                els.detail.innerHTML = '<div class="empty-state">No verb selected.</div>';
+                return;
+            }
+
+            state.selectedSlug = verb.slug;
+            const availableTenses = TENSE_ORDER.filter(tense => Array.isArray(verb.conjugations?.[tense]));
+            if (!availableTenses.includes(state.activeTense) && state.activeTense !== "all") {
+                state.activeTense = "all";
+            }
+
+            const rootLetters = (verb.rt || []).map(letter => `<span class="root-letter">${escapeHtml(letter)}</span>`).join("");
+            const infinitiveRow = verb.conjugations?.inf?.[0];
+            const translations = verb.translations || {};
+
+            els.detail.innerHTML = `
+                <article class="verb-summary">
+                    <div class="summary-main">
+                        <div class="summary-title-row">
+                            <h2 class="summary-title">${escapeHtml(verb.primaryMeaning)}</h2>
+                            <span class="chip teal">${escapeHtml(verb.bnE || "Binyan")}</span>
+                            ${verb.difficulty ? `<span class="chip rose">${escapeHtml(verb.difficulty)}</span>` : ""}
+                            ${verb.frequency ? `<span class="chip">${escapeHtml(verb.frequency)} frequency</span>` : ""}
+                        </div>
+                        <div class="summary-hebrew">${escapeHtml(verb.inf || infinitiveRow?.frm || "")}</div>
+                        <div class="root-strip" aria-label="Root letters">${rootLetters}</div>
+                        <p class="summary-copy">${escapeHtml(verb.rtm || verb.meaningLine || "No root note available.")}</p>
+                    </div>
+                    <div class="summary-side">
+                        <button class="play-main" type="button" data-audio="${escapeHtml(infinitiveRow?.aud || "")}" ${infinitiveRow?.aud ? "" : "disabled"}>Play Infinitive</button>
+                        <table class="meta-table">
+                            <tbody>
+                                <tr><th>Root</th><td dir="rtl">${escapeHtml((verb.rt || []).join(" / "))}</td></tr>
+                                <tr><th>Binyan</th><td>${escapeHtml(verb.bnE || "")} ${verb.bn ? `<span dir="rtl">(${escapeHtml(verb.bn)})</span>` : ""}</td></tr>
+                                <tr><th>English</th><td>${escapeHtml(translations.en || verb.meaningLine || "")}</td></tr>
+                                <tr><th>Also</th><td>${escapeHtml(compactList([translations.es, translations.fr, translations.de, translations.ru]))}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <nav class="tense-tabs" aria-label="Tense display">
+                    <button class="tab-button${state.activeTense === "all" ? " is-active" : ""}" type="button" data-tense-tab="all">All</button>
+                    ${availableTenses.map(tense => `
+                        <button class="tab-button${state.activeTense === tense ? " is-active" : ""}" type="button" data-tense-tab="${escapeHtml(tense)}">${escapeHtml(tenseLabel(tense))}</button>
+                    `).join("")}
+                </nav>
+
+                ${availableTenses.map(tense => renderTenseSection(tense, verb.conjugations[tense])).join("")}
+            `;
+
+            applyTenseVisibility();
+        }
+
+        function renderTenseSection(tense, rows) {
+            return `
+                <section class="tense-section" data-tense-section="${escapeHtml(tense)}">
+                    <div class="tense-heading">
+                        <h3>${escapeHtml(tenseLabel(tense))}</h3>
+                        <span>${rows.length} ${rows.length === 1 ? "form" : "forms"}</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="forms-table">
+                            <thead>
+                                <tr>
+                                    <th>Pronoun</th>
+                                    <th>Hebrew</th>
+                                    <th>Transliteration</th>
+                                    <th>Phonetic</th>
+                                    <th>Meaning</th>
+                                    <th>Audio</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows.map(row => `
+                                    <tr>
+                                        <td class="pronoun">${escapeHtml(row.prn || "-")}</td>
+                                        <td class="form-hebrew">${escapeHtml(row.frm || "")}</td>
+                                        <td class="translit">${escapeHtml(row.trn || "")}</td>
+                                        <td class="phonetic">${escapeHtml(row.phn || "")}</td>
+                                        <td class="meaning">${escapeHtml(row.trl || "")}</td>
+                                        <td class="audio-cell">
+                                            <button class="audio-button" type="button" data-audio="${escapeHtml(row.aud || "")}" aria-label="Play ${escapeHtml(row.trn || row.frm || "form")} audio" ${row.aud ? "" : "disabled"}>▶</button>
+                                        </td>
+                                    </tr>
+                                `).join("")}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            `;
+        }
+
+        function applyTenseVisibility() {
+            document.querySelectorAll("[data-tense-section]").forEach(section => {
+                const visible = state.activeTense === "all" || section.dataset.tenseSection === state.activeTense;
+                section.hidden = !visible;
+            });
+        }
+
+        function resolveAudioPath(rawPath) {
+            if (!rawPath) return "";
+            const cleanPath = String(rawPath).replace(/^\/+/, "");
+            return `/${cleanPath.replace(/\.wav$/i, ".mp4")}`;
+        }
+
+        function clearPlayingButton() {
+            if (state.activeButton) {
+                state.activeButton.classList.remove("is-playing");
+                state.activeButton = null;
+            }
+        }
+
+        async function playAudio(rawPath, button) {
+            const path = resolveAudioPath(rawPath);
+            if (!path) return;
+
+            clearPlayingButton();
+            state.audio.pause();
+            state.audio.currentTime = 0;
+            state.audio.src = path;
+            state.activeButton = button;
+            button?.classList.add("is-playing");
+
+            try {
+                await state.audio.play();
+            } catch (error) {
+                clearPlayingButton();
+                console.warn("Audio playback failed", error);
+            }
+        }
+
+        function bindEvents() {
+            [els.search, els.binyan, els.tense, els.difficulty, els.frequency].forEach(control => {
+                control.addEventListener("input", filterVerbs);
+                control.addEventListener("change", filterVerbs);
+            });
+
+            els.verbItems.addEventListener("click", event => {
+                const card = event.target.closest("[data-slug]");
+                if (!card) return;
+                state.selectedSlug = card.dataset.slug;
+                renderList();
+                renderDetail();
+                document.querySelector(".detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            });
+
+            els.detail.addEventListener("click", event => {
+                const audioButton = event.target.closest("[data-audio]");
+                if (audioButton && audioButton.dataset.audio) {
+                    playAudio(audioButton.dataset.audio, audioButton);
+                    return;
+                }
+
+                const tabButton = event.target.closest("[data-tense-tab]");
+                if (tabButton) {
+                    state.activeTense = tabButton.dataset.tenseTab;
+                    renderDetail();
+                }
+            });
+
+            state.audio.addEventListener("ended", clearPlayingButton);
+            state.audio.addEventListener("pause", () => {
+                if (state.audio.ended) clearPlayingButton();
+            });
+        }
+
+        async function init() {
+            try {
+                bindEvents();
+                const response = await fetch(DATA_URL);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const raw = await response.json();
+                state.verbs = prepareData(raw);
+                state.selectedSlug = state.verbs[0]?.slug || "";
+                setupFilters();
+                updateStats();
+                filterVerbs();
+            } catch (error) {
+                console.error("Failed to load verbs", error);
+                els.verbItems.innerHTML = '<div class="empty-state error-state">Unable to load verb data.</div>';
+                els.detail.innerHTML = '<div class="empty-state error-state">Unable to load conjugation tables.</div>';
+                els.resultCount.textContent = "Error";
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

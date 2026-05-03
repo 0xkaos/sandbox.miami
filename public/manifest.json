@@ -1,5 +1,11 @@
 [
   {
+    "path": "/hebrew-verbs/",
+    "title": "Hebrew Verb Tables",
+    "description": "Searchable Hebrew verb conjugation tables with bilingual lookup, roots, binyan metadata, and clickable pronunciation audio.",
+    "category": "hebrew-verbs"
+  },
+  {
     "path": "/threejs/attractor_viewer/",
     "title": "Chaotic Attractor Viewer V2",
     "description": "No description available.",

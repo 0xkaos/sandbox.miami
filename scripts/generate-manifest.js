@@ -34,7 +34,7 @@ function scanDemos(dir, baseUrl = '') {
                     path: '/' + relativePath + '/', // Ensure trailing slash for folders
                     title: titleMatch ? titleMatch[1] : item.name,
                     description: descMatch ? descMatch[1] : 'No description available.',
-                    category: baseUrl.split(path.sep)[0] || 'uncategorized'
+                    category: baseUrl.split(path.sep)[0] || item.name || 'uncategorized'
                 });
             } else {
                 // Recurse deeper
