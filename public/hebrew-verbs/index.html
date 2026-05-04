@@ -73,16 +73,16 @@
         .app {
             width: min(1500px, calc(100% - 32px));
             margin: 0 auto;
-            padding: 24px 0 40px;
+            padding: 12px 0 34px;
         }
 
         .masthead {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 24px;
-            align-items: end;
-            padding: 20px 0 18px;
-            border-bottom: 2px solid var(--ink);
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: center;
+            padding: 10px 0 8px;
+            border-bottom: 1px solid var(--line-strong);
         }
 
         .eyebrow {
@@ -96,13 +96,13 @@
 
         h1 {
             margin: 0;
-            max-width: 12ch;
-            font-size: clamp(2.25rem, 7vw, 5.8rem);
-            line-height: 0.92;
+            font-size: clamp(1.3rem, 2.6vw, 2.2rem);
+            line-height: 1;
             font-weight: 900;
         }
 
         .masthead-copy {
+            display: none;
             margin: 0;
             max-width: 43rem;
             color: var(--muted);
@@ -111,7 +111,7 @@
         }
 
         .stats {
-            display: grid;
+            display: none;
             grid-template-columns: repeat(3, minmax(96px, 1fr));
             gap: 8px;
             min-width: min(100%, 360px);
@@ -146,7 +146,7 @@
             position: sticky;
             top: 0;
             z-index: 10;
-            margin: 18px 0;
+            margin: 10px 0 14px;
             padding: 12px;
             border: 1px solid var(--line);
             border-radius: var(--radius);
@@ -197,15 +197,15 @@
 
         .layout {
             display: grid;
-            grid-template-columns: minmax(280px, 0.35fr) minmax(0, 1fr);
-            gap: 18px;
+            grid-template-columns: minmax(260px, 0.3fr) minmax(0, 1fr);
+            gap: 14px;
             align-items: start;
         }
 
         .verb-list {
             position: sticky;
-            top: 92px;
-            max-height: calc(100vh - 116px);
+            top: 84px;
+            max-height: calc(100vh - 98px);
             overflow: auto;
             border: 1px solid var(--line);
             border-radius: var(--radius);
@@ -328,13 +328,13 @@
         .verb-summary {
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
-            gap: 18px;
+            gap: 12px;
             align-items: start;
-            padding: clamp(16px, 3vw, 26px);
+            padding: 14px;
             border: 1px solid var(--line);
             border-radius: var(--radius);
             background: var(--surface);
-            box-shadow: var(--shadow);
+            box-shadow: 0 10px 28px rgba(50, 45, 37, 0.08);
         }
 
         .summary-main {
@@ -350,14 +350,14 @@
 
         .summary-title {
             margin: 0;
-            font-size: clamp(1.55rem, 3vw, 2.65rem);
+            font-size: clamp(1.25rem, 2.4vw, 1.9rem);
             line-height: 1;
         }
 
         .summary-hebrew {
             direction: rtl;
             font-family: NotoHebrew, HeeboLocal, serif;
-            font-size: clamp(2.2rem, 5vw, 4.8rem);
+            font-size: clamp(1.9rem, 4vw, 3.4rem);
             font-weight: 900;
             line-height: 1;
         }
@@ -366,15 +366,15 @@
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
-            margin: 14px 0 12px;
+            margin: 8px 0;
         }
 
         .root-letter {
             display: grid;
             place-items: center;
-            width: 44px;
-            height: 44px;
-            border: 2px solid var(--ink);
+            width: 36px;
+            height: 36px;
+            border: 1px solid var(--ink);
             border-radius: var(--radius);
             background: #f5ebd5;
             direction: rtl;
@@ -392,7 +392,7 @@
         .summary-side {
             display: grid;
             gap: 8px;
-            min-width: 190px;
+            min-width: 150px;
         }
 
         .play-main {
@@ -408,34 +408,11 @@
             background: var(--teal-strong);
         }
 
-        .meta-table {
-            border-collapse: collapse;
-            width: 100%;
-            font-size: 0.86rem;
-        }
-
-        .meta-table th,
-        .meta-table td {
-            padding: 8px 0;
-            border-bottom: 1px solid var(--line);
-            text-align: left;
-            vertical-align: top;
-        }
-
-        .meta-table th {
-            width: 76px;
-            color: var(--muted);
-            font-size: 0.72rem;
-            font-weight: 900;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-        }
-
         .tense-tabs {
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
-            margin: 18px 0 12px;
+            margin: 12px 0 10px;
         }
 
         .tab-button {
@@ -456,7 +433,7 @@
         }
 
         .tense-section {
-            margin-bottom: 18px;
+            margin-bottom: 12px;
             border: 1px solid var(--line);
             border-radius: var(--radius);
             background: var(--surface);
@@ -472,7 +449,7 @@
             align-items: center;
             justify-content: space-between;
             gap: 12px;
-            padding: 12px 14px;
+            padding: 9px 12px;
             border-bottom: 1px solid var(--line);
             background: #f6f1e7;
         }
@@ -496,15 +473,16 @@
 
         .forms-table {
             width: 100%;
-            min-width: 720px;
+            min-width: 620px;
             border-collapse: collapse;
+            direction: rtl;
         }
 
         .forms-table th,
         .forms-table td {
-            padding: 10px 12px;
+            padding: 8px 10px;
             border-bottom: 1px solid var(--line);
-            text-align: left;
+            text-align: right;
             vertical-align: middle;
         }
 
@@ -539,18 +517,31 @@
             white-space: nowrap;
         }
 
-        .translit {
-            font-weight: 800;
+        .root-hit {
+            display: inline-block;
+            min-width: 0.72em;
+            border-radius: 5px;
+            padding: 0 1px;
+            background: rgba(182, 109, 18, 0.2);
+            color: #6f3c02;
+            box-shadow: inset 0 -0.16em 0 rgba(182, 109, 18, 0.32);
         }
 
-        .phonetic,
+        .translit {
+            font-weight: 800;
+            direction: ltr;
+            text-align: left;
+        }
+
         .meaning {
             color: var(--muted);
+            direction: ltr;
+            text-align: left;
         }
 
         .audio-cell {
-            width: 60px;
-            text-align: right;
+            width: 54px;
+            text-align: center;
         }
 
         .audio-button {
@@ -574,6 +565,56 @@
             border-color: var(--rose);
             background: rgba(157, 41, 69, 0.09);
             color: var(--rose);
+        }
+
+        .related-panel {
+            margin: 10px 0 0;
+            padding: 10px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: rgba(255, 253, 248, 0.72);
+        }
+
+        .related-title {
+            margin: 0 0 8px;
+            color: var(--muted);
+            font-size: 0.74rem;
+            font-weight: 900;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .related-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .related-button {
+            display: inline-grid;
+            gap: 2px;
+            min-width: 138px;
+            border: 1px solid var(--line-strong);
+            border-radius: var(--radius);
+            background: var(--surface);
+            padding: 8px 10px;
+            color: var(--ink);
+            text-align: left;
+        }
+
+        .related-button:hover,
+        .related-button.is-active {
+            border-color: var(--teal);
+            background: #eef8f6;
+        }
+
+        .related-button strong {
+            font-size: 0.88rem;
+        }
+
+        .related-button span {
+            color: var(--muted);
+            font-size: 0.76rem;
         }
 
         .empty-state,
@@ -633,7 +674,7 @@
             }
 
             .forms-table {
-                min-width: 660px;
+                min-width: 600px;
             }
         }
     </style>
@@ -727,10 +768,19 @@
         };
         const DATA_URL = "verbs.trimmed.json";
         const HEBREW_MARKS = /[\u0591-\u05C7]/g;
+        const FINAL_FORMS = {
+            "ך": "כ",
+            "ם": "מ",
+            "ן": "נ",
+            "ף": "פ",
+            "ץ": "צ",
+        };
+        const SEARCH_STOPWORDS = new Set(["to", "a", "an", "the"]);
 
         const state = {
             verbs: [],
             filtered: [],
+            rootGroups: new Map(),
             selectedSlug: "",
             activeTense: "all",
             audio: new Audio(),
@@ -753,6 +803,15 @@
 
         function stripMarks(value) {
             return String(value || "").normalize("NFKD").replace(HEBREW_MARKS, "");
+        }
+
+        function normalizeHebrewLetter(value) {
+            const stripped = stripMarks(value).replace(/[^\u05D0-\u05EA]/g, "");
+            return Array.from(stripped).map(char => FINAL_FORMS[char] || char).join("");
+        }
+
+        function rootKeyFor(verb) {
+            return (verb.rt || []).map(normalizeHebrewLetter).join("");
         }
 
         function normalize(value) {
@@ -781,6 +840,14 @@
             return values.filter(Boolean).join(", ");
         }
 
+        function words(value) {
+            return normalize(value).split(" ").filter(Boolean);
+        }
+
+        function tokenMatchesTerm(token, terms) {
+            return terms.some(term => term === token || term.startsWith(token));
+        }
+
         function getRowsForVerb(verb) {
             return Object.entries(verb.conjugations || {}).flatMap(([tense, rows]) => {
                 if (!Array.isArray(rows)) return [];
@@ -807,18 +874,86 @@
         }
 
         function prepareData(raw) {
-            return Object.entries(raw).map(([slug, verb]) => {
+            const verbs = Object.entries(raw).map(([slug, verb]) => {
                 const rows = getRowsForVerb(verb);
                 const meanings = Array.isArray(verb.mng) ? verb.mng : [];
+                const primaryMeaning = verb.translations?.en || meanings[0] || slug;
+                const searchText = buildSearchText(slug, verb, rows);
                 return {
                     ...verb,
                     slug,
                     rows,
-                    primaryMeaning: verb.translations?.en || meanings[0] || slug,
+                    primaryMeaning,
                     meaningLine: compactList(meanings),
-                    searchText: buildSearchText(slug, verb, rows),
+                    rootKey: rootKeyFor(verb),
+                    normalized: {
+                        slug: normalize(slug),
+                        primaryMeaning: normalize(primaryMeaning),
+                        english: normalize(verb.translations?.en || ""),
+                        meanings: meanings.map(normalize),
+                        translations: Object.values(verb.translations || {}).map(normalize),
+                        root: normalize((verb.rt || []).join("")),
+                        infinitive: normalize(verb.inf || ""),
+                        binyan: normalize(`${verb.bnE || ""} ${verb.bn || ""}`),
+                        searchTerms: words(searchText),
+                    },
+                    searchText,
                 };
             }).sort((a, b) => a.primaryMeaning.localeCompare(b.primaryMeaning));
+
+            state.rootGroups = verbs.reduce((groups, verb) => {
+                if (!verb.rootKey) return groups;
+                const siblings = groups.get(verb.rootKey) || [];
+                siblings.push(verb);
+                groups.set(verb.rootKey, siblings);
+                return groups;
+            }, new Map());
+
+            state.rootGroups.forEach(siblings => {
+                siblings.sort((a, b) => {
+                    const binyanCompare = String(a.bnE || "").localeCompare(String(b.bnE || ""));
+                    return binyanCompare || a.primaryMeaning.localeCompare(b.primaryMeaning);
+                });
+            });
+
+            return verbs;
+        }
+
+        function scoreVerb(verb, query, queryTokens) {
+            if (!queryTokens.length) return 0;
+
+            const fields = verb.normalized;
+            const scoringTokens = queryTokens.filter(token => !SEARCH_STOPWORDS.has(token));
+            const primaryWords = words(fields.primaryMeaning);
+            const englishWords = words(fields.english);
+            let score = 0;
+
+            if (fields.primaryMeaning === query) score += 2200;
+            if (fields.english === query) score += 2000;
+            if (fields.primaryMeaning === `to ${query}`) score += 1800;
+            if (fields.english === `to ${query}`) score += 1700;
+            if (fields.meanings.includes(query)) score += 1500;
+            if (fields.translations.includes(query)) score += 1200;
+            if (fields.primaryMeaning.startsWith(query)) score += 700;
+            if (fields.english.startsWith(query)) score += 650;
+
+            for (const token of scoringTokens) {
+                if (primaryWords.includes(token)) score += 360;
+                if (englishWords.includes(token)) score += 320;
+                if (fields.meanings.some(meaning => words(meaning).includes(token))) score += 260;
+                if (fields.translations.some(translation => words(translation).includes(token))) score += 180;
+                if (fields.slug === token) score += 160;
+                if (fields.infinitive === token) score += 150;
+                if (fields.root === token) score += 130;
+                if (fields.binyan.includes(token)) score += 80;
+                if (fields.primaryMeaning.includes(token)) score += 35;
+                if (fields.english.includes(token)) score += 30;
+                if (tokenMatchesTerm(token, fields.searchTerms)) score += 5;
+            }
+
+            if (verb.frequency === "High") score += 18;
+            if (verb.difficulty === "Beginner") score += 10;
+            return score;
         }
 
         function populateSelect(select, values, formatter = value => value) {
@@ -853,16 +988,25 @@
             const difficulty = els.difficulty.value;
             const frequency = els.frequency.value;
             const queryTokens = query ? query.split(" ").filter(Boolean) : [];
+            const requiredTokens = queryTokens.filter(token => !SEARCH_STOPWORDS.has(token));
             if (tense) state.activeTense = tense;
 
-            state.filtered = state.verbs.filter(verb => {
-                if (queryTokens.length && !queryTokens.every(token => verb.searchText.includes(token))) return false;
-                if (binyan && verb.bnE !== binyan) return false;
-                if (difficulty && verb.difficulty !== difficulty) return false;
-                if (frequency && verb.frequency !== frequency) return false;
-                if (tense && !Array.isArray(verb.conjugations?.[tense])) return false;
-                return true;
-            });
+            state.filtered = state.verbs
+                .map(verb => ({ verb, score: scoreVerb(verb, query, queryTokens) }))
+                .filter(({ verb }) => {
+                    if (requiredTokens.length && !requiredTokens.every(token => tokenMatchesTerm(token, verb.normalized.searchTerms))) return false;
+                    if (!requiredTokens.length && queryTokens.length && !queryTokens.every(token => tokenMatchesTerm(token, verb.normalized.searchTerms))) return false;
+                    if (binyan && verb.bnE !== binyan) return false;
+                    if (difficulty && verb.difficulty !== difficulty) return false;
+                    if (frequency && verb.frequency !== frequency) return false;
+                    if (tense && !Array.isArray(verb.conjugations?.[tense])) return false;
+                    return true;
+                })
+                .sort((a, b) => {
+                    if (queryTokens.length && b.score !== a.score) return b.score - a.score;
+                    return a.verb.primaryMeaning.localeCompare(b.verb.primaryMeaning);
+                })
+                .map(result => result.verb);
 
             if (!state.filtered.some(verb => verb.slug === state.selectedSlug)) {
                 state.selectedSlug = state.filtered[0]?.slug || "";
@@ -902,6 +1046,56 @@
             return state.verbs.find(verb => verb.slug === state.selectedSlug) || state.filtered[0] || state.verbs[0];
         }
 
+        function splitHebrewClusters(value) {
+            const clusters = [];
+            for (const char of Array.from(String(value || ""))) {
+                if (HEBREW_MARKS.test(char) && clusters.length) {
+                    clusters[clusters.length - 1] += char;
+                } else {
+                    clusters.push(char);
+                }
+                HEBREW_MARKS.lastIndex = 0;
+            }
+            return clusters;
+        }
+
+        function highlightedHebrew(value, rootLetters) {
+            const root = (rootLetters || []).map(normalizeHebrewLetter).filter(Boolean);
+            if (!root.length) return escapeHtml(value || "");
+
+            let rootIndex = 0;
+            return splitHebrewClusters(value).map(cluster => {
+                const normalized = normalizeHebrewLetter(cluster);
+                const isRootHit = normalized && normalized === root[rootIndex];
+                if (isRootHit) rootIndex += 1;
+                const escaped = escapeHtml(cluster);
+                return isRootHit ? `<span class="root-hit">${escaped}</span>` : escaped;
+            }).join("");
+        }
+
+        function relatedVerbsFor(verb) {
+            return (state.rootGroups.get(verb.rootKey) || []).filter(related => related.slug !== verb.slug);
+        }
+
+        function renderRelatedPanel(verb) {
+            const related = relatedVerbsFor(verb);
+            if (!related.length) return "";
+
+            return `
+                <section class="related-panel" aria-label="Related verbs with this root">
+                    <p class="related-title">Same Root Family</p>
+                    <div class="related-grid">
+                        ${related.map(item => `
+                            <button class="related-button" type="button" data-related-slug="${escapeHtml(item.slug)}">
+                                <strong>${escapeHtml(item.primaryMeaning)}</strong>
+                                <span>${escapeHtml(item.bnE || "Binyan")} / ${escapeHtml(item.inf || item.slug)}</span>
+                            </button>
+                        `).join("")}
+                    </div>
+                </section>
+            `;
+        }
+
         function renderDetail() {
             const verb = getSelectedVerb();
             if (!verb) {
@@ -917,7 +1111,7 @@
 
             const rootLetters = (verb.rt || []).map(letter => `<span class="root-letter">${escapeHtml(letter)}</span>`).join("");
             const infinitiveRow = verb.conjugations?.inf?.[0];
-            const translations = verb.translations || {};
+            const relatedCount = relatedVerbsFor(verb).length;
 
             els.detail.innerHTML = `
                 <article class="verb-summary">
@@ -925,25 +1119,20 @@
                         <div class="summary-title-row">
                             <h2 class="summary-title">${escapeHtml(verb.primaryMeaning)}</h2>
                             <span class="chip teal">${escapeHtml(verb.bnE || "Binyan")}</span>
+                            ${relatedCount ? `<span class="chip">${relatedCount} related</span>` : ""}
                             ${verb.difficulty ? `<span class="chip rose">${escapeHtml(verb.difficulty)}</span>` : ""}
                             ${verb.frequency ? `<span class="chip">${escapeHtml(verb.frequency)} frequency</span>` : ""}
                         </div>
                         <div class="summary-hebrew">${escapeHtml(verb.inf || infinitiveRow?.frm || "")}</div>
                         <div class="root-strip" aria-label="Root letters">${rootLetters}</div>
-                        <p class="summary-copy">${escapeHtml(verb.rtm || verb.meaningLine || "No root note available.")}</p>
+                        <p class="summary-copy">${escapeHtml(compactList([verb.slug, verb.rtm || verb.meaningLine]))}</p>
                     </div>
                     <div class="summary-side">
                         <button class="play-main" type="button" data-audio="${escapeHtml(infinitiveRow?.aud || "")}" ${infinitiveRow?.aud ? "" : "disabled"}>Play Infinitive</button>
-                        <table class="meta-table">
-                            <tbody>
-                                <tr><th>Root</th><td dir="rtl">${escapeHtml((verb.rt || []).join(" / "))}</td></tr>
-                                <tr><th>Binyan</th><td>${escapeHtml(verb.bnE || "")} ${verb.bn ? `<span dir="rtl">(${escapeHtml(verb.bn)})</span>` : ""}</td></tr>
-                                <tr><th>English</th><td>${escapeHtml(translations.en || verb.meaningLine || "")}</td></tr>
-                                <tr><th>Also</th><td>${escapeHtml(compactList([translations.es, translations.fr, translations.de, translations.ru]))}</td></tr>
-                            </tbody>
-                        </table>
                     </div>
                 </article>
+
+                ${renderRelatedPanel(verb)}
 
                 <nav class="tense-tabs" aria-label="Tense display">
                     <button class="tab-button${state.activeTense === "all" ? " is-active" : ""}" type="button" data-tense-tab="all">All</button>
@@ -952,13 +1141,13 @@
                     `).join("")}
                 </nav>
 
-                ${availableTenses.map(tense => renderTenseSection(tense, verb.conjugations[tense])).join("")}
+                ${availableTenses.map(tense => renderTenseSection(tense, verb.conjugations[tense], verb.rt || [])).join("")}
             `;
 
             applyTenseVisibility();
         }
 
-        function renderTenseSection(tense, rows) {
+        function renderTenseSection(tense, rows, rootLetters) {
             return `
                 <section class="tense-section" data-tense-section="${escapeHtml(tense)}">
                     <div class="tense-heading">
@@ -971,9 +1160,8 @@
                                 <tr>
                                     <th>Pronoun</th>
                                     <th>Hebrew</th>
-                                    <th>Transliteration</th>
-                                    <th>Phonetic</th>
                                     <th>Meaning</th>
+                                    <th>Transliteration</th>
                                     <th>Audio</th>
                                 </tr>
                             </thead>
@@ -981,12 +1169,11 @@
                                 ${rows.map(row => `
                                     <tr>
                                         <td class="pronoun">${escapeHtml(row.prn || "-")}</td>
-                                        <td class="form-hebrew">${escapeHtml(row.frm || "")}</td>
-                                        <td class="translit">${escapeHtml(row.trn || "")}</td>
-                                        <td class="phonetic">${escapeHtml(row.phn || "")}</td>
+                                        <td class="form-hebrew">${highlightedHebrew(row.frm || "", rootLetters)}</td>
                                         <td class="meaning">${escapeHtml(row.trl || "")}</td>
+                                        <td class="translit">${escapeHtml(row.trn || "")}</td>
                                         <td class="audio-cell">
-                                            <button class="audio-button" type="button" data-audio="${escapeHtml(row.aud || "")}" aria-label="Play ${escapeHtml(row.trn || row.frm || "form")} audio" ${row.aud ? "" : "disabled"}>▶</button>
+                                            <button class="audio-button" type="button" data-audio="${escapeHtml(row.aud || "")}" aria-label="Play ${escapeHtml(row.trn || row.frm || "form")} audio" ${row.aud ? "" : "disabled"}>&#9658;</button>
                                         </td>
                                     </tr>
                                 `).join("")}
@@ -1055,6 +1242,14 @@
                 const audioButton = event.target.closest("[data-audio]");
                 if (audioButton && audioButton.dataset.audio) {
                     playAudio(audioButton.dataset.audio, audioButton);
+                    return;
+                }
+
+                const relatedButton = event.target.closest("[data-related-slug]");
+                if (relatedButton) {
+                    state.selectedSlug = relatedButton.dataset.relatedSlug;
+                    renderList();
+                    renderDetail();
                     return;
                 }
 
