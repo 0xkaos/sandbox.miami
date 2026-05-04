@@ -415,6 +415,43 @@
             margin: 12px 0 10px;
         }
 
+        .table-toolbar .tense-tabs {
+            margin: 0;
+        }
+
+        .table-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            justify-content: space-between;
+            margin: 12px 0 10px;
+        }
+
+        .view-toggle {
+            display: inline-flex;
+            padding: 3px;
+            border: 1px solid var(--line-strong);
+            border-radius: var(--radius);
+            background: var(--surface);
+        }
+
+        .view-button {
+            min-height: 32px;
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--muted);
+            padding: 0 10px;
+            font-size: 0.82rem;
+            font-weight: 900;
+        }
+
+        .view-button.is-active {
+            background: var(--teal);
+            color: white;
+        }
+
         .tab-button {
             min-height: 38px;
             border: 1px solid var(--line-strong);
@@ -760,6 +797,7 @@
             imperative: "Imperative",
             inf: "Infinitive",
         };
+        const PRONOUN_ORDER = ["אני", "אתה", "את", "הוא", "היא", "אנחנו", "אתם", "אתן", "הם", "הן"];
         const DATA_URL = "verbs.trimmed.json";
         const HEBREW_MARKS = /[\u0591-\u05C7]/g;
         const FINAL_FORMS = {
@@ -777,6 +815,7 @@
             rootGroups: new Map(),
             selectedSlug: "",
             activeTense: "all",
+            tableView: "tense",
             audio: new Audio(),
             activeButton: null,
         };
@@ -830,6 +869,10 @@
             return TENSE_LABELS[value] || String(value || "").replace(/_/g, " ").replace(/\b\w/g, char => char.toUpperCase());
         }
 
+        function pronounLabel(value) {
+            return value || "Infinitive";
+        }
+
         function compactList(values) {
             return values.filter(Boolean).join(", ");
         }
@@ -840,6 +883,21 @@
 
         function tokenMatchesTerm(token, terms) {
             return terms.some(term => term === token || term.startsWith(token));
+        }
+
+        function availableRowsForView(verb) {
+            const tenses = TENSE_ORDER.filter(tense => Array.isArray(verb.conjugations?.[tense]));
+            return tenses.flatMap(tense => {
+                if (state.activeTense !== "all" && tense !== state.activeTense) return [];
+                return verb.conjugations[tense].map((row, index) => ({ ...row, tense, index }));
+            });
+        }
+
+        function pronounRank(label) {
+            if (!label) return 999;
+            const parts = String(label).split(/\s+/).filter(Boolean);
+            const ranks = parts.map(part => PRONOUN_ORDER.indexOf(part)).filter(index => index >= 0);
+            return ranks.length ? Math.min(...ranks) : 900;
         }
 
         function getRowsForVerb(verb) {
@@ -1090,6 +1148,26 @@
             `;
         }
 
+        function renderViewToggle() {
+            return `
+                <div class="view-toggle" aria-label="Table orientation">
+                    <button class="view-button${state.tableView === "tense" ? " is-active" : ""}" type="button" data-table-view="tense">By Tense</button>
+                    <button class="view-button${state.tableView === "pronoun" ? " is-active" : ""}" type="button" data-table-view="pronoun">By Pronoun</button>
+                </div>
+            `;
+        }
+
+        function renderTenseTabs(availableTenses) {
+            return `
+                <nav class="tense-tabs" aria-label="Tense display">
+                    <button class="tab-button${state.activeTense === "all" ? " is-active" : ""}" type="button" data-tense-tab="all">All</button>
+                    ${availableTenses.map(tense => `
+                        <button class="tab-button${state.activeTense === tense ? " is-active" : ""}" type="button" data-tense-tab="${escapeHtml(tense)}">${escapeHtml(tenseLabel(tense))}</button>
+                    `).join("")}
+                </nav>
+            `;
+        }
+
         function renderDetail() {
             const verb = getSelectedVerb();
             if (!verb) {
@@ -1128,14 +1206,14 @@
 
                 ${renderRelatedPanel(verb)}
 
-                <nav class="tense-tabs" aria-label="Tense display">
-                    <button class="tab-button${state.activeTense === "all" ? " is-active" : ""}" type="button" data-tense-tab="all">All</button>
-                    ${availableTenses.map(tense => `
-                        <button class="tab-button${state.activeTense === tense ? " is-active" : ""}" type="button" data-tense-tab="${escapeHtml(tense)}">${escapeHtml(tenseLabel(tense))}</button>
-                    `).join("")}
-                </nav>
+                <div class="table-toolbar">
+                    ${renderViewToggle()}
+                    ${renderTenseTabs(availableTenses)}
+                </div>
 
-                ${availableTenses.map(tense => renderTenseSection(tense, verb.conjugations[tense], verb.rt || [])).join("")}
+                ${state.tableView === "pronoun"
+                    ? renderPronounSections(verb, verb.rt || [])
+                    : availableTenses.map(tense => renderTenseSection(tense, verb.conjugations[tense], verb.rt || [])).join("")}
             `;
 
             applyTenseVisibility();
@@ -1176,6 +1254,67 @@
                     </div>
                 </section>
             `;
+        }
+
+        function renderPronounSections(verb, rootLetters) {
+            const groups = availableRowsForView(verb).reduce((map, row) => {
+                const label = row.prn || "";
+                const rows = map.get(label) || [];
+                rows.push(row);
+                map.set(label, rows);
+                return map;
+            }, new Map());
+
+            const sections = [...groups.entries()].sort(([a], [b]) => {
+                const rankDiff = pronounRank(a) - pronounRank(b);
+                return rankDiff || pronounLabel(a).localeCompare(pronounLabel(b));
+            });
+
+            if (!sections.length) {
+                return '<div class="empty-state">No forms for this tense.</div>';
+            }
+
+            return sections.map(([pronoun, rows]) => {
+                rows.sort((a, b) => {
+                    const tenseDiff = TENSE_ORDER.indexOf(a.tense) - TENSE_ORDER.indexOf(b.tense);
+                    return tenseDiff || a.index - b.index;
+                });
+
+                return `
+                    <section class="tense-section">
+                        <div class="tense-heading">
+                            <h3 class="pronoun">${escapeHtml(pronounLabel(pronoun))}</h3>
+                            <span>${rows.length} ${rows.length === 1 ? "form" : "forms"}</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="forms-table">
+                                <thead>
+                                    <tr>
+                                        <th>Tense</th>
+                                        <th>Hebrew</th>
+                                        <th>Meaning</th>
+                                        <th>Transliteration</th>
+                                        <th>Audio</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${rows.map(row => `
+                                        <tr>
+                                            <td class="pronoun">${escapeHtml(tenseLabel(row.tense))}</td>
+                                            <td class="form-hebrew">${highlightedHebrew(row.frm || "", rootLetters)}</td>
+                                            <td class="meaning">${escapeHtml(row.trl || "")}</td>
+                                            <td class="translit">${escapeHtml(row.trn || "")}</td>
+                                            <td class="audio-cell">
+                                                <button class="audio-button" type="button" data-audio="${escapeHtml(row.aud || "")}" aria-label="Play ${escapeHtml(row.trn || row.frm || "form")} audio" ${row.aud ? "" : "disabled"}>&#9658;</button>
+                                            </td>
+                                        </tr>
+                                    `).join("")}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                `;
+            }).join("");
         }
 
         function applyTenseVisibility() {
@@ -1243,6 +1382,13 @@
                 if (relatedButton) {
                     state.selectedSlug = relatedButton.dataset.relatedSlug;
                     renderList();
+                    renderDetail();
+                    return;
+                }
+
+                const viewButton = event.target.closest("[data-table-view]");
+                if (viewButton) {
+                    state.tableView = viewButton.dataset.tableView;
                     renderDetail();
                     return;
                 }
