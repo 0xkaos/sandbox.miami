@@ -512,7 +512,7 @@
 
         .forms-table {
             width: 100%;
-            min-width: 620px;
+            min-width: 840px;
             border-collapse: collapse;
             direction: rtl;
         }
@@ -575,6 +575,75 @@
         .audio-cell {
             width: 54px;
             text-align: center;
+        }
+
+        .example-cell {
+            width: 230px;
+            direction: ltr;
+            text-align: left;
+        }
+
+        .example-details {
+            color: var(--muted);
+            font-size: 0.86rem;
+        }
+
+        .example-details summary {
+            display: inline-flex;
+            align-items: center;
+            min-height: 30px;
+            border: 1px solid var(--line-strong);
+            border-radius: var(--radius);
+            background: #faf7ef;
+            color: var(--ink);
+            padding: 0 9px;
+            font-size: 0.78rem;
+            font-weight: 900;
+            list-style: none;
+            cursor: pointer;
+        }
+
+        .example-details summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .example-details[open] summary {
+            border-color: var(--teal);
+            background: #eef8f6;
+            color: var(--teal-strong);
+        }
+
+        .example-body {
+            display: grid;
+            gap: 6px;
+            margin-top: 8px;
+            padding: 9px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: rgba(255, 253, 248, 0.82);
+        }
+
+        .example-hebrew {
+            direction: rtl;
+            color: var(--ink);
+            font-family: NotoHebrew, HeeboLocal, serif;
+            font-size: 1.02rem;
+            font-weight: 800;
+            line-height: 1.55;
+            text-align: right;
+        }
+
+        .example-english {
+            color: var(--muted);
+            line-height: 1.45;
+        }
+
+        .example-audio {
+            justify-self: start;
+            width: auto;
+            min-width: 86px;
+            padding: 0 9px;
+            font-size: 0.78rem;
         }
 
         .audio-button {
@@ -707,7 +776,7 @@
             }
 
             .forms-table {
-                min-width: 600px;
+                min-width: 800px;
             }
         }
     </style>
@@ -911,7 +980,7 @@
 
         function buildSearchText(slug, verb, rows) {
             const translationValues = Object.values(verb.translations || {});
-            const rowValues = rows.flatMap(row => [row.prn, row.frm, row.trn, row.phn, row.trl, row.tense]);
+            const rowValues = rows.flatMap(row => [row.prn, row.frm, row.trn, row.phn, row.trl, row.tense, row.ex?.he, row.ex?.en]);
             return normalize([
                 slug,
                 verb.inf,
@@ -1236,6 +1305,7 @@
                                     <th>Hebrew</th>
                                     <th>Meaning</th>
                                     <th>Transliteration</th>
+                                    <th>Context</th>
                                     <th>Audio</th>
                                 </tr>
                             </thead>
@@ -1246,6 +1316,7 @@
                                         <td class="form-hebrew">${highlightedHebrew(row.frm || "", rootLetters)}</td>
                                         <td class="meaning">${escapeHtml(row.trl || "")}</td>
                                         <td class="translit">${escapeHtml(row.trn || "")}</td>
+                                        ${renderExampleCell(row)}
                                         <td class="audio-cell">
                                             <button class="audio-button" type="button" data-audio="${escapeHtml(row.aud || "")}" aria-label="Play ${escapeHtml(row.trn || row.frm || "form")} audio" ${row.aud ? "" : "disabled"}>&#9658;</button>
                                         </td>
@@ -1255,6 +1326,25 @@
                         </table>
                     </div>
                 </section>
+            `;
+        }
+
+        function renderExampleCell(row) {
+            if (!row.ex?.he && !row.ex?.en) {
+                return '<td class="example-cell"></td>';
+            }
+
+            return `
+                <td class="example-cell">
+                    <details class="example-details">
+                        <summary>Context</summary>
+                        <div class="example-body">
+                            ${row.ex.he ? `<div class="example-hebrew">${highlightedHebrew(row.ex.he, [])}</div>` : ""}
+                            ${row.ex.en ? `<div class="example-english">${escapeHtml(row.ex.en)}</div>` : ""}
+                            ${row.ex.aud ? `<button class="audio-button example-audio" type="button" data-audio="${escapeHtml(row.ex.aud)}" aria-label="Play context sentence audio">&#9658; Context</button>` : ""}
+                        </div>
+                    </details>
+                </td>
             `;
         }
 
@@ -1296,6 +1386,7 @@
                                         <th>Hebrew</th>
                                         <th>Meaning</th>
                                         <th>Transliteration</th>
+                                        <th>Context</th>
                                         <th>Audio</th>
                                     </tr>
                                 </thead>
@@ -1306,6 +1397,7 @@
                                             <td class="form-hebrew">${highlightedHebrew(row.frm || "", rootLetters)}</td>
                                             <td class="meaning">${escapeHtml(row.trl || "")}</td>
                                             <td class="translit">${escapeHtml(row.trn || "")}</td>
+                                            ${renderExampleCell(row)}
                                             <td class="audio-cell">
                                                 <button class="audio-button" type="button" data-audio="${escapeHtml(row.aud || "")}" aria-label="Play ${escapeHtml(row.trn || row.frm || "form")} audio" ${row.aud ? "" : "disabled"}>&#9658;</button>
                                             </td>
