@@ -869,7 +869,8 @@
             inf: "Infinitive",
         };
         const PRONOUN_ORDER = ["אני", "אתה", "את", "הוא", "היא", "אנחנו", "אתם", "אתן", "הם", "הן"];
-        const DATA_URL = "verbs.trimmed.json";
+        const DATA_VERSION = "2026-05-05-context-audio";
+        const DATA_URL = `verbs.trimmed.json?v=${DATA_VERSION}`;
         const HEBREW_MARKS = /[\u0591-\u05C7]/g;
         const FINAL_FORMS = {
             "ך": "כ",
@@ -974,8 +975,36 @@
         function getRowsForVerb(verb) {
             return Object.entries(verb.conjugations || {}).flatMap(([tense, rows]) => {
                 if (!Array.isArray(rows)) return [];
-                return rows.map(row => ({ ...row, tense }));
+                return rows.map(row => normalizeRow({ ...row, tense }));
             });
+        }
+
+        function normalizeRow(row) {
+            const legacyHe = row.example_sentence_he;
+            const legacyEn = row.example_sentence_en;
+            if (!row.ex && (legacyHe || legacyEn)) {
+                row.ex = {
+                    he: legacyHe || "",
+                    en: legacyEn || "",
+                };
+            }
+
+            if (row.ex?.aud) return row;
+            const legacyAudio = row.audio_example || row.example_audio;
+            if (!legacyAudio) return row;
+            row.ex = {
+                ...(row.ex || {}),
+                aud: legacyAudio,
+            };
+            return row;
+        }
+
+        function normalizeConjugationRows(verb) {
+            for (const rows of Object.values(verb.conjugations || {})) {
+                if (!Array.isArray(rows)) continue;
+                rows.forEach(normalizeRow);
+            }
+            return verb;
         }
 
         function buildSearchText(slug, verb, rows) {
@@ -998,6 +1027,7 @@
 
         function prepareData(raw) {
             const verbs = Object.entries(raw).map(([slug, verb]) => {
+                normalizeConjugationRows(verb);
                 const rows = getRowsForVerb(verb);
                 const meanings = Array.isArray(verb.mng) ? verb.mng : [];
                 const primaryMeaning = verb.translations?.en || meanings[0] || slug;
@@ -1503,7 +1533,7 @@
         async function init() {
             try {
                 bindEvents();
-                const response = await fetch(DATA_URL);
+                const response = await fetch(DATA_URL, { cache: "no-store" });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const raw = await response.json();
                 state.verbs = prepareData(raw);
