@@ -155,11 +155,47 @@
             backdrop-filter: blur(12px);
         }
 
-        .control-grid {
+        .search-row {
             display: grid;
-            grid-template-columns: minmax(220px, 1fr) repeat(4, minmax(130px, 0.32fr));
+            grid-template-columns: minmax(220px, 1fr);
+            gap: 10px;
+        }
+
+        .filter-panel {
+            margin-top: 10px;
+        }
+
+        .filter-panel summary {
+            display: inline-flex;
+            align-items: center;
+            min-height: 34px;
+            border: 1px solid var(--line-strong);
+            border-radius: var(--radius);
+            background: var(--surface);
+            color: var(--muted);
+            padding: 0 10px;
+            font-size: 0.82rem;
+            font-weight: 900;
+            list-style: none;
+            cursor: pointer;
+        }
+
+        .filter-panel summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .filter-panel[open] summary {
+            border-color: var(--teal);
+            color: var(--teal-strong);
+            background: #eef8f6;
+        }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(130px, 1fr));
             gap: 10px;
             align-items: end;
+            margin-top: 10px;
         }
 
         .field {
@@ -476,7 +512,7 @@
             border: 1px solid var(--line);
             border-radius: var(--radius);
             background: var(--surface);
-            overflow: hidden;
+            overflow: visible;
         }
 
         .tense-section[hidden] {
@@ -508,18 +544,20 @@
 
         .table-wrap {
             overflow-x: auto;
+            overflow-y: visible;
         }
 
         .forms-table {
             width: 100%;
-            min-width: 840px;
+            min-width: 0;
             border-collapse: collapse;
             direction: rtl;
+            table-layout: fixed;
         }
 
         .forms-table th,
         .forms-table td {
-            padding: 8px 10px;
+            padding: 7px 6px;
             border-bottom: 1px solid var(--line);
             text-align: right;
             vertical-align: middle;
@@ -533,19 +571,42 @@
             letter-spacing: 0.06em;
             text-transform: uppercase;
             white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .forms-table tr:last-child td {
             border-bottom: 0;
         }
 
+        .col-label,
+        .pronoun {
+            width: 64px;
+        }
+
+        .col-hebrew,
+        .form-hebrew {
+            width: 22%;
+        }
+
+        .col-context,
+        .example-cell {
+            width: 72px;
+        }
+
+        .col-audio,
+        .audio-cell {
+            width: 38px;
+        }
+
         .pronoun {
             direction: rtl;
-            min-width: 76px;
             color: var(--teal-strong);
             font-family: NotoHebrew, HeeboLocal, serif;
             font-weight: 900;
             white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .form-hebrew {
@@ -554,6 +615,8 @@
             font-size: 1.36rem;
             font-weight: 900;
             white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .root-hit {
@@ -561,29 +624,34 @@
         }
 
         .translit {
-            font-weight: 800;
+            font-weight: 400;
             direction: ltr;
             text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .meaning {
             color: var(--muted);
             direction: ltr;
             text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .audio-cell {
-            width: 54px;
             text-align: center;
         }
 
         .example-cell {
-            width: 230px;
             direction: ltr;
             text-align: left;
         }
 
         .example-details {
+            position: relative;
             color: var(--muted);
             font-size: 0.86rem;
         }
@@ -591,16 +659,20 @@
         .example-details summary {
             display: inline-flex;
             align-items: center;
-            min-height: 30px;
+            min-height: 28px;
             border: 1px solid var(--line-strong);
             border-radius: var(--radius);
             background: #faf7ef;
             color: var(--ink);
-            padding: 0 9px;
-            font-size: 0.78rem;
+            padding: 0 7px;
+            font-size: 0.74rem;
             font-weight: 900;
             list-style: none;
             cursor: pointer;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .example-details summary::-webkit-details-marker {
@@ -617,10 +689,15 @@
             display: grid;
             gap: 6px;
             margin-top: 8px;
+            position: absolute;
+            left: 0;
+            z-index: 20;
+            width: min(320px, calc(100vw - 40px));
             padding: 9px;
             border: 1px solid var(--line);
             border-radius: var(--radius);
             background: rgba(255, 253, 248, 0.82);
+            box-shadow: 0 12px 28px rgba(50, 45, 37, 0.16);
         }
 
         .example-hebrew {
@@ -649,8 +726,8 @@
         .audio-button {
             display: inline-grid;
             place-items: center;
-            width: 38px;
-            height: 34px;
+            width: 30px;
+            height: 30px;
             border: 1px solid var(--line-strong);
             border-radius: var(--radius);
             background: #f7fbfa;
@@ -741,7 +818,7 @@
                 grid-template-columns: 1fr;
             }
 
-            .control-grid {
+            .filter-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
@@ -763,7 +840,7 @@
             }
 
             .stats,
-            .control-grid {
+            .filter-grid {
                 grid-template-columns: 1fr;
             }
 
@@ -776,7 +853,42 @@
             }
 
             .forms-table {
-                min-width: 800px;
+                font-size: 0.86rem;
+            }
+
+            .forms-table th,
+            .forms-table td {
+                padding: 6px 4px;
+            }
+
+            .col-label,
+            .pronoun {
+                width: 46px;
+            }
+
+            .col-context,
+            .example-cell {
+                width: 56px;
+            }
+
+            .col-audio,
+            .audio-cell {
+                width: 32px;
+            }
+
+            .form-hebrew {
+                font-size: 1.14rem;
+            }
+
+            .example-details summary {
+                min-height: 26px;
+                padding: 0 5px;
+                font-size: 0.68rem;
+            }
+
+            .audio-button {
+                width: 26px;
+                height: 26px;
             }
         }
     </style>
@@ -810,11 +922,15 @@
         </header>
 
         <section class="controls" aria-label="Search and filters">
-            <div class="control-grid">
+            <div class="search-row">
                 <div class="field">
                     <label for="search-input">Search</label>
                     <input id="search-input" type="search" autocomplete="off" placeholder="write, כותב, katav, פעל">
                 </div>
+            </div>
+            <details class="filter-panel">
+                <summary>Filters</summary>
+                <div class="filter-grid">
                 <div class="field">
                     <label for="binyan-filter">Binyan</label>
                     <select id="binyan-filter">
@@ -839,7 +955,8 @@
                         <option value="">All frequencies</option>
                     </select>
                 </div>
-            </div>
+                </div>
+            </details>
         </section>
 
         <div class="layout">
@@ -1331,12 +1448,12 @@
                         <table class="forms-table">
                             <thead>
                                 <tr>
-                                    <th>Pronoun</th>
-                                    <th>Hebrew</th>
+                                    <th class="col-label">Pronoun</th>
+                                    <th class="col-hebrew">Hebrew</th>
                                     <th>Meaning</th>
                                     <th>Transliteration</th>
-                                    <th>Context</th>
-                                    <th>Audio</th>
+                                    <th class="col-context">Context</th>
+                                    <th class="col-audio">Audio</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1412,12 +1529,12 @@
                             <table class="forms-table">
                                 <thead>
                                     <tr>
-                                        <th>Tense</th>
-                                        <th>Hebrew</th>
+                                        <th class="col-label">Tense</th>
+                                        <th class="col-hebrew">Hebrew</th>
                                         <th>Meaning</th>
                                         <th>Transliteration</th>
-                                        <th>Context</th>
-                                        <th>Audio</th>
+                                        <th class="col-context">Context</th>
+                                        <th class="col-audio">Audio</th>
                                     </tr>
                                 </thead>
                                 <tbody>
