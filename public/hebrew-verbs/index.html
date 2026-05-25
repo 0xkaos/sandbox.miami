@@ -690,8 +690,8 @@
             gap: 6px;
             margin-top: 8px;
             position: fixed;
-            top: 26vh;
-            left: 50%;
+            top: var(--context-top, 0);
+            left: var(--context-left, 0);
             z-index: 100;
             width: min(420px, calc(100vw - 32px));
             padding: 9px;
@@ -699,7 +699,6 @@
             border-radius: var(--radius);
             background: rgba(255, 253, 248, 0.82);
             box-shadow: 0 12px 28px rgba(50, 45, 37, 0.16);
-            transform: translateX(-50%);
         }
 
         .example-hebrew {
@@ -1599,6 +1598,38 @@
             }
         }
 
+        function closeOtherExamples(activeDetails) {
+            document.querySelectorAll(".example-details[open]").forEach(details => {
+                if (details !== activeDetails) details.removeAttribute("open");
+            });
+        }
+
+        function positionExample(details) {
+            const summary = details.querySelector("summary");
+            const body = details.querySelector(".example-body");
+            if (!summary || !body) return;
+
+            const rect = summary.getBoundingClientRect();
+            const panelWidth = Math.min(420, window.innerWidth - 32);
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const desiredTop = spaceBelow >= 180 ? rect.bottom + 8 : Math.max(12, rect.top - 188);
+            const desiredLeft = Math.min(
+                Math.max(16, rect.left),
+                Math.max(16, window.innerWidth - panelWidth - 16)
+            );
+
+            body.style.setProperty("--context-top", `${desiredTop}px`);
+            body.style.setProperty("--context-left", `${desiredLeft}px`);
+        }
+
+        function handleExampleToggle(event) {
+            const details = event.target;
+            if (!details.classList.contains("example-details")) return;
+            if (!details.open) return;
+            closeOtherExamples(details);
+            positionExample(details);
+        }
+
         function bindEvents() {
             [els.search, els.binyan, els.tense, els.difficulty, els.frequency].forEach(control => {
                 control.addEventListener("input", filterVerbs);
@@ -1642,6 +1673,15 @@
                     renderDetail();
                 }
             });
+            els.detail.addEventListener("toggle", handleExampleToggle, true);
+            window.addEventListener("resize", () => {
+                const openExample = document.querySelector(".example-details[open]");
+                if (openExample) positionExample(openExample);
+            });
+            window.addEventListener("scroll", () => {
+                const openExample = document.querySelector(".example-details[open]");
+                if (openExample) positionExample(openExample);
+            }, true);
 
             state.audio.addEventListener("ended", clearPlayingButton);
             state.audio.addEventListener("pause", () => {
