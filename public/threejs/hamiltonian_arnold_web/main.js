@@ -24,6 +24,14 @@ const PARTICLE_PRESETS = {
   '1M': 1000000,
   '2M': 2000000
 };
+const CAVITY_MODES = {
+  none: 0,
+  'spherical shell': 1,
+  'box cavity': 2,
+  'central obstacle': 3,
+  'slit baffle': 4,
+  'layered shells': 5
+};
 
 const params = {
   particlePreset: '200k',
@@ -38,12 +46,18 @@ const params = {
   resonanceSharpness: 11.0,
   dt: 0.34,
   substeps: 2,
-  projection: 0.78,
-  pointSize: 0.78,
-  bloomStrength: 0.92,
+  projection: 0.0,
+  pointSize: 0.64,
+  bloomStrength: 0.78,
   bloomRadius: 0.42,
   trailMemory: 0.88,
   autoRotate: true,
+  cavityMode: 'spherical shell',
+  cavityStrength: 0.42,
+  cavityRadius: 2.72,
+  cavitySoftness: 0.34,
+  cavityAperture: 0.78,
+  showCavity: true,
   colorMode: 'web + speed',
   sliceAxis: 'z',
   sliceCenter: 0.0,
@@ -65,6 +79,8 @@ let outputPass;
 let particleSystem;
 let particleGeometry;
 let particleMaterial;
+let cavityGroup;
+let cavityGuides;
 let sim;
 let gui;
 let clock;
@@ -113,6 +129,11 @@ const velocityFragmentShader = `
   uniform float uDamping;
   uniform float uMaxSpeed;
   uniform float uSharpness;
+  uniform float uCavityMode;
+  uniform float uCavityStrength;
+  uniform float uCavityRadius;
+  uniform float uCavitySoftness;
+  uniform float uCavityAperture;
   uniform float uSeed;
   varying vec2 vUv;
 
@@ -132,6 +153,78 @@ const velocityFragmentShader = `
   float resonanceGate(float phase) {
     float d = abs(sin(phase));
     return pow(max(0.0, 1.0 - d), uSharpness);
+  }
+
+  vec3 safeNormalize(vec3 v) {
+    return v * inversesqrt(max(dot(v, v), 0.000001));
+  }
+
+  float wallRamp(float signedDistance, float softness) {
+    return smoothstep(-softness, softness, signedDistance);
+  }
+
+  vec3 cavityForce(vec3 q, float t, out float cavity) {
+    cavity = 0.0;
+    if (uCavityMode < 0.5 || uCavityStrength <= 0.0) {
+      return vec3(0.0);
+    }
+
+    float softness = max(uCavitySoftness, 0.025);
+    float radius = max(uCavityRadius, 0.2);
+    float aperture = max(uCavityAperture, 0.08);
+    float strength = uCavityStrength;
+    vec3 force = vec3(0.0);
+
+    if (uCavityMode < 1.5) {
+      float r = length(q);
+      float d = r - radius;
+      float w = wallRamp(d, softness);
+      float wallGain = 0.35 + max(d, 0.0) / softness;
+      force += -safeNormalize(q) * strength * w * wallGain;
+      cavity = max(cavity, w);
+    } else if (uCavityMode < 2.5) {
+      vec3 over = abs(q) - vec3(radius);
+      float d = max(over.x, max(over.y, over.z));
+      vec3 normal = vec3(sign(q.x), 0.0, 0.0);
+      if (over.y > over.x && over.y > over.z) {
+        normal = vec3(0.0, sign(q.y), 0.0);
+      } else if (over.z > over.x && over.z > over.y) {
+        normal = vec3(0.0, 0.0, sign(q.z));
+      }
+      float w = wallRamp(d, softness);
+      float wallGain = 0.35 + max(d, 0.0) / softness;
+      force += -normal * strength * w * wallGain;
+      cavity = max(cavity, w);
+    } else if (uCavityMode < 3.5) {
+      vec3 normalSeed = q + 0.001 * vec3(sin(t), cos(t * 1.37), sin(t * 0.71));
+      float obstacleRadius = max(0.12, radius * 0.42);
+      float d = obstacleRadius - length(q);
+      float w = wallRamp(d, softness);
+      float wallGain = 0.5 + max(d, 0.0) / softness;
+      force += safeNormalize(normalSeed) * strength * 1.35 * w * wallGain;
+      cavity = max(cavity, w);
+    } else if (uCavityMode < 4.5) {
+      float plateThickness = 0.08 + softness * 0.22;
+      float slitRadius = length(q.yz);
+      float outsideSlit = smoothstep(aperture - softness, aperture + softness, slitRadius);
+      float nearPlate = 1.0 - smoothstep(plateThickness, plateThickness + softness, abs(q.x));
+      float side = q.x >= 0.0 ? 1.0 : -1.0;
+      float w = nearPlate * outsideSlit;
+      force += vec3(side, 0.0, 0.0) * strength * 1.75 * w;
+      cavity = max(cavity, w);
+    } else {
+      float r = length(q);
+      float gap = max(aperture, 0.22);
+      float shellPhase = (r - radius * 0.24) * PI / gap;
+      float layer = pow(max(0.0, 1.0 - abs(sin(shellPhase))), 4.0);
+      float direction = sign(cos(shellPhase));
+      float outer = wallRamp(r - radius, softness);
+      force += -safeNormalize(q) * strength * 0.62 * layer * direction;
+      force += -safeNormalize(q) * strength * outer * (0.35 + max(r - radius, 0.0) / softness);
+      cavity = max(layer, outer);
+    }
+
+    return force;
   }
 
   vec3 forceAt(vec3 q, float t, out float web) {
@@ -190,6 +283,9 @@ const velocityFragmentShader = `
 
     float web = 0.0;
     vec3 force = forceAt(q, uTime, web);
+    float cavity = 0.0;
+    force += cavityForce(q, uTime, cavity);
+    web = clamp(max(web, cavity * 0.72), 0.0, 1.0);
 
     float cell = floor(vUv.x * 4096.0) + floor(vUv.y * 4096.0) * 4096.0;
     float kickEpoch = floor(uTime * 19.0);
@@ -315,7 +411,7 @@ const particleVertexShader = `
     }
 
     vColor *= 0.38 + 1.18 * web + 0.26 * speed;
-    vAlpha = posData.w * sliceFade * uDensityScale * (0.025 + 0.46 * smoothstep(0.02, 0.86, web + speed * 0.55));
+    vAlpha = posData.w * sliceFade * uDensityScale * (0.012 + 0.28 * smoothstep(0.02, 0.86, web + speed * 0.55));
 
     vec4 mvPosition = modelViewMatrix * vec4(projected, 1.0);
     float perspectiveScale = 1.0 / max(0.24, -mvPosition.z);
@@ -365,6 +461,11 @@ const velocityMaterial = new THREE.ShaderMaterial({
     uDamping: { value: params.damping },
     uMaxSpeed: { value: params.maxSpeed },
     uSharpness: { value: params.resonanceSharpness },
+    uCavityMode: { value: cavityModeValue(params.cavityMode) },
+    uCavityStrength: { value: params.cavityStrength },
+    uCavityRadius: { value: params.cavityRadius },
+    uCavitySoftness: { value: params.cavitySoftness },
+    uCavityAperture: { value: params.cavityAperture },
     uSeed: { value: Math.random() * 1000 }
   },
   vertexShader: passVertexShader,
@@ -429,6 +530,7 @@ function init() {
   controls.maxDistance = 18;
 
   buildPhaseSpaceGuides();
+  buildCavityGuides();
   buildSimulation(params.particleCount);
   buildPostProcessing();
   buildGui();
@@ -466,6 +568,110 @@ function buildPhaseSpaceGuides() {
   const light = new THREE.PointLight(0x6ee7ff, 0.8, 18);
   light.position.set(3.5, 2.2, 4.2);
   scene.add(light);
+}
+
+function buildCavityGuides() {
+  cavityGroup = new THREE.Group();
+  cavityGroup.renderOrder = 1;
+  scene.add(cavityGroup);
+
+  const shellMaterial = makeCavityMaterial(0x6ee7ff, 0.17, true);
+  const solidMaterial = makeCavityMaterial(0x6ee7ff, 0.08, false);
+  const baffleMaterial = makeCavityMaterial(0xff5f7e, 0.11, false);
+  const layerMaterial = makeCavityMaterial(0xffd166, 0.12, true);
+
+  cavityGuides = {
+    sphere: new THREE.Mesh(new THREE.SphereGeometry(1, 72, 36), shellMaterial.clone()),
+    box: new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), shellMaterial.clone()),
+    obstacle: new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), solidMaterial.clone()),
+    slit: new THREE.Group(),
+    layered: new THREE.Group()
+  };
+
+  cavityGroup.add(cavityGuides.sphere);
+  cavityGroup.add(cavityGuides.box);
+  cavityGroup.add(cavityGuides.obstacle);
+
+  const panelGeometry = new THREE.BoxGeometry(1, 1, 1);
+  for (let i = 0; i < 4; i += 1) {
+    const panel = new THREE.Mesh(panelGeometry, baffleMaterial.clone());
+    cavityGuides.slit.add(panel);
+  }
+  cavityGroup.add(cavityGuides.slit);
+
+  const layerGeometry = new THREE.SphereGeometry(1, 72, 28);
+  for (let i = 0; i < 6; i += 1) {
+    const layer = new THREE.Mesh(layerGeometry, layerMaterial.clone());
+    cavityGuides.layered.add(layer);
+  }
+  cavityGroup.add(cavityGuides.layered);
+
+  updateCavityGuides();
+}
+
+function makeCavityMaterial(color, opacity, wireframe) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    wireframe,
+    transparent: true,
+    opacity,
+    side: THREE.DoubleSide,
+    blending: THREE.NormalBlending,
+    depthWrite: false
+  });
+}
+
+function updateCavityGuides() {
+  if (!cavityGuides) return;
+
+  const mode = cavityModeValue(params.cavityMode);
+  const visibleBase = params.showCavity ? (1.0 - params.projection * 0.55) : 0.0;
+  const scale = 1.18;
+  const radius = Math.max(params.cavityRadius, 0.2) * scale;
+  const softness = Math.max(params.cavitySoftness, 0.025) * scale;
+  const aperture = Math.min(Math.max(params.cavityAperture, 0.08) * scale, radius * 0.92);
+
+  setGuideVisible(cavityGuides.sphere, mode === 1, 0.035 * visibleBase);
+  setGuideVisible(cavityGuides.box, mode === 2, 0.045 * visibleBase);
+  setGuideVisible(cavityGuides.obstacle, mode === 3, 0.07 * visibleBase);
+  setGuideVisible(cavityGuides.slit, mode === 4, 0.075 * visibleBase);
+  setGuideVisible(cavityGuides.layered, mode === 5, 0.04 * visibleBase);
+
+  cavityGuides.sphere.scale.setScalar(radius);
+  cavityGuides.box.scale.setScalar(radius);
+  cavityGuides.obstacle.scale.setScalar(radius * 0.42);
+
+  const thickness = 0.08 * scale + softness * 0.22;
+  const span = radius * 2.0;
+  const band = Math.max(0.01, radius - aperture);
+  const center = aperture + band * 0.5;
+  const panels = cavityGuides.slit.children;
+  panels[0].position.set(0, center, 0);
+  panels[0].scale.set(thickness, band, span);
+  panels[1].position.set(0, -center, 0);
+  panels[1].scale.set(thickness, band, span);
+  panels[2].position.set(0, 0, center);
+  panels[2].scale.set(thickness, aperture * 2.0, band);
+  panels[3].position.set(0, 0, -center);
+  panels[3].scale.set(thickness, aperture * 2.0, band);
+
+  const startRadius = radius * 0.24;
+  const gap = Math.max(aperture, 0.22 * scale);
+  cavityGuides.layered.children.forEach((layer, index) => {
+    const layerRadius = startRadius + gap * index;
+    layer.visible = mode === 5 && params.showCavity && layerRadius <= radius;
+    layer.scale.setScalar(Math.max(layerRadius, 0.001));
+  });
+}
+
+function setGuideVisible(object, visible, opacity) {
+  object.visible = visible && opacity > 0.001;
+  object.traverse((child) => {
+    if (child.material) {
+      child.material.opacity = opacity;
+      child.visible = object.visible;
+    }
+  });
 }
 
 function buildSimulation(particleCount, loadedState = null) {
@@ -677,8 +883,19 @@ function buildGui() {
     buildSimulation(params.particleCount);
   } }, 'reset').name('reset state');
 
+  const cavityFolder = gui.addFolder('Cavity');
+  cavityFolder.add(params, 'cavityMode', Object.keys(CAVITY_MODES)).name('mode').onChange(() => {
+    updateCavityGuides();
+    setStatus(`cavity: ${params.cavityMode}`);
+  });
+  cavityFolder.add(params, 'cavityStrength', 0.0, 1.4, 0.001).name('wall strength');
+  cavityFolder.add(params, 'cavityRadius', 0.45, PI, 0.001).name('radius');
+  cavityFolder.add(params, 'cavitySoftness', 0.025, 0.85, 0.001).name('softness');
+  cavityFolder.add(params, 'cavityAperture', 0.08, 2.3, 0.001).name('aperture / gap').onChange(updateCavityGuides);
+  cavityFolder.add(params, 'showCavity').name('show guide').onChange(updateCavityGuides);
+
   const viewFolder = gui.addFolder('View');
-  viewFolder.add(params, 'projection', 0.0, 1.0, 0.001).name('torus projection');
+  viewFolder.add(params, 'projection', 0.0, 1.0, 0.001).name('torus projection').onChange(updateCavityGuides);
   viewFolder.add(params, 'pointSize', 0.35, 3.0, 0.01).name('point size');
   viewFolder.add(params, 'colorMode', ['web + speed', 'speed', 'energy']).name('color');
   viewFolder.add(params, 'sliceAxis', ['x', 'y', 'z']).name('slice axis');
@@ -716,6 +933,12 @@ function updateMaterialUniforms() {
   velocityMaterial.uniforms.uDamping.value = params.damping;
   velocityMaterial.uniforms.uMaxSpeed.value = params.maxSpeed;
   velocityMaterial.uniforms.uSharpness.value = params.resonanceSharpness;
+  velocityMaterial.uniforms.uCavityMode.value = cavityModeValue(params.cavityMode);
+  velocityMaterial.uniforms.uCavityStrength.value = params.cavityStrength;
+  velocityMaterial.uniforms.uCavityRadius.value = params.cavityRadius;
+  velocityMaterial.uniforms.uCavitySoftness.value = params.cavitySoftness;
+  velocityMaterial.uniforms.uCavityAperture.value = params.cavityAperture;
+  updateCavityGuides();
 
   if (particleMaterial) {
     particleMaterial.uniforms.uProjectionMix.value = params.projection;
@@ -999,6 +1222,10 @@ function colorModeValue(mode) {
   if (mode === 'speed') return 1;
   if (mode === 'energy') return 2;
   return 0;
+}
+
+function cavityModeValue(mode) {
+  return CAVITY_MODES[mode] ?? 0;
 }
 
 function viewportDensityScale() {
