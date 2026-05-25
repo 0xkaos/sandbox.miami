@@ -1,0 +1,165 @@
+:root {
+  color-scheme: dark;
+  --ink: #f7fbff;
+  --muted: rgba(247, 251, 255, 0.66);
+  --panel: rgba(5, 8, 14, 0.74);
+  --panel-strong: rgba(5, 8, 14, 0.9);
+  --line: rgba(255, 255, 255, 0.18);
+  --cyan: #6ee7ff;
+  --gold: #ffd166;
+  --rose: #ff5f7e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #03050a;
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(circle at 50% 50%, black, transparent 78%);
+  opacity: 0.52;
+  z-index: 1;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  z-index: 0;
+}
+
+.hud {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  z-index: 2;
+  width: min(310px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.38);
+}
+
+.hud-title {
+  margin-bottom: 12px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hud-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 26px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hud-row:first-of-type {
+  border-top: 0;
+}
+
+.hud-row strong {
+  color: var(--cyan);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-line {
+  margin-top: 12px;
+  color: rgba(247, 251, 255, 0.58);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.error-panel {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: min(520px, calc(100vw - 32px));
+  transform: translate(-50%, -50%);
+  padding: 22px;
+  border: 1px solid rgba(255, 95, 126, 0.45);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
+}
+
+.error-panel h1 {
+  margin: 0 0 10px;
+  color: var(--rose);
+  font-size: 18px;
+}
+
+.error-panel p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.lil-gui.root {
+  --background-color: rgba(5, 8, 14, 0.78);
+  --title-background-color: rgba(255, 255, 255, 0.08);
+  --widget-color: rgba(255, 255, 255, 0.12);
+  --hover-color: rgba(110, 231, 255, 0.2);
+  --focus-color: rgba(255, 209, 102, 0.24);
+  --number-color: var(--gold);
+  --string-color: var(--cyan);
+  --font-size: 12px;
+  backdrop-filter: blur(14px);
+}
+
+@media (max-width: 760px) {
+  .hud {
+    left: 10px;
+    top: 10px;
+    width: min(250px, calc(100vw - 20px));
+    padding: 12px;
+  }
+
+  .hud-title {
+    font-size: 11px;
+  }
+
+  .hud-row {
+    min-height: 24px;
+    font-size: 10px;
+  }
+
+  .lil-gui.root {
+    max-height: 52vh;
+    overflow-y: auto;
+  }
+}

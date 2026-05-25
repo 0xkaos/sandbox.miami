@@ -30,6 +30,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/hamiltonian_arnold_web/",
+    "title": "Hamiltonian Arnold Web",
+    "description": "Real-time GPU particle simulation of quasiperiodic Hamiltonian chaos and Arnold web transport in a driven acoustic cavity analogue.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/iphone_stylus/",
     "title": "iPhone 3D Stylus Bridge",
     "description": "Use an iPhone as a 3D stylus controller for a desktop Three.js scene via Cloudflare Worker WebSocket relay.",
