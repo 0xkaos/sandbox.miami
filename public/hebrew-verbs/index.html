@@ -581,22 +581,22 @@
 
         .col-label,
         .pronoun {
-            width: 64px;
+            width: 92px;
         }
 
         .col-hebrew,
         .form-hebrew {
-            width: 22%;
+            width: 18%;
         }
 
         .col-context,
         .example-cell {
-            width: 72px;
+            width: 96px;
         }
 
         .col-audio,
         .audio-cell {
-            width: 38px;
+            width: 58px;
         }
 
         .pronoun {
@@ -689,15 +689,17 @@
             display: grid;
             gap: 6px;
             margin-top: 8px;
-            position: absolute;
-            left: 0;
-            z-index: 20;
-            width: min(320px, calc(100vw - 40px));
+            position: fixed;
+            top: 26vh;
+            left: 50%;
+            z-index: 100;
+            width: min(420px, calc(100vw - 32px));
             padding: 9px;
             border: 1px solid var(--line);
             border-radius: var(--radius);
             background: rgba(255, 253, 248, 0.82);
             box-shadow: 0 12px 28px rgba(50, 45, 37, 0.16);
+            transform: translateX(-50%);
         }
 
         .example-hebrew {
