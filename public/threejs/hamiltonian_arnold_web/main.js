@@ -463,54 +463,9 @@ function buildPhaseSpaceGuides() {
   grid.material.opacity = 0.28;
   scene.add(grid);
 
-  const torusGeometry = new THREE.TorusGeometry(2.12, 0.82, 72, 180);
-  const torusMaterial = new THREE.MeshBasicMaterial({
-    color: 0x6ee7ff,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.08,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-  const torus = new THREE.Mesh(torusGeometry, torusMaterial);
-  scene.add(torus);
-
-  const resonanceMaterial = new THREE.LineBasicMaterial({
-    color: 0xffd166,
-    transparent: true,
-    opacity: 0.22,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-
-  const resonanceLines = new THREE.Group();
-  resonanceLines.add(makeResonanceCurve((u) => [u, 2.0 * u, 0.0], resonanceMaterial));
-  resonanceLines.add(makeResonanceCurve((u) => [u, 0.4 * Math.sin(3.0 * u), 0.5 * u], resonanceMaterial));
-  resonanceLines.add(makeResonanceCurve((u) => [u, -u, 2.0 * u], resonanceMaterial));
-  resonanceLines.add(makeResonanceCurve((u) => [u, 0.66 * u + 0.4, -0.35 * u], resonanceMaterial));
-  scene.add(resonanceLines);
-
   const light = new THREE.PointLight(0x6ee7ff, 0.8, 18);
   light.position.set(3.5, 2.2, 4.2);
   scene.add(light);
-}
-
-function makeResonanceCurve(phaseFn, material) {
-  const points = [];
-  const segments = 280;
-  for (let i = 0; i <= segments; i += 1) {
-    const u = -PI + (TWO_PI * i) / segments;
-    const q = phaseFn(u).map(wrapScalarPi);
-    const major = 2.12 + 0.28 * Math.cos(q[2] * 2.0);
-    const minor = 0.82 + 0.16 * Math.sin(q[2] + 0.4 * Math.sin(q[0]));
-    points.push(new THREE.Vector3(
-      (major + minor * Math.cos(q[1])) * Math.cos(q[0]),
-      (major + minor * Math.cos(q[1])) * Math.sin(q[0]),
-      minor * Math.sin(q[1]) + 0.42 * Math.sin(q[2]) + 0.08 * Math.sin(q[0] - q[1])
-    ));
-  }
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  return new THREE.Line(geometry, material);
 }
 
 function buildSimulation(particleCount, loadedState = null) {
