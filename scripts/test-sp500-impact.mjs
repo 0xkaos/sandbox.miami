@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { handleSp500Impact } from '../worker.js';
+import { handleFmpDiagnostics, handleSp500Impact } from '../worker.js';
 
 const NOW = new Date('2026-05-27T15:30:00.000Z');
 
@@ -22,6 +22,10 @@ function request(method) {
   return new Request('https://sandbox.test/api/sp500-impact', { method });
 }
 
+function diagnosticsRequest(method, query = '') {
+  return new Request(`https://sandbox.test/api/sp500-impact/diagnostics${query}`, { method });
+}
+
 async function responseJson(response) {
   return response.json();
 }
@@ -32,6 +36,8 @@ function makeFetcher({
   quotes,
   failHoldings = false,
   restrictHoldings = false,
+  restrictConstituents = false,
+  restrictBatchQuote = false,
   failQuotes = false,
   calls = []
 }) {
@@ -49,13 +55,37 @@ function makeFetcher({
     }
 
     if (parsed.pathname.endsWith('/sp500-constituent')) {
+      if (restrictConstituents) {
+        return new Response('Restricted Endpoint: This endpoint is not available under your current subscription', { status: 403 });
+      }
       return Response.json(constituents);
     }
 
     if (parsed.pathname.endsWith('/batch-quote')) {
+      if (restrictBatchQuote) {
+        return new Response('Restricted Endpoint: This endpoint is not available under your current subscription', { status: 403 });
+      }
       if (failQuotes) return new Response('quotes unavailable', { status: 503 });
       const symbols = new Set((parsed.searchParams.get('symbols') || '').split(','));
       return Response.json(quotes.filter((quote) => symbols.has(quote.symbol)));
+    }
+
+    if (parsed.pathname.endsWith('/quote')) {
+      const symbol = parsed.searchParams.get('symbol');
+      return Response.json(quotes.filter((quote) => quote.symbol === symbol));
+    }
+
+    if (parsed.pathname.endsWith('/batch-quote-short')) {
+      const symbols = new Set((parsed.searchParams.get('symbols') || '').split(','));
+      return Response.json(quotes
+        .filter((quote) => symbols.has(quote.symbol))
+        .map((quote) => ({
+          symbol: quote.symbol,
+          price: quote.price,
+          change: quote.change,
+          changesPercentage: quote.changesPercentage,
+          volume: 1000
+        })));
     }
 
     return new Response('not found', { status: 404 });
@@ -197,6 +227,89 @@ async function testRestrictedHoldingsFallsBackToMarketCapWeights() {
   assert.equal(apple.impactPctPoints, 0.75);
 }
 
+async function testRestrictedIndexFallsBackToStaticUniverse() {
+  const bucket = new MockBucket();
+  const calls = [];
+  const response = await handleSp500Impact(
+    request('POST'),
+    { BUCKET: bucket, FMP_API_KEY: 'test-key' },
+    {
+      now: NOW,
+      fetcher: makeFetcher({
+        holdings,
+        constituents,
+        quotes,
+        restrictHoldings: true,
+        restrictConstituents: true,
+        calls
+      })
+    }
+  );
+  const snapshot = await responseJson(response);
+
+  assert.equal(response.status, 200);
+  assert.equal(snapshot.source.weightMode, 'marketCap');
+  assert.equal(snapshot.source.weightProxy, 'Static large-cap S&P watchlist');
+  assert.equal(snapshot.cache.holdingsCacheName, 'static-large-cap-universe');
+  assert.equal(snapshot.budget.callsUsed, 4);
+  assert.equal(snapshot.budget.universeCalls, 2);
+  assert.equal(calls.length, 4);
+  assert.equal(new URL(calls[0].url).pathname.endsWith('/etf/holdings'), true);
+  assert.equal(new URL(calls[1].url).pathname.endsWith('/sp500-constituent'), true);
+  assert.equal(new URL(calls[2].url).pathname.endsWith('/batch-quote'), true);
+
+  const cachedStatic = JSON.parse(bucket.objects.get('sp500-impact/sp500-constituents.json'));
+  assert.equal(cachedStatic.cacheName, 'static-large-cap-universe');
+}
+
+async function testDiagnosticsRequiresRunFlag() {
+  const response = await handleFmpDiagnostics(
+    diagnosticsRequest('POST'),
+    { BUCKET: new MockBucket(), FMP_API_KEY: 'test-key' },
+    { now: NOW, fetcher: makeFetcher({ holdings, constituents, quotes }) }
+  );
+  const body = await responseJson(response);
+  assert.equal(response.status, 400);
+  assert.equal(body.code, 'RUN_CONFIRMATION_REQUIRED');
+}
+
+async function testDiagnosticsReportAndCache() {
+  const bucket = new MockBucket();
+  const calls = [];
+  const env = { BUCKET: bucket, FMP_API_KEY: 'test-key' };
+  const fetcher = makeFetcher({
+    holdings,
+    constituents,
+    quotes,
+    restrictHoldings: true,
+    restrictConstituents: true,
+    calls
+  });
+
+  const response = await handleFmpDiagnostics(
+    diagnosticsRequest('POST', '?run=1'),
+    env,
+    { now: NOW, fetcher }
+  );
+  const report = await responseJson(response);
+
+  assert.equal(response.status, 200);
+  assert.equal(report.tests.length, 5);
+  assert.deepEqual(report.summary.restricted, ['sp500Constituent', 'spyHoldings']);
+  assert.equal(report.budget.callsUsed, 5);
+  assert.equal(calls.length, 5);
+
+  const cached = await handleFmpDiagnostics(
+    diagnosticsRequest('GET'),
+    env,
+    { now: NOW, fetcher }
+  );
+  const cachedReport = await responseJson(cached);
+  assert.equal(cached.status, 200);
+  assert.equal(cachedReport.cacheHit, true);
+  assert.equal(calls.length, 5);
+}
+
 async function testFmpError() {
   const response = await handleSp500Impact(
     request('POST'),
@@ -216,6 +329,9 @@ const tests = [
   testHoldingsCacheHit,
   testBudgetExceeded,
   testRestrictedHoldingsFallsBackToMarketCapWeights,
+  testRestrictedIndexFallsBackToStaticUniverse,
+  testDiagnosticsRequiresRunFlag,
+  testDiagnosticsReportAndCache,
   testFmpError
 ];
 

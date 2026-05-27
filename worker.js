@@ -1,13 +1,42 @@
 const SP500_SNAPSHOT_KEY = 'sp500-impact/latest.json';
 const SP500_HOLDINGS_KEY = 'sp500-impact/spy-holdings.json';
 const SP500_CONSTITUENTS_KEY = 'sp500-impact/sp500-constituents.json';
+const SP500_DIAGNOSTICS_KEY = 'sp500-impact/fmp-diagnostics.json';
 const SP500_USAGE_PREFIX = 'sp500-impact/usage/';
 const FMP_BASE_URL = 'https://financialmodelingprep.com/stable';
 const SP500_WEIGHT_SYMBOL = 'SPY';
 const SP500_DEFAULT_DAILY_CALL_CAP = 220;
 const SP500_HOLDINGS_TTL_MS = 24 * 60 * 60 * 1000;
 const SP500_CONSTITUENTS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const SP500_DIAGNOSTICS_TTL_MS = 60 * 60 * 1000;
 const SP500_QUOTE_CHUNK_SIZE = 90;
+
+const SP500_STATIC_SYMBOLS = [
+  'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'GOOG', 'META', 'BRK-B', 'AVGO', 'LLY',
+  'TSLA', 'JPM', 'V', 'UNH', 'XOM', 'MA', 'COST', 'WMT', 'PG', 'NFLX',
+  'JNJ', 'HD', 'ABBV', 'BAC', 'KO', 'PM', 'CRM', 'ORCL', 'CVX', 'AMD',
+  'WFC', 'CSCO', 'ABT', 'IBM', 'MCD', 'LIN', 'GE', 'MRK', 'DIS', 'AXP',
+  'T', 'NOW', 'ISRG', 'QCOM', 'INTU', 'GS', 'VZ', 'UBER', 'RTX', 'BX',
+  'PEP', 'BKNG', 'AMGN', 'CAT', 'MS', 'PGR', 'SPGI', 'TMO', 'NEE', 'SCHW',
+  'BLK', 'TXN', 'HON', 'DHR', 'BA', 'SYK', 'UNP', 'TJX', 'AMAT', 'LOW',
+  'PFE', 'GILD', 'ADBE', 'DE', 'C', 'VRTX', 'CMCSA', 'PANW', 'ADI', 'COP',
+  'MDT', 'MMC', 'LMT', 'CB', 'PLD', 'SBUX', 'BMY', 'MO', 'SO', 'ADP',
+  'ELV', 'KLAC', 'ETN', 'NKE', 'ANET', 'UPS', 'INTC', 'FI', 'ICE', 'MU',
+  'APH', 'MCO', 'WM', 'DUK', 'SHW', 'EQIX', 'WELL', 'TT', 'AON', 'CI',
+  'HCA', 'GEV', 'PH', 'MDLZ', 'CDNS', 'USB', 'MMM', 'SNPS', 'REGN', 'AJG',
+  'MAR', 'ORLY', 'APO', 'PNC', 'ZTS', 'TDG', 'CL', 'ECL', 'GD', 'MSI',
+  'ITW', 'NOC', 'EMR', 'CTAS', 'COF', 'EOG', 'BDX', 'WMB', 'APD', 'RCL',
+  'FDX', 'BK', 'CSX', 'HLT', 'ADSK', 'TGT', 'MNST', 'ROP', 'FCX', 'AFL',
+  'TRV', 'NSC', 'CME', 'AZO', 'DLR', 'PSA', 'O', 'JCI', 'NXPI', 'KMI'
+];
+
+const FMP_DIAGNOSTIC_TESTS = [
+  { id: 'quote', label: 'Single stock quote', pathname: '/quote', params: { symbol: 'AAPL' } },
+  { id: 'batchQuote', label: 'Batch stock quote', pathname: '/batch-quote', params: { symbols: 'AAPL,MSFT' } },
+  { id: 'batchQuoteShort', label: 'Batch stock quote short', pathname: '/batch-quote-short', params: { symbols: 'AAPL,MSFT' } },
+  { id: 'sp500Constituent', label: 'S&P 500 constituents', pathname: '/sp500-constituent', params: {} },
+  { id: 'spyHoldings', label: 'SPY ETF holdings', pathname: '/etf/holdings', params: { symbol: SP500_WEIGHT_SYMBOL } }
+];
 
 function apiJson(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload, null, 2), {
@@ -216,6 +245,10 @@ function buildFmpUrl(pathname, params = {}) {
   return url;
 }
 
+function endpointName(pathname) {
+  return pathname.replace(/^\//, '') || 'unknown';
+}
+
 async function getFmpApiKey(env) {
   const candidate = env.FMP_API_KEY || env.FMP_API_KEY_SECRET;
 
@@ -243,13 +276,77 @@ async function fetchFmpJson(pathname, params, apiKey, fetcher) {
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     const message = detail ? detail.slice(0, 280) : `HTTP ${response.status}`;
-    const error = new Error(`FMP request failed: ${message}`);
+    const error = new Error(`FMP ${endpointName(pathname)} request failed: ${message}`);
     error.status = 502;
     error.upstreamStatus = response.status;
+    error.endpoint = endpointName(pathname);
     throw error;
   }
 
   return response.json();
+}
+
+function summarizeFmpPayload(payload) {
+  if (Array.isArray(payload)) {
+    const first = payload.find((item) => item && typeof item === 'object');
+    return {
+      shape: 'array',
+      count: payload.length,
+      fields: first ? Object.keys(first).slice(0, 12) : []
+    };
+  }
+
+  if (payload && typeof payload === 'object') {
+    return {
+      shape: 'object',
+      fields: Object.keys(payload).slice(0, 12)
+    };
+  }
+
+  return {
+    shape: typeof payload,
+    fields: []
+  };
+}
+
+async function probeFmpEndpoint(test, apiKey, fetcher) {
+  const startedAt = Date.now();
+  const url = buildFmpUrl(test.pathname, test.params);
+  const response = await fetcher(url.toString(), {
+    headers: {
+      Accept: 'application/json',
+      apikey: apiKey
+    }
+  });
+  const durationMs = Date.now() - startedAt;
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    return {
+      id: test.id,
+      label: test.label,
+      endpoint: endpointName(test.pathname),
+      ok: false,
+      restricted: response.status === 402
+        || response.status === 403
+        || /restricted endpoint|current subscription|upgrade your plan/i.test(detail),
+      status: response.status,
+      durationMs,
+      message: detail.slice(0, 220)
+    };
+  }
+
+  const payload = await response.json().catch(() => null);
+  return {
+    id: test.id,
+    label: test.label,
+    endpoint: endpointName(test.pathname),
+    ok: true,
+    restricted: false,
+    status: response.status,
+    durationMs,
+    sample: summarizeFmpPayload(payload)
+  };
 }
 
 function isRestrictedFmpError(err) {
@@ -388,6 +485,42 @@ function createBudgetError(usage, limit, plannedCalls) {
   return error;
 }
 
+function staticConstituents() {
+  return SP500_STATIC_SYMBOLS.map((symbol) => ({
+    symbol,
+    name: symbol,
+    sector: 'Static fallback',
+    subSector: null,
+    weightPct: null
+  }));
+}
+
+function staticUniverseFallback(reason, generatedAt) {
+  return {
+    rows: staticConstituents(),
+    generatedAt,
+    cacheHit: false,
+    cacheName: 'static-large-cap-universe',
+    callsUsed: 0,
+    sourceLabel: 'Static large-cap S&P watchlist',
+    sourceNote: 'FMP index composition endpoints were unavailable for this subscription, so a bundled large-cap S&P watchlist is weighted by quote market cap.',
+    weightMode: 'marketCap',
+    fallbackReason: reason
+  };
+}
+
+async function cacheStaticUniverse(bucket, fallback) {
+  await writeR2Json(bucket, SP500_CONSTITUENTS_KEY, {
+    generatedAt: fallback.generatedAt,
+    source: fallback.sourceLabel,
+    sourceNote: fallback.sourceNote,
+    cacheName: fallback.cacheName,
+    weightMode: fallback.weightMode,
+    fallbackReason: fallback.fallbackReason,
+    rows: fallback.rows
+  });
+}
+
 async function getConstituents(bucket, usage, limit, apiKey, fetcher, now, estimatedQuoteCalls) {
   const stored = await loadStoredConstituents(bucket);
   const storedAt = stored?.generatedAt ? new Date(stored.generatedAt) : null;
@@ -395,15 +528,19 @@ async function getConstituents(bucket, usage, limit, apiKey, fetcher, now, estim
     && now.getTime() - storedAt.getTime() < SP500_CONSTITUENTS_TTL_MS;
 
   if (storedFresh) {
+    const storedStatic = stored.cacheName === 'static-large-cap-universe';
     return {
       rows: stored.rows,
       generatedAt: stored.generatedAt,
       cacheHit: true,
-      cacheName: 'sp500-constituents',
+      cacheName: stored.cacheName || 'sp500-constituents',
       callsUsed: 0,
-      sourceLabel: 'S&P 500 market-cap estimate',
-      sourceNote: 'SPY holdings were unavailable for this FMP subscription, so S&P 500 constituents are weighted by quote market cap as a practical estimate.',
-      weightMode: 'marketCap'
+      sourceLabel: stored.source || (storedStatic ? 'Static large-cap S&P watchlist' : 'S&P 500 market-cap estimate'),
+      sourceNote: stored.sourceNote || (storedStatic
+        ? 'FMP index composition endpoints were unavailable for this subscription, so a bundled large-cap S&P watchlist is weighted by quote market cap.'
+        : 'SPY holdings were unavailable for this FMP subscription, so S&P 500 constituents are weighted by quote market cap as a practical estimate.'),
+      weightMode: stored.weightMode || 'marketCap',
+      fallbackReason: stored.fallbackReason || null
     };
   }
 
@@ -411,34 +548,46 @@ async function getConstituents(bucket, usage, limit, apiKey, fetcher, now, estim
     throw createBudgetError(usage, limit, 2 + estimatedQuoteCalls);
   }
 
-  const rawConstituents = await fetchFmpJson('/sp500-constituent', {}, apiKey, fetcher);
-  await spendCall(bucket, usage, now);
+  try {
+    const rawConstituents = await fetchFmpJson('/sp500-constituent', {}, apiKey, fetcher);
+    await spendCall(bucket, usage, now);
 
-  const rows = normalizeConstituents(rawConstituents);
-  if (!rows.length) {
-    const error = new Error('FMP returned no usable S&P 500 constituents.');
-    error.code = 'EMPTY_CONSTITUENTS';
-    error.status = 502;
-    throw error;
+    const rows = normalizeConstituents(rawConstituents);
+    if (!rows.length) {
+      const fallback = staticUniverseFallback('FMP returned no usable S&P 500 constituents.', now.toISOString());
+      fallback.callsUsed = 1;
+      await cacheStaticUniverse(bucket, fallback);
+      return fallback;
+    }
+
+    const payload = {
+      generatedAt: now.toISOString(),
+      source: 'S&P 500 constituents',
+      rows
+    };
+    await writeR2Json(bucket, SP500_CONSTITUENTS_KEY, payload);
+
+    return {
+      rows,
+      generatedAt: payload.generatedAt,
+      cacheHit: false,
+      cacheName: 'sp500-constituents',
+      callsUsed: 1,
+      sourceLabel: 'S&P 500 market-cap estimate',
+      sourceNote: 'SPY holdings were unavailable for this FMP subscription, so S&P 500 constituents are weighted by quote market cap as a practical estimate.',
+      weightMode: 'marketCap'
+    };
+  } catch (err) {
+    if (!isRestrictedFmpError(err)) {
+      throw err;
+    }
+
+    await spendCall(bucket, usage, now);
+    const fallback = staticUniverseFallback('FMP rejected both SPY holdings and S&P constituent endpoints for this subscription.', now.toISOString());
+    fallback.callsUsed = 1;
+    await cacheStaticUniverse(bucket, fallback);
+    return fallback;
   }
-
-  const payload = {
-    generatedAt: now.toISOString(),
-    source: 'S&P 500 constituents',
-    rows
-  };
-  await writeR2Json(bucket, SP500_CONSTITUENTS_KEY, payload);
-
-  return {
-    rows,
-    generatedAt: payload.generatedAt,
-    cacheHit: false,
-    cacheName: 'sp500-constituents',
-    callsUsed: 1,
-    sourceLabel: 'S&P 500 market-cap estimate',
-    sourceNote: 'SPY holdings were unavailable for this FMP subscription, so S&P 500 constituents are weighted by quote market cap as a practical estimate.',
-    weightMode: 'marketCap'
-  };
 }
 
 async function getHoldings(bucket, usage, limit, apiKey, fetcher, now) {
@@ -507,7 +656,7 @@ async function getHoldings(bucket, usage, limit, apiKey, fetcher, now) {
     return {
       ...fallback,
       callsUsed: fallback.callsUsed + 1,
-      fallbackReason: 'FMP rejected the SPY ETF holdings endpoint for this subscription.'
+      fallbackReason: fallback.fallbackReason || 'FMP rejected the SPY ETF holdings endpoint for this subscription.'
     };
   }
 }
@@ -575,6 +724,119 @@ async function refreshSp500Impact(bucket, env, options = {}) {
 
   await writeR2Json(bucket, SP500_SNAPSHOT_KEY, snapshot);
   return apiJson(snapshot);
+}
+
+async function readCachedDiagnostics(bucket, now) {
+  const cached = await readR2Json(bucket, SP500_DIAGNOSTICS_KEY).catch(() => null);
+  const cachedAt = cached?.generatedAt ? new Date(cached.generatedAt) : null;
+  const isFresh = cachedAt && Number.isFinite(cachedAt.getTime())
+    && now.getTime() - cachedAt.getTime() < SP500_DIAGNOSTICS_TTL_MS;
+
+  return { cached, isFresh };
+}
+
+async function runFmpDiagnostics(bucket, env, options = {}) {
+  const fetcher = options.fetcher || fetch;
+  const now = options.now || new Date();
+  const apiKey = await getFmpApiKey(env);
+
+  if (!apiKey) {
+    return apiJson({
+      error: 'FMP_API_KEY is not configured.',
+      code: 'MISSING_FMP_API_KEY'
+    }, 503);
+  }
+
+  const { cached, isFresh } = await readCachedDiagnostics(bucket, now);
+  if (isFresh && !options.force) {
+    return apiJson({
+      ...cached,
+      cacheHit: true
+    });
+  }
+
+  const limit = parseDailyCap(env);
+  const usage = await loadUsage(bucket, now);
+  const plannedCalls = FMP_DIAGNOSTIC_TESTS.length;
+  if (!budgetStatus(usage, limit, plannedCalls).canSpend) {
+    return apiJson({
+      error: 'Daily FMP call safety cap would be exceeded.',
+      code: 'BUDGET_EXCEEDED',
+      budget: budgetStatus(usage, limit, plannedCalls)
+    }, 429);
+  }
+
+  const usedBefore = usage.used;
+  const tests = [];
+  for (const test of FMP_DIAGNOSTIC_TESTS) {
+    const result = await probeFmpEndpoint(test, apiKey, fetcher);
+    tests.push(result);
+    await spendCall(bucket, usage, now);
+  }
+
+  const payload = {
+    generatedAt: now.toISOString(),
+    cacheHit: false,
+    budget: {
+      date: usage.date,
+      limit,
+      usedBefore,
+      usedAfter: usage.used,
+      remaining: Math.max(0, limit - usage.used),
+      callsUsed: usage.used - usedBefore
+    },
+    summary: {
+      ok: tests.filter((test) => test.ok).map((test) => test.id),
+      restricted: tests.filter((test) => test.restricted).map((test) => test.id),
+      failed: tests.filter((test) => !test.ok && !test.restricted).map((test) => test.id)
+    },
+    tests
+  };
+
+  await writeR2Json(bucket, SP500_DIAGNOSTICS_KEY, payload);
+  return apiJson(payload);
+}
+
+export async function handleFmpDiagnostics(request, env, options = {}) {
+  if (!env.BUCKET) {
+    return apiJson({
+      error: "R2 Bucket 'BUCKET' not bound.",
+      code: 'MISSING_BUCKET'
+    }, 503);
+  }
+
+  const now = options.now || new Date();
+  if (request.method === 'GET') {
+    const { cached } = await readCachedDiagnostics(env.BUCKET, now);
+    if (!cached) {
+      return apiJson({
+        error: 'No cached FMP diagnostic report yet. Run POST /api/sp500-impact/diagnostics?run=1.',
+        code: 'NO_DIAGNOSTICS'
+      }, 404);
+    }
+
+    return apiJson({
+      ...cached,
+      cacheHit: true
+    });
+  }
+
+  if (request.method === 'POST') {
+    const url = new URL(request.url);
+    if (url.searchParams.get('run') !== '1') {
+      return apiJson({
+        error: 'Diagnostics are manual to protect the FMP call budget. Add ?run=1 to run them.',
+        code: 'RUN_CONFIRMATION_REQUIRED'
+      }, 400);
+    }
+
+    return runFmpDiagnostics(env.BUCKET, env, {
+      ...options,
+      force: url.searchParams.get('force') === '1'
+    });
+  }
+
+  return apiJson({ error: 'Method not allowed' }, 405, { Allow: 'GET, POST' });
 }
 
 export async function handleSp500Impact(request, env, options = {}) {
@@ -697,6 +959,11 @@ export class StylusSession {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // API Endpoint: /api/sp500-impact/diagnostics
+    if (url.pathname === '/api/sp500-impact/diagnostics') {
+      return handleFmpDiagnostics(request, env);
+    }
 
     // API Endpoint: /api/sp500-impact
     if (url.pathname === '/api/sp500-impact') {
