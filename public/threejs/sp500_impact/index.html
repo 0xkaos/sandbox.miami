@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Manual-refresh S&P 500 impact tracker using SPY holdings as a weight proxy and FMP quotes for movement data." />
+  <title>S&P Impact Tracker</title>
+  <style>
+    :root {
+      --bg: #f6f7f1;
+      --surface: #ffffff;
+      --surface-2: #eef2f0;
+      --ink: #171c20;
+      --muted: #66727d;
+      --line: #d9dfdf;
+      --blue: #2266cc;
+      --green: #15884c;
+      --red: #c94433;
+      --gold: #b88119;
+      --shadow: 0 10px 28px rgba(27, 35, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(135deg, rgba(34, 102, 204, 0.08), transparent 28%),
+        linear-gradient(210deg, rgba(184, 129, 25, 0.08), transparent 32%),
+        var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .app {
+      width: min(1500px, 100%);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 18px;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 12px;
+    }
+
+    .topbar,
+    .toolbar,
+    .panel {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.88);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+      border-radius: 8px;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      padding: 14px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.25rem, 2vw, 1.8rem);
+      font-weight: 760;
+      line-height: 1.05;
+    }
+
+    .subtitle {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .status-strip {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .pill {
+      min-height: 30px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 680;
+      white-space: nowrap;
+    }
+
+    .pill strong {
+      color: var(--ink);
+    }
+
+    .pill.ok {
+      color: var(--green);
+      border-color: rgba(21, 136, 76, 0.25);
+      background: rgba(21, 136, 76, 0.08);
+    }
+
+    .pill.warn {
+      color: var(--gold);
+      border-color: rgba(184, 129, 25, 0.28);
+      background: rgba(184, 129, 25, 0.1);
+    }
+
+    .pill.bad {
+      color: var(--red);
+      border-color: rgba(201, 68, 51, 0.25);
+      background: rgba(201, 68, 51, 0.08);
+    }
+
+    .toolbar {
+      padding: 12px;
+      display: grid;
+      grid-template-columns: auto minmax(220px, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .segmented {
+      display: inline-grid;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(96px, auto);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .segmented button {
+      min-height: 38px;
+      border: 0;
+      border-right: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      padding: 0 12px;
+      cursor: pointer;
+      font-size: 0.86rem;
+      font-weight: 720;
+      white-space: nowrap;
+    }
+
+    .segmented button:last-child {
+      border-right: 0;
+    }
+
+    .segmented button.active {
+      background: #1e2d3a;
+      color: #fff;
+    }
+
+    .search {
+      position: relative;
+    }
+
+    .search input {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 12px;
+      color: var(--ink);
+      background: var(--surface);
+      outline: none;
+    }
+
+    .search input:focus {
+      border-color: rgba(34, 102, 204, 0.65);
+      box-shadow: 0 0 0 3px rgba(34, 102, 204, 0.1);
+    }
+
+    .refresh {
+      min-height: 38px;
+      border: 1px solid #174f9e;
+      border-radius: 8px;
+      background: #2266cc;
+      color: #fff;
+      padding: 0 14px;
+      font-weight: 780;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .refresh:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+
+    .refresh-mark {
+      width: 16px;
+      height: 16px;
+      border: 2px solid currentColor;
+      border-left-color: transparent;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .refresh.busy .refresh-mark {
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(320px, 0.9fr) minmax(520px, 1.1fr);
+      gap: 12px;
+    }
+
+    .panel {
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-head {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-title {
+      font-size: 0.88rem;
+      font-weight: 790;
+      text-transform: uppercase;
+      color: #2b353d;
+    }
+
+    .panel-meta {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-align: right;
+    }
+
+    .map-shell {
+      min-height: 360px;
+      flex: 1;
+      position: relative;
+      background:
+        linear-gradient(180deg, rgba(248, 250, 250, 0.95), rgba(229, 235, 235, 0.95)),
+        var(--surface-2);
+    }
+
+    #impact-map {
+      width: 100%;
+      height: 100%;
+      min-height: 360px;
+      display: block;
+    }
+
+    .tooltip {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      max-width: 230px;
+      padding: 8px 10px;
+      border: 1px solid rgba(23, 28, 32, 0.18);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.94);
+      color: var(--ink);
+      font-size: 0.78rem;
+      box-shadow: 0 10px 28px rgba(27, 35, 42, 0.13);
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity 0.12s ease, transform 0.12s ease;
+    }
+
+    .tooltip.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .tooltip strong {
+      display: block;
+      font-size: 0.9rem;
+      margin-bottom: 3px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      padding: 10px;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.78);
+    }
+
+    .metric {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px;
+      background: var(--surface);
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 720;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .metric-value {
+      margin-top: 3px;
+      font-size: 1.08rem;
+      font-weight: 780;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .metric-value.positive,
+    .positive {
+      color: var(--green);
+    }
+
+    .metric-value.negative,
+    .negative {
+      color: var(--red);
+    }
+
+    .table-wrap {
+      min-height: 0;
+      overflow: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.84rem;
+    }
+
+    th,
+    td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #eef2f0;
+      color: #46515b;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+    }
+
+    th button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      font-weight: 790;
+      cursor: pointer;
+      text-transform: inherit;
+    }
+
+    tbody tr:hover {
+      background: rgba(34, 102, 204, 0.06);
+    }
+
+    td.numeric,
+    th.numeric {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .company {
+      max-width: 260px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .symbol {
+      font-weight: 820;
+      color: #1f2933;
+    }
+
+    .bar-cell {
+      min-width: 110px;
+    }
+
+    .impact-bar {
+      height: 7px;
+      border-radius: 999px;
+      background: #dfe5e5;
+      overflow: hidden;
+    }
+
+    .impact-bar span {
+      display: block;
+      height: 100%;
+      width: 0;
+      min-width: 2px;
+      border-radius: inherit;
+      background: var(--green);
+    }
+
+    .impact-bar span.negative {
+      margin-left: auto;
+      background: var(--red);
+    }
+
+    .empty-row td {
+      padding: 28px 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    @media (max-width: 1020px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .map-shell,
+      #impact-map {
+        min-height: 320px;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .app {
+        padding: 10px;
+      }
+
+      .topbar,
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+
+      .status-strip {
+        justify-content: flex-start;
+      }
+
+      .segmented {
+        grid-auto-flow: row;
+        grid-auto-columns: auto;
+      }
+
+      .segmented button {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .segmented button:last-child {
+        border-bottom: 0;
+      }
+
+      .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .company,
+      .hide-mobile {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <h1>S&amp;P Impact Tracker</h1>
+        <div class="subtitle">SPY weight proxy, FMP quotes, manual refresh</div>
+      </div>
+      <div class="status-strip">
+        <div class="pill" id="status-pill"><strong>Status</strong> loading</div>
+        <div class="pill warn"><strong>Weights</strong> SPY proxy</div>
+        <div class="pill" id="budget-pill"><strong>Budget</strong> --</div>
+        <div class="pill" id="updated-pill"><strong>Updated</strong> --</div>
+      </div>
+    </header>
+
+    <section class="toolbar" aria-label="Tracker controls">
+      <div class="segmented" role="tablist" aria-label="View mode">
+        <button class="active" data-mode="impact" type="button">Impact</button>
+        <button data-mode="gainers" type="button">Gainers</button>
+        <button data-mode="losers" type="button">Losers</button>
+        <button data-mode="weight" type="button">Weight</button>
+      </div>
+      <div class="search">
+        <input id="search-input" type="search" placeholder="Search symbol, company, or sector" autocomplete="off" />
+      </div>
+      <button class="refresh" id="refresh-button" type="button">
+        <span class="refresh-mark" aria-hidden="true"></span>
+        Refresh
+      </button>
+    </section>
+
+    <section class="workspace">
+      <section class="panel" aria-label="Impact map">
+        <div class="panel-head">
+          <div class="panel-title">Impact Map</div>
+          <div class="panel-meta" id="map-meta">0 names</div>
+        </div>
+        <div class="map-shell">
+          <div id="impact-map"></div>
+          <div class="tooltip" id="map-tooltip"></div>
+        </div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-label">Proxy Move</div>
+            <div class="metric-value" id="metric-proxy">--</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Positive Pull</div>
+            <div class="metric-value positive" id="metric-positive">--</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Negative Pull</div>
+            <div class="metric-value negative" id="metric-negative">--</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Quoted</div>
+            <div class="metric-value" id="metric-quoted">--</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-label="Impact table">
+        <div class="panel-head">
+          <div class="panel-title">Movers</div>
+          <div class="panel-meta" id="table-meta">Cached data</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="numeric"><button data-sort="rank" type="button">Rank</button></th>
+                <th><button data-sort="symbol" type="button">Symbol</button></th>
+                <th class="company"><button data-sort="name" type="button">Company</button></th>
+                <th class="hide-mobile"><button data-sort="sector" type="button">Sector</button></th>
+                <th class="numeric"><button data-sort="weightPct" type="button">Weight</button></th>
+                <th class="numeric"><button data-sort="price" type="button">Price</button></th>
+                <th class="numeric"><button data-sort="changePct" type="button">Move</button></th>
+                <th class="numeric"><button data-sort="impactPctPoints" type="button">Impact</button></th>
+                <th class="bar-cell">Scale</th>
+              </tr>
+            </thead>
+            <tbody id="table-body">
+              <tr class="empty-row"><td colspan="9">Loading cached snapshot.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+
+    const API_URL = '/api/sp500-impact';
+    const state = {
+      snapshot: null,
+      rows: [],
+      mode: 'impact',
+      search: '',
+      sortKey: 'absImpactPctPoints',
+      sortDir: 'desc',
+      busy: false
+    };
+
+    const els = {
+      status: document.getElementById('status-pill'),
+      budget: document.getElementById('budget-pill'),
+      updated: document.getElementById('updated-pill'),
+      refresh: document.getElementById('refresh-button'),
+      search: document.getElementById('search-input'),
+      tableBody: document.getElementById('table-body'),
+      tableMeta: document.getElementById('table-meta'),
+      mapMeta: document.getElementById('map-meta'),
+      metricProxy: document.getElementById('metric-proxy'),
+      metricPositive: document.getElementById('metric-positive'),
+      metricNegative: document.getElementById('metric-negative'),
+      metricQuoted: document.getElementById('metric-quoted'),
+      map: document.getElementById('impact-map'),
+      tooltip: document.getElementById('map-tooltip')
+    };
+
+    const htmlEscapes = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (char) => htmlEscapes[char]);
+    }
+
+    function numberOrZero(value) {
+      return Number.isFinite(Number(value)) ? Number(value) : 0;
+    }
+
+    function formatSigned(value, digits = 2, suffix = '%') {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return '--';
+      const sign = num > 0 ? '+' : '';
+      return `${sign}${num.toFixed(digits)}${suffix}`;
+    }
+
+    function formatPlain(value, digits = 2, suffix = '') {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return '--';
+      return `${num.toFixed(digits)}${suffix}`;
+    }
+
+    function formatPrice(value) {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return '--';
+      return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    function formatTime(value) {
+      if (!value) return '--';
+      const date = new Date(value);
+      if (!Number.isFinite(date.getTime())) return '--';
+      return date.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    }
+
+    function setStatus(kind, label, detail) {
+      els.status.className = `pill ${kind || ''}`.trim();
+      els.status.innerHTML = `<strong>${escapeHtml(label)}</strong> ${escapeHtml(detail)}`;
+    }
+
+    function setBusy(isBusy) {
+      state.busy = isBusy;
+      els.refresh.disabled = isBusy;
+      els.refresh.classList.toggle('busy', isBusy);
+    }
+
+    function applySnapshot(snapshot) {
+      state.snapshot = snapshot;
+      state.rows = Array.isArray(snapshot.rows) ? snapshot.rows : [];
+
+      const budget = snapshot.budget;
+      els.budget.innerHTML = budget
+        ? `<strong>Budget</strong> ${budget.usedAfter ?? budget.used}/${budget.limit}`
+        : '<strong>Budget</strong> --';
+      els.updated.innerHTML = `<strong>Updated</strong> ${escapeHtml(formatTime(snapshot.generatedAt))}`;
+
+      const stats = snapshot.stats || {};
+      updateMetric(els.metricProxy, stats.proxyMovePct, 3, '%');
+      updateMetric(els.metricPositive, stats.positiveImpactPctPoints, 3, ' pts');
+      updateMetric(els.metricNegative, stats.negativeImpactPctPoints, 3, ' pts');
+      els.metricQuoted.textContent = Number.isFinite(Number(stats.quotedCount))
+        ? `${stats.quotedCount}/${stats.holdingsCount || state.rows.length}`
+        : '--';
+
+      setStatus('ok', 'Cached', `${state.rows.length} names`);
+      render();
+    }
+
+    function updateMetric(element, value, digits, suffix) {
+      element.textContent = formatSigned(value, digits, suffix);
+      element.classList.toggle('positive', numberOrZero(value) > 0);
+      element.classList.toggle('negative', numberOrZero(value) < 0);
+    }
+
+    async function fetchSnapshot(method) {
+      setBusy(method === 'POST');
+      try {
+        const response = await fetch(API_URL, { method });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          if (payload.code === 'NO_CACHE') {
+            setStatus('warn', 'No cache', 'refresh ready');
+            els.tableBody.innerHTML = '<tr class="empty-row"><td colspan="9">No cached snapshot yet.</td></tr>';
+            updateScene([]);
+            return;
+          }
+
+          throw new Error(payload.error || `Request failed with ${response.status}`);
+        }
+
+        applySnapshot(payload);
+      } catch (error) {
+        setStatus('bad', 'Error', error.message);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function rowsForMode() {
+      const needle = state.search.trim().toLowerCase();
+      let rows = state.rows;
+
+      if (needle) {
+        rows = rows.filter((row) => {
+          return String(row.symbol || '').toLowerCase().includes(needle)
+            || String(row.name || '').toLowerCase().includes(needle)
+            || String(row.sector || '').toLowerCase().includes(needle);
+        });
+      }
+
+      const sorted = [...rows];
+      sorted.sort((a, b) => compareRows(a, b, state.sortKey, state.sortDir));
+      return sorted;
+    }
+
+    function compareRows(a, b, key, dir) {
+      const multiplier = dir === 'asc' ? 1 : -1;
+      const av = a[key];
+      const bv = b[key];
+
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return String(av || '').localeCompare(String(bv || '')) * multiplier;
+      }
+
+      return (numberOrZero(av) - numberOrZero(bv)) * multiplier;
+    }
+
+    function setMode(mode) {
+      state.mode = mode;
+      if (mode === 'impact') {
+        state.sortKey = 'absImpactPctPoints';
+        state.sortDir = 'desc';
+      } else if (mode === 'gainers') {
+        state.sortKey = 'changePct';
+        state.sortDir = 'desc';
+      } else if (mode === 'losers') {
+        state.sortKey = 'changePct';
+        state.sortDir = 'asc';
+      } else if (mode === 'weight') {
+        state.sortKey = 'weightPct';
+        state.sortDir = 'desc';
+      }
+
+      document.querySelectorAll('[data-mode]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.mode === mode);
+      });
+
+      render();
+    }
+
+    function setSort(key) {
+      if (state.sortKey === key) {
+        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sortKey = key;
+        state.sortDir = key === 'symbol' || key === 'name' || key === 'sector' || key === 'rank' ? 'asc' : 'desc';
+      }
+      render();
+    }
+
+    function render() {
+      const rows = rowsForMode();
+      renderTable(rows);
+      updateScene(rows);
+      els.tableMeta.textContent = `${rows.length} shown`;
+      els.mapMeta.textContent = `${Math.min(rows.length, 180)} mapped`;
+    }
+
+    function renderTable(rows) {
+      if (!rows.length) {
+        els.tableBody.innerHTML = '<tr class="empty-row"><td colspan="9">No matching rows.</td></tr>';
+        return;
+      }
+
+      const maxImpact = Math.max(...rows.map((row) => Math.abs(numberOrZero(row.impactPctPoints))), 0.001);
+      els.tableBody.innerHTML = rows.map((row) => {
+        const impact = numberOrZero(row.impactPctPoints);
+        const impactClass = impact >= 0 ? 'positive' : 'negative';
+        const barWidth = Math.min(100, Math.max(2, Math.abs(impact) / maxImpact * 100));
+
+        return `
+          <tr>
+            <td class="numeric">${row.rank}</td>
+            <td class="symbol">${escapeHtml(row.symbol)}</td>
+            <td class="company" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</td>
+            <td class="hide-mobile">${escapeHtml(row.sector || 'Unclassified')}</td>
+            <td class="numeric">${formatPlain(row.weightPct, 2, '%')}</td>
+            <td class="numeric">${formatPrice(row.price)}</td>
+            <td class="numeric ${numberOrZero(row.changePct) >= 0 ? 'positive' : 'negative'}">${formatSigned(row.changePct, 2, '%')}</td>
+            <td class="numeric ${impactClass}">${formatSigned(row.impactPctPoints, 3, ' pts')}</td>
+            <td class="bar-cell">
+              <div class="impact-bar"><span class="${impactClass}" style="width:${barWidth}%"></span></div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    let scene;
+    let camera;
+    let renderer;
+    let root;
+    let nodeMesh = null;
+    let stemLines = null;
+    let raycaster;
+    let pointer;
+    let hovered = false;
+
+    function initScene() {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(42, 1, 0.1, 1000);
+      camera.position.set(0, 52, 92);
+      camera.lookAt(0, 0, 0);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setClearColor(0x000000, 0);
+      els.map.appendChild(renderer.domElement);
+
+      root = new THREE.Group();
+      scene.add(root);
+
+      const grid = new THREE.GridHelper(92, 18, 0xaeb8ba, 0xd6dddd);
+      grid.material.transparent = true;
+      grid.material.opacity = 0.52;
+      root.add(grid);
+
+      const ambient = new THREE.AmbientLight(0xffffff, 1.15);
+      scene.add(ambient);
+
+      const key = new THREE.DirectionalLight(0xffffff, 1.6);
+      key.position.set(24, 38, 30);
+      scene.add(key);
+
+      raycaster = new THREE.Raycaster();
+      pointer = new THREE.Vector2(4, 4);
+
+      renderer.domElement.addEventListener('pointermove', onPointerMove);
+      renderer.domElement.addEventListener('pointerleave', () => {
+        hovered = false;
+        els.tooltip.classList.remove('visible');
+      });
+
+      window.addEventListener('resize', resizeScene);
+      resizeScene();
+      updateScene([]);
+      animate();
+    }
+
+    function updateScene(rows) {
+      if (!root) return;
+
+      if (nodeMesh) {
+        root.remove(nodeMesh);
+        nodeMesh.geometry.dispose();
+        nodeMesh.material.dispose();
+        nodeMesh = null;
+      }
+
+      if (stemLines) {
+        root.remove(stemLines);
+        stemLines.geometry.dispose();
+        stemLines.material.dispose();
+        stemLines = null;
+      }
+
+      const mapped = rows.slice(0, 180);
+      const data = mapped.length ? mapped : placeholderRows();
+      const geometry = new THREE.SphereGeometry(1, 18, 12);
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.42,
+        metalness: 0.08
+      });
+
+      nodeMesh = new THREE.InstancedMesh(geometry, material, data.length);
+      nodeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      nodeMesh.userData.rows = data;
+      nodeMesh.userData.placeholder = !mapped.length;
+
+      const matrix = new THREE.Matrix4();
+      const position = new THREE.Vector3();
+      const scale = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      const color = new THREE.Color();
+      const maxAbs = Math.max(...data.map((row) => Math.abs(numberOrZero(row.impactPctPoints))), 0.015);
+      const maxWeight = Math.max(...data.map((row) => numberOrZero(row.weightPct)), 1);
+      const stemPositions = [];
+      const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+
+      data.forEach((row, index) => {
+        const radius = Math.sqrt(index + 1) * 3.35;
+        const angle = index * goldenAngle;
+        const impact = numberOrZero(row.impactPctPoints);
+        const y = Math.max(-28, Math.min(28, impact / maxAbs * 28));
+        const size = 0.55 + Math.sqrt(numberOrZero(row.weightPct) / maxWeight) * 2.8;
+
+        position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+        scale.setScalar(size);
+        matrix.compose(position, quaternion, scale);
+        nodeMesh.setMatrixAt(index, matrix);
+
+        if (!mapped.length) {
+          color.setHex(0x8b9598);
+        } else if (impact >= 0) {
+          color.setHex(0x15884c);
+        } else {
+          color.setHex(0xc94433);
+        }
+        nodeMesh.setColorAt(index, color);
+
+        stemPositions.push(position.x, 0, position.z, position.x, position.y, position.z);
+      });
+
+      nodeMesh.instanceColor.needsUpdate = true;
+      root.add(nodeMesh);
+
+      const stemGeometry = new THREE.BufferGeometry();
+      stemGeometry.setAttribute('position', new THREE.Float32BufferAttribute(stemPositions, 3));
+      const stemMaterial = new THREE.LineBasicMaterial({
+        color: 0x6d787d,
+        transparent: true,
+        opacity: mapped.length ? 0.34 : 0.16
+      });
+      stemLines = new THREE.LineSegments(stemGeometry, stemMaterial);
+      root.add(stemLines);
+    }
+
+    function placeholderRows() {
+      return Array.from({ length: 44 }, (_, index) => ({
+        symbol: 'WAIT',
+        name: 'No cached snapshot',
+        sector: 'Pending',
+        weightPct: 0.5 + index % 7 * 0.16,
+        changePct: 0,
+        impactPctPoints: Math.sin(index * 0.75) * 0.014,
+        absImpactPctPoints: 0.014
+      }));
+    }
+
+    function resizeScene() {
+      if (!renderer || !camera) return;
+      const rect = els.map.getBoundingClientRect();
+      const width = Math.max(1, Math.floor(rect.width));
+      const height = Math.max(320, Math.floor(rect.height || 360));
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+
+    function onPointerMove(event) {
+      if (!nodeMesh || nodeMesh.userData.placeholder) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+
+      const hit = raycaster.intersectObject(nodeMesh)[0];
+      if (!hit || hit.instanceId === undefined) {
+        hovered = false;
+        els.tooltip.classList.remove('visible');
+        return;
+      }
+
+      hovered = true;
+      const row = nodeMesh.userData.rows[hit.instanceId];
+      els.tooltip.innerHTML = `
+        <strong>${escapeHtml(row.symbol)} ${formatSigned(row.impactPctPoints, 3, ' pts')}</strong>
+        ${escapeHtml(row.name)}<br>
+        Weight ${formatPlain(row.weightPct, 2, '%')} / Move ${formatSigned(row.changePct, 2, '%')}
+      `;
+      els.tooltip.style.left = `${Math.min(rect.width - 250, Math.max(10, event.clientX - rect.left + 14))}px`;
+      els.tooltip.style.top = `${Math.max(10, event.clientY - rect.top + 14)}px`;
+      els.tooltip.classList.add('visible');
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (root && !hovered) {
+        root.rotation.y += 0.0022;
+      }
+      if (renderer && scene && camera) {
+        renderer.render(scene, camera);
+      }
+    }
+
+    document.querySelectorAll('[data-mode]').forEach((button) => {
+      button.addEventListener('click', () => setMode(button.dataset.mode));
+    });
+
+    document.querySelectorAll('[data-sort]').forEach((button) => {
+      button.addEventListener('click', () => setSort(button.dataset.sort));
+    });
+
+    els.search.addEventListener('input', () => {
+      state.search = els.search.value;
+      render();
+    });
+
+    els.refresh.addEventListener('click', () => {
+      setStatus('', 'Refresh', 'requesting');
+      fetchSnapshot('POST');
+    });
+
+    initScene();
+    fetchSnapshot('GET');
+  </script>
+</body>
+</html>

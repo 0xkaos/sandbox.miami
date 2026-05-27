@@ -102,6 +102,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/sp500_impact/",
+    "title": "S&P Impact Tracker",
+    "description": "Manual-refresh S&P 500 impact tracker using SPY holdings as a weight proxy and FMP quotes for movement data.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/terrain_raymarch/",
     "title": "Terrain Raymarch",
     "description": "Raymarched sinusoidal terrain with multi-octave noise, rotate2D warping, and arrow-key directional navigation.",

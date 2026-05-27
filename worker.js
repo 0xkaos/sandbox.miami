@@ -1,3 +1,478 @@
+const SP500_SNAPSHOT_KEY = 'sp500-impact/latest.json';
+const SP500_HOLDINGS_KEY = 'sp500-impact/spy-holdings.json';
+const SP500_USAGE_PREFIX = 'sp500-impact/usage/';
+const FMP_BASE_URL = 'https://financialmodelingprep.com/stable';
+const SP500_WEIGHT_SYMBOL = 'SPY';
+const SP500_DEFAULT_DAILY_CALL_CAP = 220;
+const SP500_HOLDINGS_TTL_MS = 24 * 60 * 60 * 1000;
+const SP500_QUOTE_CHUNK_SIZE = 90;
+
+function apiJson(payload, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(payload, null, 2), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      ...extraHeaders
+    }
+  });
+}
+
+async function readR2Json(bucket, key) {
+  const object = await bucket.get(key);
+  if (object === null) return null;
+
+  const text = await new Response(object.body).text();
+  if (!text.trim()) return null;
+  return JSON.parse(text);
+}
+
+async function writeR2Json(bucket, key, payload) {
+  await bucket.put(key, JSON.stringify(payload, null, 2), {
+    httpMetadata: { contentType: 'application/json' }
+  });
+}
+
+function todayKey(now) {
+  return now.toISOString().slice(0, 10);
+}
+
+function usageKey(date) {
+  return `${SP500_USAGE_PREFIX}${date}.json`;
+}
+
+async function loadUsage(bucket, now) {
+  const date = todayKey(now);
+  const stored = await readR2Json(bucket, usageKey(date)).catch(() => null);
+  return {
+    date,
+    used: Number.isFinite(Number(stored?.used)) ? Number(stored.used) : 0,
+    refreshedAt: stored?.refreshedAt || null
+  };
+}
+
+async function saveUsage(bucket, usage) {
+  await writeR2Json(bucket, usageKey(usage.date), {
+    date: usage.date,
+    used: usage.used,
+    refreshedAt: usage.refreshedAt
+  });
+}
+
+function parseDailyCap(env) {
+  const parsed = Number(env.FMP_DAILY_CALL_CAP);
+  if (!Number.isFinite(parsed) || parsed <= 0) return SP500_DEFAULT_DAILY_CALL_CAP;
+  return Math.min(Math.floor(parsed), 250);
+}
+
+function budgetStatus(usage, limit, plannedCalls = 0) {
+  const remaining = Math.max(0, limit - usage.used);
+  return {
+    date: usage.date,
+    limit,
+    used: usage.used,
+    remaining,
+    plannedCalls,
+    canSpend: usage.used + plannedCalls <= limit
+  };
+}
+
+function cleanSymbol(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().toUpperCase();
+}
+
+function parseNumber(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value !== 'string') return null;
+  const match = value.replace(/,/g, '').match(/-?\d+(\.\d+)?/);
+  if (!match) return null;
+
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeHoldings(rawRows) {
+  if (!Array.isArray(rawRows)) return [];
+
+  const bySymbol = new Map();
+  for (const row of rawRows) {
+    const symbol = cleanSymbol(row.symbol || row.asset || row.ticker || row.holdingSymbol);
+    const weightPct = parseNumber(
+      row.weightPercentage ?? row.weightPercent ?? row.percentage ?? row.weight
+    );
+
+    if (!symbol || symbol.includes('CASH') || symbol.includes('USD') || weightPct === null || weightPct <= 0) {
+      continue;
+    }
+
+    const existing = bySymbol.get(symbol);
+    const normalized = {
+      symbol,
+      name: row.name || row.assetName || row.companyName || symbol,
+      sector: row.sector || row.industry || 'Unclassified',
+      weightPct,
+      shares: parseNumber(row.sharesNumber ?? row.shares ?? row.shareNumber),
+      marketValue: parseNumber(row.marketValue ?? row.market_value),
+      isin: row.isin || null,
+      cusip: row.cusip || null
+    };
+
+    if (existing) {
+      existing.weightPct += normalized.weightPct;
+      existing.marketValue = existing.marketValue || normalized.marketValue;
+      existing.shares = existing.shares || normalized.shares;
+    } else {
+      bySymbol.set(symbol, normalized);
+    }
+  }
+
+  const holdings = Array.from(bySymbol.values());
+  const totalWeight = holdings.reduce((sum, row) => sum + row.weightPct, 0);
+  const maxWeight = holdings.reduce((max, row) => Math.max(max, row.weightPct), 0);
+
+  if (totalWeight > 0 && totalWeight <= 2 && maxWeight <= 1) {
+    for (const row of holdings) {
+      row.weightPct *= 100;
+    }
+  }
+
+  return holdings.sort((a, b) => b.weightPct - a.weightPct);
+}
+
+function normalizeQuotes(rawRows) {
+  const quotes = new Map();
+  if (!Array.isArray(rawRows)) return quotes;
+
+  for (const row of rawRows) {
+    const symbol = cleanSymbol(row.symbol || row.ticker);
+    const changePct = parseNumber(
+      row.changesPercentage ?? row.changePercentage ?? row.changePercent ?? row.percentChange
+    );
+    const price = parseNumber(row.price ?? row.close ?? row.previousClose);
+
+    if (!symbol || changePct === null || price === null) continue;
+
+    quotes.set(symbol, {
+      symbol,
+      name: row.name || row.companyName || null,
+      price,
+      change: parseNumber(row.change ?? row.changes),
+      changePct,
+      volume: parseNumber(row.volume),
+      dayLow: parseNumber(row.dayLow),
+      dayHigh: parseNumber(row.dayHigh),
+      yearLow: parseNumber(row.yearLow),
+      yearHigh: parseNumber(row.yearHigh),
+      marketCap: parseNumber(row.marketCap),
+      exchange: row.exchange || row.exchangeShortName || null,
+      timestamp: row.timestamp || null
+    });
+  }
+
+  return quotes;
+}
+
+function chunkSymbols(symbols) {
+  const chunks = [];
+  for (let i = 0; i < symbols.length; i += SP500_QUOTE_CHUNK_SIZE) {
+    chunks.push(symbols.slice(i, i + SP500_QUOTE_CHUNK_SIZE));
+  }
+  return chunks;
+}
+
+function buildFmpUrl(pathname, params = {}) {
+  const url = new URL(`${FMP_BASE_URL}${pathname}`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      url.searchParams.set(key, value);
+    }
+  }
+  return url;
+}
+
+async function getFmpApiKey(env) {
+  const candidate = env.FMP_API_KEY || env.FMP_API_KEY_SECRET;
+
+  if (typeof candidate === 'string' && candidate.trim()) {
+    return candidate.trim();
+  }
+
+  if (candidate && typeof candidate.get === 'function') {
+    const value = await candidate.get();
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  return '';
+}
+
+async function fetchFmpJson(pathname, params, apiKey, fetcher) {
+  const url = buildFmpUrl(pathname, params);
+  const response = await fetcher(url.toString(), {
+    headers: {
+      Accept: 'application/json',
+      apikey: apiKey
+    }
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    const message = detail ? detail.slice(0, 280) : `HTTP ${response.status}`;
+    const error = new Error(`FMP request failed: ${message}`);
+    error.status = 502;
+    error.upstreamStatus = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+async function spendCall(bucket, usage, now) {
+  usage.used += 1;
+  usage.refreshedAt = now.toISOString();
+  await saveUsage(bucket, usage);
+}
+
+function createImpactSnapshot(holdings, quoteRows, context) {
+  const quotes = normalizeQuotes(quoteRows);
+  const rows = [];
+  const missingQuotes = [];
+
+  for (const holding of holdings) {
+    const quote = quotes.get(holding.symbol);
+    if (!quote) {
+      missingQuotes.push(holding.symbol);
+      continue;
+    }
+
+    const impactPctPoints = holding.weightPct * quote.changePct / 100;
+    rows.push({
+      rank: 0,
+      symbol: holding.symbol,
+      name: quote.name || holding.name,
+      sector: holding.sector,
+      weightPct: Number(holding.weightPct.toFixed(4)),
+      price: quote.price,
+      change: quote.change,
+      changePct: quote.changePct,
+      impactPctPoints: Number(impactPctPoints.toFixed(5)),
+      absImpactPctPoints: Number(Math.abs(impactPctPoints).toFixed(5)),
+      volume: quote.volume,
+      dayLow: quote.dayLow,
+      dayHigh: quote.dayHigh,
+      yearLow: quote.yearLow,
+      yearHigh: quote.yearHigh,
+      marketCap: quote.marketCap,
+      exchange: quote.exchange
+    });
+  }
+
+  rows.sort((a, b) => b.absImpactPctPoints - a.absImpactPctPoints);
+  rows.forEach((row, index) => {
+    row.rank = index + 1;
+  });
+
+  const proxyMovePct = rows.reduce((sum, row) => sum + row.impactPctPoints, 0);
+  const positiveImpact = rows
+    .filter((row) => row.impactPctPoints > 0)
+    .reduce((sum, row) => sum + row.impactPctPoints, 0);
+  const negativeImpact = rows
+    .filter((row) => row.impactPctPoints < 0)
+    .reduce((sum, row) => sum + row.impactPctPoints, 0);
+
+  return {
+    generatedAt: context.now.toISOString(),
+    source: {
+      weightProxy: `${SP500_WEIGHT_SYMBOL} ETF holdings`,
+      quoteSource: 'FMP batch-quote',
+      note: 'SPY holdings are used as a practical proxy for S&P 500 index weights.'
+    },
+    cache: {
+      holdingsCacheHit: context.holdingsCacheHit,
+      holdingsGeneratedAt: context.holdingsGeneratedAt,
+      holdingsAgeMinutes: context.holdingsGeneratedAt
+        ? Math.round((context.now.getTime() - new Date(context.holdingsGeneratedAt).getTime()) / 60000)
+        : null
+    },
+    budget: context.budget,
+    stats: {
+      holdingsCount: holdings.length,
+      quotedCount: rows.length,
+      missingQuoteCount: missingQuotes.length,
+      missingQuotes: missingQuotes.slice(0, 24),
+      proxyMovePct: Number(proxyMovePct.toFixed(5)),
+      positiveImpactPctPoints: Number(positiveImpact.toFixed(5)),
+      negativeImpactPctPoints: Number(negativeImpact.toFixed(5))
+    },
+    rows
+  };
+}
+
+async function loadStoredHoldings(bucket) {
+  const stored = await readR2Json(bucket, SP500_HOLDINGS_KEY).catch(() => null);
+  if (!stored || !Array.isArray(stored.rows)) return null;
+  return stored;
+}
+
+async function getHoldings(bucket, usage, limit, apiKey, fetcher, now) {
+  const stored = await loadStoredHoldings(bucket);
+  const storedAt = stored?.generatedAt ? new Date(stored.generatedAt) : null;
+  const storedFresh = storedAt && Number.isFinite(storedAt.getTime())
+    && now.getTime() - storedAt.getTime() < SP500_HOLDINGS_TTL_MS;
+
+  if (storedFresh) {
+    return {
+      rows: stored.rows,
+      generatedAt: stored.generatedAt,
+      cacheHit: true,
+      callsUsed: 0
+    };
+  }
+
+  const estimatedSymbols = stored?.rows?.length || 505;
+  const estimatedQuoteCalls = chunkSymbols(new Array(estimatedSymbols).fill('SPY')).length;
+  if (!budgetStatus(usage, limit, 1 + estimatedQuoteCalls).canSpend) {
+    const status = budgetStatus(usage, limit, 1 + estimatedQuoteCalls);
+    const error = new Error('Daily FMP call safety cap would be exceeded.');
+    error.code = 'BUDGET_EXCEEDED';
+    error.status = 429;
+    error.budget = status;
+    throw error;
+  }
+
+  const rawHoldings = await fetchFmpJson('/etf/holdings', { symbol: SP500_WEIGHT_SYMBOL }, apiKey, fetcher);
+  await spendCall(bucket, usage, now);
+
+  const rows = normalizeHoldings(rawHoldings);
+  if (!rows.length) {
+    const error = new Error('FMP returned no usable SPY holdings.');
+    error.code = 'EMPTY_HOLDINGS';
+    error.status = 502;
+    throw error;
+  }
+
+  const payload = {
+    generatedAt: now.toISOString(),
+    source: `${SP500_WEIGHT_SYMBOL} ETF holdings`,
+    rows
+  };
+  await writeR2Json(bucket, SP500_HOLDINGS_KEY, payload);
+
+  return {
+    rows,
+    generatedAt: payload.generatedAt,
+    cacheHit: false,
+    callsUsed: 1
+  };
+}
+
+async function refreshSp500Impact(bucket, env, options = {}) {
+  const fetcher = options.fetcher || fetch;
+  const now = options.now || new Date();
+  const apiKey = await getFmpApiKey(env);
+
+  if (!apiKey) {
+    return apiJson({
+      error: 'FMP_API_KEY is not configured.',
+      code: 'MISSING_FMP_API_KEY'
+    }, 503);
+  }
+
+  const limit = parseDailyCap(env);
+  const usage = await loadUsage(bucket, now);
+  const usedBefore = usage.used;
+
+  const holdings = await getHoldings(bucket, usage, limit, apiKey, fetcher, now);
+  const symbols = holdings.rows.map((row) => row.symbol);
+  const chunks = chunkSymbols(symbols);
+  const quoteCalls = chunks.length;
+
+  if (!budgetStatus(usage, limit, quoteCalls).canSpend) {
+    return apiJson({
+      error: 'Daily FMP call safety cap would be exceeded.',
+      code: 'BUDGET_EXCEEDED',
+      budget: budgetStatus(usage, limit, quoteCalls)
+    }, 429);
+  }
+
+  const quoteRows = [];
+  for (const chunk of chunks) {
+    const data = await fetchFmpJson('/batch-quote', { symbols: chunk.join(',') }, apiKey, fetcher);
+    await spendCall(bucket, usage, now);
+    if (Array.isArray(data)) {
+      quoteRows.push(...data);
+    }
+  }
+
+  const callsUsed = usage.used - usedBefore;
+  const snapshot = createImpactSnapshot(holdings.rows, quoteRows, {
+    now,
+    holdingsCacheHit: holdings.cacheHit,
+    holdingsGeneratedAt: holdings.generatedAt,
+    budget: {
+      date: usage.date,
+      limit,
+      usedBefore,
+      usedAfter: usage.used,
+      remaining: Math.max(0, limit - usage.used),
+      callsUsed,
+      holdingsCalls: holdings.callsUsed,
+      quoteCalls
+    }
+  });
+
+  await writeR2Json(bucket, SP500_SNAPSHOT_KEY, snapshot);
+  return apiJson(snapshot);
+}
+
+export async function handleSp500Impact(request, env, options = {}) {
+  if (!env.BUCKET) {
+    return apiJson({
+      error: "R2 Bucket 'BUCKET' not bound.",
+      code: 'MISSING_BUCKET'
+    }, 503);
+  }
+
+  if (request.method === 'GET') {
+    const snapshot = await readR2Json(env.BUCKET, SP500_SNAPSHOT_KEY).catch((err) => ({
+      error: 'Failed to read cached S&P impact snapshot.',
+      detail: err.message
+    }));
+
+    if (!snapshot) {
+      return apiJson({
+        error: 'No cached S&P impact snapshot yet. Click Refresh to create one.',
+        code: 'NO_CACHE'
+      }, 404);
+    }
+
+    if (snapshot.error) {
+      return apiJson(snapshot, 500);
+    }
+
+    return apiJson(snapshot);
+  }
+
+  if (request.method === 'POST') {
+    try {
+      return await refreshSp500Impact(env.BUCKET, env, options);
+    } catch (err) {
+      const status = err.status || 502;
+      return apiJson({
+        error: err.message || 'S&P impact refresh failed.',
+        code: err.code || 'REFRESH_FAILED',
+        upstreamStatus: err.upstreamStatus || undefined,
+        budget: err.budget || undefined
+      }, status);
+    }
+  }
+
+  return apiJson({ error: 'Method not allowed' }, 405, { Allow: 'GET, POST' });
+}
+
 export class StylusSession {
   constructor(state) {
     this.state = state;
@@ -73,6 +548,11 @@ export class StylusSession {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // API Endpoint: /api/sp500-impact
+    if (url.pathname === '/api/sp500-impact') {
+      return handleSp500Impact(request, env);
+    }
 
     // WebSocket Endpoint: /api/stylus/socket
     if (url.pathname === '/api/stylus/socket') {
