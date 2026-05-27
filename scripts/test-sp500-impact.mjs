@@ -26,15 +26,30 @@ async function responseJson(response) {
   return response.json();
 }
 
-function makeFetcher({ holdings, quotes, failHoldings = false, failQuotes = false, calls = [] }) {
+function makeFetcher({
+  holdings,
+  constituents = [],
+  quotes,
+  failHoldings = false,
+  restrictHoldings = false,
+  failQuotes = false,
+  calls = []
+}) {
   return async (url, init = {}) => {
     calls.push({ url, headers: init.headers || {} });
     assert.equal(url.includes('test-key'), false, 'API key must not be placed in the URL');
 
     const parsed = new URL(url);
     if (parsed.pathname.endsWith('/etf/holdings')) {
+      if (restrictHoldings) {
+        return new Response('Restricted Endpoint: This endpoint is not available under your current subscription', { status: 403 });
+      }
       if (failHoldings) return new Response('holdings unavailable', { status: 500 });
       return Response.json(holdings);
+    }
+
+    if (parsed.pathname.endsWith('/sp500-constituent')) {
+      return Response.json(constituents);
     }
 
     if (parsed.pathname.endsWith('/batch-quote')) {
@@ -55,10 +70,16 @@ const holdings = [
 ];
 
 const quotes = [
-  { symbol: 'AAPL', name: 'Apple Inc.', price: 200, changesPercentage: 1.5, change: 3 },
-  { symbol: 'MSFT', name: 'Microsoft Corporation', price: 420, changesPercentage: -1, change: -4.2 },
-  { symbol: 'XOM', name: 'Exxon Mobil Corporation', price: 110, changesPercentage: 2, change: 2.2 },
+  { symbol: 'AAPL', name: 'Apple Inc.', price: 200, changesPercentage: 1.5, change: 3, marketCap: 3000 },
+  { symbol: 'MSFT', name: 'Microsoft Corporation', price: 420, changesPercentage: -1, change: -4.2, marketCap: 2500 },
+  { symbol: 'XOM', name: 'Exxon Mobil Corporation', price: 110, changesPercentage: 2, change: 2.2, marketCap: 500 },
   { symbol: 'BAD', name: 'Malformed Quote', price: 12 }
+];
+
+const constituents = [
+  { symbol: 'AAPL', name: 'Apple Inc.', sector: 'Technology' },
+  { symbol: 'MSFT', name: 'Microsoft Corporation', sector: 'Technology' },
+  { symbol: 'XOM', name: 'Exxon Mobil Corporation', sector: 'Energy' }
 ];
 
 async function testNoCache() {
@@ -150,6 +171,32 @@ async function testBudgetExceeded() {
   assert.equal(calls.length, 0);
 }
 
+async function testRestrictedHoldingsFallsBackToMarketCapWeights() {
+  const bucket = new MockBucket();
+  const calls = [];
+  const response = await handleSp500Impact(
+    request('POST'),
+    { BUCKET: bucket, FMP_API_KEY: 'test-key' },
+    { now: NOW, fetcher: makeFetcher({ holdings, constituents, quotes, restrictHoldings: true, calls }) }
+  );
+  const snapshot = await responseJson(response);
+
+  assert.equal(response.status, 200);
+  assert.equal(snapshot.source.weightMode, 'marketCap');
+  assert.equal(snapshot.source.weightProxy, 'S&P 500 market-cap estimate');
+  assert.equal(snapshot.cache.holdingsCacheName, 'sp500-constituents');
+  assert.equal(snapshot.budget.callsUsed, 3);
+  assert.equal(snapshot.budget.universeCalls, 2);
+  assert.equal(calls.length, 3);
+  assert.equal(new URL(calls[0].url).pathname.endsWith('/etf/holdings'), true);
+  assert.equal(new URL(calls[1].url).pathname.endsWith('/sp500-constituent'), true);
+  assert.equal(new URL(calls[2].url).pathname.endsWith('/batch-quote'), true);
+
+  const apple = snapshot.rows.find((row) => row.symbol === 'AAPL');
+  assert.equal(apple.weightPct, 50);
+  assert.equal(apple.impactPctPoints, 0.75);
+}
+
 async function testFmpError() {
   const response = await handleSp500Impact(
     request('POST'),
@@ -168,6 +215,7 @@ const tests = [
   testSuccessfulRefreshAndGet,
   testHoldingsCacheHit,
   testBudgetExceeded,
+  testRestrictedHoldingsFallsBackToMarketCapWeights,
   testFmpError
 ];
 

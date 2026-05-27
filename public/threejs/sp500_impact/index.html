@@ -499,11 +499,11 @@
     <header class="topbar">
       <div>
         <h1>S&amp;P Impact Tracker</h1>
-        <div class="subtitle">SPY weight proxy, FMP quotes, manual refresh</div>
+        <div class="subtitle">S&P impact weights, FMP quotes, manual refresh</div>
       </div>
       <div class="status-strip">
         <div class="pill" id="status-pill"><strong>Status</strong> loading</div>
-        <div class="pill warn"><strong>Weights</strong> SPY proxy</div>
+        <div class="pill warn" id="weight-pill"><strong>Weights</strong> SPY proxy</div>
         <div class="pill" id="budget-pill"><strong>Budget</strong> --</div>
         <div class="pill" id="updated-pill"><strong>Updated</strong> --</div>
       </div>
@@ -608,6 +608,7 @@
     const els = {
       status: document.getElementById('status-pill'),
       budget: document.getElementById('budget-pill'),
+      weight: document.getElementById('weight-pill'),
       updated: document.getElementById('updated-pill'),
       refresh: document.getElementById('refresh-button'),
       search: document.getElementById('search-input'),
@@ -689,6 +690,11 @@
         ? `<strong>Budget</strong> ${budget.usedAfter ?? budget.used}/${budget.limit}`
         : '<strong>Budget</strong> --';
       els.updated.innerHTML = `<strong>Updated</strong> ${escapeHtml(formatTime(snapshot.generatedAt))}`;
+
+      const source = snapshot.source || {};
+      const marketCapEstimate = source.weightMode === 'marketCap';
+      els.weight.className = `pill ${marketCapEstimate ? 'warn' : 'ok'}`;
+      els.weight.innerHTML = `<strong>Weights</strong> ${escapeHtml(marketCapEstimate ? 'market-cap estimate' : 'SPY proxy')}`;
 
       const stats = snapshot.stats || {};
       updateMetric(els.metricProxy, stats.proxyMovePct, 3, '%');

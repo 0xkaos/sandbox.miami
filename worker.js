@@ -1,10 +1,12 @@
 const SP500_SNAPSHOT_KEY = 'sp500-impact/latest.json';
 const SP500_HOLDINGS_KEY = 'sp500-impact/spy-holdings.json';
+const SP500_CONSTITUENTS_KEY = 'sp500-impact/sp500-constituents.json';
 const SP500_USAGE_PREFIX = 'sp500-impact/usage/';
 const FMP_BASE_URL = 'https://financialmodelingprep.com/stable';
 const SP500_WEIGHT_SYMBOL = 'SPY';
 const SP500_DEFAULT_DAILY_CALL_CAP = 220;
 const SP500_HOLDINGS_TTL_MS = 24 * 60 * 60 * 1000;
+const SP500_CONSTITUENTS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SP500_QUOTE_CHUNK_SIZE = 90;
 
 function apiJson(payload, status = 200, extraHeaders = {}) {
@@ -143,6 +145,26 @@ function normalizeHoldings(rawRows) {
   return holdings.sort((a, b) => b.weightPct - a.weightPct);
 }
 
+function normalizeConstituents(rawRows) {
+  if (!Array.isArray(rawRows)) return [];
+
+  const bySymbol = new Map();
+  for (const row of rawRows) {
+    const symbol = cleanSymbol(row.symbol || row.ticker);
+    if (!symbol) continue;
+
+    bySymbol.set(symbol, {
+      symbol,
+      name: row.name || row.companyName || symbol,
+      sector: row.sector || row.gicsSector || 'Unclassified',
+      subSector: row.subSector || row.gicsSubIndustry || null,
+      weightPct: null
+    });
+  }
+
+  return Array.from(bySymbol.values()).sort((a, b) => a.symbol.localeCompare(b.symbol));
+}
+
 function normalizeQuotes(rawRows) {
   const quotes = new Map();
   if (!Array.isArray(rawRows)) return quotes;
@@ -230,6 +252,12 @@ async function fetchFmpJson(pathname, params, apiKey, fetcher) {
   return response.json();
 }
 
+function isRestrictedFmpError(err) {
+  return err?.upstreamStatus === 402
+    || err?.upstreamStatus === 403
+    || /restricted endpoint|current subscription|upgrade your plan/i.test(err?.message || '');
+}
+
 async function spendCall(bucket, usage, now) {
   usage.used += 1;
   usage.refreshedAt = now.toISOString();
@@ -240,6 +268,14 @@ function createImpactSnapshot(holdings, quoteRows, context) {
   const quotes = normalizeQuotes(quoteRows);
   const rows = [];
   const missingQuotes = [];
+  const missingWeights = [];
+  const weightMode = context.weightMode || 'explicit';
+  const totalMarketCap = weightMode === 'marketCap'
+    ? holdings.reduce((sum, holding) => {
+        const quote = quotes.get(holding.symbol);
+        return sum + Math.max(0, Number(quote?.marketCap) || 0);
+      }, 0)
+    : 0;
 
   for (const holding of holdings) {
     const quote = quotes.get(holding.symbol);
@@ -248,13 +284,28 @@ function createImpactSnapshot(holdings, quoteRows, context) {
       continue;
     }
 
-    const impactPctPoints = holding.weightPct * quote.changePct / 100;
+    let weightPct = holding.weightPct;
+    if (weightMode === 'marketCap') {
+      const marketCap = Number(quote.marketCap);
+      if (!Number.isFinite(marketCap) || marketCap <= 0 || totalMarketCap <= 0) {
+        missingWeights.push(holding.symbol);
+        continue;
+      }
+      weightPct = marketCap / totalMarketCap * 100;
+    }
+
+    if (!Number.isFinite(Number(weightPct)) || Number(weightPct) <= 0) {
+      missingWeights.push(holding.symbol);
+      continue;
+    }
+
+    const impactPctPoints = weightPct * quote.changePct / 100;
     rows.push({
       rank: 0,
       symbol: holding.symbol,
       name: quote.name || holding.name,
       sector: holding.sector,
-      weightPct: Number(holding.weightPct.toFixed(4)),
+      weightPct: Number(weightPct.toFixed(4)),
       price: quote.price,
       change: quote.change,
       changePct: quote.changePct,
@@ -286,13 +337,16 @@ function createImpactSnapshot(holdings, quoteRows, context) {
   return {
     generatedAt: context.now.toISOString(),
     source: {
-      weightProxy: `${SP500_WEIGHT_SYMBOL} ETF holdings`,
+      weightProxy: context.sourceLabel || `${SP500_WEIGHT_SYMBOL} ETF holdings`,
+      weightMode,
       quoteSource: 'FMP batch-quote',
-      note: 'SPY holdings are used as a practical proxy for S&P 500 index weights.'
+      note: context.sourceNote || 'SPY holdings are used as a practical proxy for S&P 500 index weights.',
+      fallbackReason: context.fallbackReason || null
     },
     cache: {
       holdingsCacheHit: context.holdingsCacheHit,
       holdingsGeneratedAt: context.holdingsGeneratedAt,
+      holdingsCacheName: context.holdingsCacheName || 'spy-holdings',
       holdingsAgeMinutes: context.holdingsGeneratedAt
         ? Math.round((context.now.getTime() - new Date(context.holdingsGeneratedAt).getTime()) / 60000)
         : null
@@ -303,6 +357,8 @@ function createImpactSnapshot(holdings, quoteRows, context) {
       quotedCount: rows.length,
       missingQuoteCount: missingQuotes.length,
       missingQuotes: missingQuotes.slice(0, 24),
+      missingWeightCount: missingWeights.length,
+      missingWeights: missingWeights.slice(0, 24),
       proxyMovePct: Number(proxyMovePct.toFixed(5)),
       positiveImpactPctPoints: Number(positiveImpact.toFixed(5)),
       negativeImpactPctPoints: Number(negativeImpact.toFixed(5))
@@ -317,6 +373,74 @@ async function loadStoredHoldings(bucket) {
   return stored;
 }
 
+async function loadStoredConstituents(bucket) {
+  const stored = await readR2Json(bucket, SP500_CONSTITUENTS_KEY).catch(() => null);
+  if (!stored || !Array.isArray(stored.rows)) return null;
+  return stored;
+}
+
+function createBudgetError(usage, limit, plannedCalls) {
+  const status = budgetStatus(usage, limit, plannedCalls);
+  const error = new Error('Daily FMP call safety cap would be exceeded.');
+  error.code = 'BUDGET_EXCEEDED';
+  error.status = 429;
+  error.budget = status;
+  return error;
+}
+
+async function getConstituents(bucket, usage, limit, apiKey, fetcher, now, estimatedQuoteCalls) {
+  const stored = await loadStoredConstituents(bucket);
+  const storedAt = stored?.generatedAt ? new Date(stored.generatedAt) : null;
+  const storedFresh = storedAt && Number.isFinite(storedAt.getTime())
+    && now.getTime() - storedAt.getTime() < SP500_CONSTITUENTS_TTL_MS;
+
+  if (storedFresh) {
+    return {
+      rows: stored.rows,
+      generatedAt: stored.generatedAt,
+      cacheHit: true,
+      cacheName: 'sp500-constituents',
+      callsUsed: 0,
+      sourceLabel: 'S&P 500 market-cap estimate',
+      sourceNote: 'SPY holdings were unavailable for this FMP subscription, so S&P 500 constituents are weighted by quote market cap as a practical estimate.',
+      weightMode: 'marketCap'
+    };
+  }
+
+  if (!budgetStatus(usage, limit, 2 + estimatedQuoteCalls).canSpend) {
+    throw createBudgetError(usage, limit, 2 + estimatedQuoteCalls);
+  }
+
+  const rawConstituents = await fetchFmpJson('/sp500-constituent', {}, apiKey, fetcher);
+  await spendCall(bucket, usage, now);
+
+  const rows = normalizeConstituents(rawConstituents);
+  if (!rows.length) {
+    const error = new Error('FMP returned no usable S&P 500 constituents.');
+    error.code = 'EMPTY_CONSTITUENTS';
+    error.status = 502;
+    throw error;
+  }
+
+  const payload = {
+    generatedAt: now.toISOString(),
+    source: 'S&P 500 constituents',
+    rows
+  };
+  await writeR2Json(bucket, SP500_CONSTITUENTS_KEY, payload);
+
+  return {
+    rows,
+    generatedAt: payload.generatedAt,
+    cacheHit: false,
+    cacheName: 'sp500-constituents',
+    callsUsed: 1,
+    sourceLabel: 'S&P 500 market-cap estimate',
+    sourceNote: 'SPY holdings were unavailable for this FMP subscription, so S&P 500 constituents are weighted by quote market cap as a practical estimate.',
+    weightMode: 'marketCap'
+  };
+}
+
 async function getHoldings(bucket, usage, limit, apiKey, fetcher, now) {
   const stored = await loadStoredHoldings(bucket);
   const storedAt = stored?.generatedAt ? new Date(stored.generatedAt) : null;
@@ -328,45 +452,64 @@ async function getHoldings(bucket, usage, limit, apiKey, fetcher, now) {
       rows: stored.rows,
       generatedAt: stored.generatedAt,
       cacheHit: true,
-      callsUsed: 0
+      cacheName: 'spy-holdings',
+      callsUsed: 0,
+      sourceLabel: `${SP500_WEIGHT_SYMBOL} ETF holdings`,
+      sourceNote: 'SPY holdings are used as a practical proxy for S&P 500 index weights.',
+      weightMode: 'explicit'
     };
   }
 
   const estimatedSymbols = stored?.rows?.length || 505;
   const estimatedQuoteCalls = chunkSymbols(new Array(estimatedSymbols).fill('SPY')).length;
   if (!budgetStatus(usage, limit, 1 + estimatedQuoteCalls).canSpend) {
-    const status = budgetStatus(usage, limit, 1 + estimatedQuoteCalls);
-    const error = new Error('Daily FMP call safety cap would be exceeded.');
-    error.code = 'BUDGET_EXCEEDED';
-    error.status = 429;
-    error.budget = status;
-    throw error;
+    throw createBudgetError(usage, limit, 1 + estimatedQuoteCalls);
   }
 
-  const rawHoldings = await fetchFmpJson('/etf/holdings', { symbol: SP500_WEIGHT_SYMBOL }, apiKey, fetcher);
-  await spendCall(bucket, usage, now);
+  try {
+    const rawHoldings = await fetchFmpJson('/etf/holdings', { symbol: SP500_WEIGHT_SYMBOL }, apiKey, fetcher);
+    await spendCall(bucket, usage, now);
 
-  const rows = normalizeHoldings(rawHoldings);
-  if (!rows.length) {
-    const error = new Error('FMP returned no usable SPY holdings.');
-    error.code = 'EMPTY_HOLDINGS';
-    error.status = 502;
-    throw error;
+    const rows = normalizeHoldings(rawHoldings);
+    if (!rows.length) {
+      const error = new Error('FMP returned no usable SPY holdings.');
+      error.code = 'EMPTY_HOLDINGS';
+      error.status = 502;
+      throw error;
+    }
+
+    const payload = {
+      generatedAt: now.toISOString(),
+      source: `${SP500_WEIGHT_SYMBOL} ETF holdings`,
+      rows
+    };
+    await writeR2Json(bucket, SP500_HOLDINGS_KEY, payload);
+
+    return {
+      rows,
+      generatedAt: payload.generatedAt,
+      cacheHit: false,
+      cacheName: 'spy-holdings',
+      callsUsed: 1,
+      sourceLabel: `${SP500_WEIGHT_SYMBOL} ETF holdings`,
+      sourceNote: 'SPY holdings are used as a practical proxy for S&P 500 index weights.',
+      weightMode: 'explicit'
+    };
+  } catch (err) {
+    if (!isRestrictedFmpError(err) && err?.code !== 'EMPTY_HOLDINGS') {
+      throw err;
+    }
+
+    if (isRestrictedFmpError(err)) {
+      await spendCall(bucket, usage, now);
+    }
+    const fallback = await getConstituents(bucket, usage, limit, apiKey, fetcher, now, estimatedQuoteCalls);
+    return {
+      ...fallback,
+      callsUsed: fallback.callsUsed + 1,
+      fallbackReason: 'FMP rejected the SPY ETF holdings endpoint for this subscription.'
+    };
   }
-
-  const payload = {
-    generatedAt: now.toISOString(),
-    source: `${SP500_WEIGHT_SYMBOL} ETF holdings`,
-    rows
-  };
-  await writeR2Json(bucket, SP500_HOLDINGS_KEY, payload);
-
-  return {
-    rows,
-    generatedAt: payload.generatedAt,
-    cacheHit: false,
-    callsUsed: 1
-  };
 }
 
 async function refreshSp500Impact(bucket, env, options = {}) {
@@ -412,6 +555,11 @@ async function refreshSp500Impact(bucket, env, options = {}) {
     now,
     holdingsCacheHit: holdings.cacheHit,
     holdingsGeneratedAt: holdings.generatedAt,
+    holdingsCacheName: holdings.cacheName,
+    sourceLabel: holdings.sourceLabel,
+    sourceNote: holdings.sourceNote,
+    weightMode: holdings.weightMode,
+    fallbackReason: holdings.fallbackReason,
     budget: {
       date: usage.date,
       limit,
@@ -420,6 +568,7 @@ async function refreshSp500Impact(bucket, env, options = {}) {
       remaining: Math.max(0, limit - usage.used),
       callsUsed,
       holdingsCalls: holdings.callsUsed,
+      universeCalls: holdings.callsUsed,
       quoteCalls
     }
   });
