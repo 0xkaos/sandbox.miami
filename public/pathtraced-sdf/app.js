@@ -76,6 +76,12 @@
       return mat2(c, -s, s, c);
     }
 
+    float hash21(vec2 p) {
+      p = fract(p * vec2(123.34, 345.45));
+      p += dot(p, p + 34.345 + uSeed * .17);
+      return fract(p.x * p.y);
+    }
+
     float sdRoundBox(vec3 p, vec3 b, float r) {
       vec3 q = abs(p) - b + r;
       return length(max(q, 0.)) + min(max(q.x, max(q.y, q.z)), 0.) - r;
@@ -86,14 +92,62 @@
       return length(q) - t.y;
     }
 
+    float sdSphere(vec3 p, float r) {
+      return length(p) - r;
+    }
+
+    float sdCylinder(vec3 p, float radius, float halfHeight) {
+      vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(radius, halfHeight);
+      return min(max(d.x, d.y), 0.) + length(max(d, 0.));
+    }
+
+    float sdCappedCone(vec3 p, float h, float r1, float r2) {
+      vec2 q = vec2(length(p.xz), p.y);
+      vec2 k1 = vec2(r2, h);
+      vec2 k2 = vec2(r2 - r1, 2. * h);
+      vec2 ca = vec2(q.x - min(q.x, q.y < 0. ? r1 : r2), abs(q.y) - h);
+      vec2 cb = q - k1 + k2 * clamp(dot(k1 - q, k2) / dot(k2, k2), 0., 1.);
+      float s = (cb.x < 0. && ca.y < 0.) ? -1. : 1.;
+      return s * sqrt(min(dot(ca, ca), dot(cb, cb)));
+    }
+
     float gyroid(vec3 p, float scale, float thickness) {
       p *= scale;
       float g = dot(sin(p), cos(p.zxy));
       return abs(g) / (scale * 1.55) - thickness;
     }
 
+    float cityField(vec3 p) {
+      const vec2 grid = vec2(1.18, 1.32);
+      vec2 shifted = p.xz + vec2(uSeed * .31, 0.);
+      vec2 cellId = floor((shifted + grid * .5) / grid);
+      vec2 cell = mod(shifted + grid * .5, grid) - grid * .5;
+
+      float rndA = hash21(cellId + 7.31);
+      float rndB = hash21(cellId + 19.77);
+      float rndC = hash21(cellId + 41.13);
+      float height = 1.15 + rndA * 3.8;
+      float radius = .24 + rndB * .19;
+      vec3 bodyP = vec3(cell.x, p.y + 1.72 - height * .5, cell.y);
+      float boxBody = sdRoundBox(bodyP, vec3(radius, height * .5, radius * (.75 + rndC * .35)), .035);
+      float roundBody = sdCylinder(bodyP, radius, height * .5);
+      float body = rndC > .68 ? roundBody : boxBody;
+
+      float topY = -1.72 + height;
+      float dome = sdSphere(vec3(cell.x, (p.y - topY) * 1.28, cell.y), radius * 1.04) * .78;
+      float spireHeight = .35 + rndB * .55;
+      vec3 spireP = vec3(cell.x, p.y - topY - spireHeight, cell.y);
+      float spire = sdCappedCone(spireP, spireHeight, radius * .78, .015);
+      float cap = rndB < .36 ? dome : spire;
+      float building = min(body, cap);
+
+      float district = sdRoundBox(p - vec3(0., 1.0, -6.15), vec3(7.4, 3.55, 2.75), .08);
+      return max(building, district);
+    }
+
     vec2 mapScene(vec3 p) {
       float floorD = p.y + 1.72;
+      float cityD = cityField(p);
       vec3 q = p;
       q.xz *= rot(.22 + uSeed * .17);
       q.xy *= rot(-.12 + uSeed * .07);
@@ -120,8 +174,10 @@
       }
 
       sculpture *= .78;
-      if (sculpture < floorD) return vec2(sculpture, 1.);
-      return vec2(floorD, 2.);
+      vec2 result = vec2(sculpture, 1.);
+      if (cityD < result.x) result = vec2(cityD, 3.);
+      if (floorD < result.x) result = vec2(floorD, 2.);
+      return result;
     }
 
     bool raymarch(vec3 ro, vec3 rd, out float t, out float material) {
@@ -175,31 +231,61 @@
     }
 
     vec3 environment(vec3 rd) {
-      float horizon = smoothstep(-.25, .65, rd.y);
-      vec3 sky = mix(vec3(.055, .058, .049), vec3(.36, .38, .32), horizon);
-      float windowA = pow(max(dot(rd, normalize(vec3(-.55, .72, -.28))), 0.), 72.);
-      float windowB = pow(max(dot(rd, normalize(vec3(.72, .32, .61))), 0.), 220.);
-      sky += vec3(1.0, .88, .67) * windowA * 3.2;
-      sky += vec3(.52, .67, .72) * windowB * 1.6;
+      float elevation = smoothstep(-.18, .82, rd.y);
+      vec3 sky = mix(vec3(.78, .13, .22), vec3(.10, .27, .64), elevation);
+      float horizon = exp(-abs(rd.y - .035) * 5.2);
+      float sideGlow = .58 + .42 * smoothstep(-1., .65, -rd.x);
+      sky += vec3(1.0, .28, .08) * horizon * sideGlow * .85;
+      sky += vec3(.72, .09, .38) * pow(horizon, 2.) * .34;
+
+      vec3 sunDirection = normalize(vec3(-.68, .19, -.71));
+      float sunCore = smoothstep(.9985, .99975, dot(rd, sunDirection));
+      float sunHalo = pow(max(dot(rd, sunDirection), 0.), 96.);
+      sky += vec3(1.0, .54, .18) * sunHalo * 2.8;
+      sky += vec3(1.0, .82, .52) * sunCore * 9.;
+
+      float highLight = pow(max(dot(rd, normalize(vec3(.62, .72, .24))), 0.), 180.);
+      sky += vec3(.27, .46, 1.) * highLight * .8;
       return sky;
     }
 
     void surfaceMaterial(float id, vec3 p, out vec3 albedo, out float metallic, out float roughness) {
-      if (id > 1.5) {
+      if (id > 2.5) {
+        vec2 cell = floor((p.xz + vec2(uSeed * .31, 0.) + vec2(.59, .66)) / vec2(1.18, 1.32));
+        float building = hash21(cell + 19.77);
+        float mirrorBand = smoothstep(.44, .56, .5 + .5 * sin(p.y * 3.2 + building * 9.));
+        vec3 stone = mix(vec3(.075, .045, .095), vec3(.23, .105, .15), building);
+        vec3 glass = mix(vec3(.08, .16, .22), vec3(.32, .13, .27), building);
+        albedo = mix(stone, glass, mirrorBand);
+        metallic = mix(.04, .87, mirrorBand);
+        roughness = mix(.72, .08, mirrorBand);
+      } else if (id > 1.5) {
         float grain = .5 + .5 * sin(p.x * 2.7 + sin(p.z * 4.));
-        albedo = mix(vec3(.19, .18, .145), vec3(.27, .25, .205), grain * .22);
-        metallic = 0.; roughness = .76;
+        float wet = smoothstep(.52, .76, .5 + .5 * sin(p.x * .7 + p.z * 1.1));
+        albedo = mix(vec3(.12, .055, .095), vec3(.24, .12, .14), grain * .3);
+        metallic = wet * .28; roughness = mix(.58, .12, wet);
       } else if (uMaterial == 0) {
         float patina = smoothstep(.15, .85, .5 + .5 * sin(p.y * 3.1 + p.z * 2.4));
-        albedo = mix(vec3(.53, .55, .49), vec3(.18, .29, .275), patina * .45);
-        metallic = .72; roughness = .22;
+        float mirror = smoothstep(.62, .78, .5 + .5 * sin(p.x * 4.1 - p.y * 2.3));
+        albedo = mix(mix(vec3(.53, .55, .49), vec3(.18, .29, .275), patina * .45), vec3(.78, .82, .86), mirror);
+        metallic = mix(.62, .94, mirror); roughness = mix(.3, .055, mirror);
       } else if (uMaterial == 1) {
-        albedo = mix(vec3(.31, .085, .038), vec3(.67, .27, .09), .5 + .5 * sin(p.y * 4.));
-        metallic = .18; roughness = .42;
+        float glaze = smoothstep(.58, .78, .5 + .5 * sin(p.y * 4. + p.x * 2.));
+        albedo = mix(vec3(.31, .055, .038), vec3(.82, .32, .08), glaze);
+        metallic = mix(.06, .62, glaze); roughness = mix(.56, .09, glaze);
       } else {
-        albedo = vec3(.035, .043, .04);
-        metallic = .82; roughness = .105;
+        float polish = smoothstep(.42, .6, .5 + .5 * sin(p.z * 5. - p.y * 1.7));
+        albedo = mix(vec3(.018, .024, .035), vec3(.17, .08, .2), polish);
+        metallic = mix(.45, .96, polish); roughness = mix(.42, .045, polish);
       }
+    }
+
+    vec3 surfaceEmission(float id, vec3 p) {
+      if (id < 2.5) return vec3(0.);
+      float rows = step(.64, fract((p.y + 1.72) * 1.42));
+      float columns = step(.52, fract((p.x + p.z * .13) * 3.1));
+      float lit = rows * columns * step(.46, hash21(floor(p.xz * 2.7) + floor(p.y * 1.42)));
+      return vec3(1., .19, .055) * lit * 1.9;
     }
 
     vec3 trace(vec3 ro, vec3 rd) {
@@ -219,15 +305,16 @@
         vec3 albedo;
         float metallic, roughness;
         surfaceMaterial(material, p, albedo, metallic, roughness);
+        radiance += throughput * surfaceEmission(material, p);
 
-        vec3 lightPos = vec3(mix(-2.8, 2.4, random()), 4.35, mix(-2.8, .8, random()));
+        vec3 lightPos = vec3(mix(-3.8, 2.8, random()), 5.1, mix(-3.6, .6, random()));
         vec3 toLight = lightPos - p;
         float lightDist = length(toLight);
         vec3 lightDir = toLight / lightDist;
         float nDotL = max(dot(n, lightDir), 0.);
         if (nDotL > 0. && visibleToLight(p + n * .006, lightDir, lightDist)) {
-          float falloff = 32. / (2. + lightDist * lightDist);
-          vec3 lightColor = vec3(1., .78, .52) * falloff;
+          float falloff = 44. / (2. + lightDist * lightDist);
+          vec3 lightColor = vec3(1., .48, .24) * falloff;
           radiance += throughput * albedo * (1. - metallic) * lightColor * nDotL / PI;
         }
 
