@@ -44,6 +44,7 @@
           <option value="0">Reliquary</option>
           <option value="1">Tidal knot</option>
           <option value="2">Common ground</option>
+          <option value="3">Polyhedral court</option>
         </select>
       </div>
 
@@ -53,6 +54,16 @@
           <option value="0">Oxidized silver</option>
           <option value="1">Burnished clay</option>
           <option value="2">Obsidian</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label for="lighting-select">Light</label>
+        <select id="lighting-select">
+          <option value="0">Chromatic sunset</option>
+          <option value="1">Electric blue hour</option>
+          <option value="2">Acid dawn</option>
+          <option value="3">Moonlit ember</option>
         </select>
       </div>
 
@@ -74,10 +85,10 @@
       <button class="dialog-close" id="about-close" aria-label="Close" type="button">×</button>
       <p class="eyebrow">Process / 01</p>
       <h2>Nothing here is modeled.</h2>
-      <p>The sculpture and distant skyline are described entirely as mathematics in a fragment shader. Two periodic fields are rotated through one another and constrained by a soft volume; seeded towers, domes, and spires rise behind it. Each pixel traces a new light path every frame, becoming quieter and more precise as samples accumulate.</p>
+      <p>The sculpture and surrounding skyline are described entirely as mathematics in a fragment shader. Two periodic fields are rotated through one another and constrained by a soft volume; fifty-two seeded towers, domes, and spires form a ring of reflected architecture. Each pixel traces a new light path every frame, becoming quieter and more precise as samples accumulate.</p>
       <dl>
-        <div><dt>Field</dt><dd>Gyroid shells + seeded city volumes</dd></div>
-        <div><dt>Light</dt><dd>Sunset environment + stochastic area source</dd></div>
+        <div><dt>Field</dt><dd>Gyroid shells + polyhedra + seeded city ring</dd></div>
+        <div><dt>Light</dt><dd>Four environments + stochastic area source</dd></div>
         <div><dt>Renderer</dt><dd>WebGL2 / GLSL ES 3.0</dd></div>
       </dl>
     </dialog>

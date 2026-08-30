@@ -13,6 +13,7 @@
   const qualityValue = document.querySelector('#quality-value');
   const formSelect = document.querySelector('#form-select');
   const materialSelect = document.querySelector('#material-select');
+  const lightingSelect = document.querySelector('#lighting-select');
   const hint = document.querySelector('#hint');
   const dialog = document.querySelector('#about-dialog');
 
@@ -55,6 +56,7 @@
     uniform int uFrame;
     uniform int uForm;
     uniform int uMaterial;
+    uniform int uLighting;
 
     const float PI = 3.14159265359;
     const float FAR = 28.;
@@ -111,23 +113,46 @@
       return s * sqrt(min(dot(ca, ca), dot(cb, cb)));
     }
 
+    float sdRoundedPyramid(vec3 p, float halfHeight, float halfBase, float rounding) {
+      float y = p.y + halfHeight;
+      float taper = clamp(y / (2. * halfHeight), 0., 1.);
+      float width = mix(halfBase, .035, taper);
+      float side = max(abs(p.x), abs(p.z)) - width;
+      float caps = max(-y, y - 2. * halfHeight);
+      return max(side * .72, caps) - rounding;
+    }
+
+    float sdRoundedIcosahedron(vec3 p, float radius, float rounding) {
+      const float phi = 1.61803398875;
+      p = abs(p);
+      vec3 faceA = normalize(vec3(1., 1., 1.));
+      vec3 faceB = normalize(vec3(phi, 1. / phi, 0.));
+      float planes = dot(p, faceA);
+      planes = max(planes, dot(p, faceB.xyz));
+      planes = max(planes, dot(p, faceB.yzx));
+      planes = max(planes, dot(p, faceB.zxy));
+      return planes - radius - rounding;
+    }
+
     float gyroid(vec3 p, float scale, float thickness) {
       p *= scale;
       float g = dot(sin(p), cos(p.zxy));
       return abs(g) / (scale * 1.55) - thickness;
     }
 
-    float cityField(vec3 p) {
-      const vec2 grid = vec2(1.18, 1.32);
-      vec2 shifted = p.xz + vec2(uSeed * .31, 0.);
-      vec2 cellId = floor((shifted + grid * .5) / grid);
-      vec2 cell = mod(shifted + grid * .5, grid) - grid * .5;
+    float ringBuilding(vec3 p, float buildingId) {
+      const float count = 52.;
+      float stepAngle = 2. * PI / count;
+      float rndA = hash21(vec2(buildingId, 7.31));
+      float rndB = hash21(vec2(buildingId, 19.77));
+      float rndC = hash21(vec2(buildingId, 41.13));
+      float angle = buildingId * stepAngle + (rndC - .5) * stepAngle * .16;
+      float ringRadius = 6.45 + (rndB - .5) * .72;
+      vec2 center = vec2(cos(angle), sin(angle)) * ringRadius;
+      vec2 cell = p.xz - center;
 
-      float rndA = hash21(cellId + 7.31);
-      float rndB = hash21(cellId + 19.77);
-      float rndC = hash21(cellId + 41.13);
       float height = 1.15 + rndA * 3.8;
-      float radius = .24 + rndB * .19;
+      float radius = .15 + rndB * .075;
       vec3 bodyP = vec3(cell.x, p.y + 1.72 - height * .5, cell.y);
       float boxBody = sdRoundBox(bodyP, vec3(radius, height * .5, radius * (.75 + rndC * .35)), .035);
       float roundBody = sdCylinder(bodyP, radius, height * .5);
@@ -139,10 +164,19 @@
       vec3 spireP = vec3(cell.x, p.y - topY - spireHeight, cell.y);
       float spire = sdCappedCone(spireP, spireHeight, radius * .78, .015);
       float cap = rndB < .36 ? dome : spire;
-      float building = min(body, cap);
+      return min(body, cap);
+    }
 
-      float district = sdRoundBox(p - vec3(0., 1.0, -6.15), vec3(7.4, 3.55, 2.75), .08);
-      return max(building, district);
+    float cityField(vec3 p) {
+      const float count = 52.;
+      float stepAngle = 2. * PI / count;
+      float polar = atan(p.z, p.x);
+      float nearestId = floor(polar / stepAngle + .5);
+      float city = 100.;
+      for (int offset = -1; offset <= 1; offset++) {
+        city = min(city, ringBuilding(p, nearestId + float(offset)));
+      }
+      return city;
     }
 
     vec2 mapScene(vec3 p) {
@@ -167,10 +201,30 @@
         k.xy *= rot(.45);
         float volume = min(sdTorus(k, vec2(1.03, .55)), sdTorus(k.yzx, vec2(.92, .48)));
         sculpture = max(g1, volume);
-      } else {
+      } else if (uForm == 2) {
         float volume = sdRoundBox(q, vec3(1.34), .58);
         float cleft = -sdRoundBox(q - vec3(.25, .0, .5), vec3(.42, 1.8, .64), .3);
         sculpture = max(max(max(g1, g2), volume), cleft);
+      } else {
+        vec3 pyramidA = q - vec3(-.68, -.64, .18);
+        pyramidA.xz *= rot(.32 + uSeed * .1);
+        float pA = sdRoundedPyramid(pyramidA, .7, .78, .075);
+
+        vec3 pyramidB = q - vec3(.72, -.82, -.26);
+        pyramidB.xz *= rot(-.44 + uSeed * .06);
+        float pB = sdRoundedPyramid(pyramidB, .52, .6, .065);
+
+        vec3 icoA = q - vec3(.56, .55, .18);
+        icoA.xy *= rot(.38);
+        icoA.yz *= rot(uSeed * .12);
+        float iA = sdRoundedIcosahedron(icoA, .66, .045);
+
+        vec3 icoB = q - vec3(-.55, .75, -.38);
+        icoB.xz *= rot(-.27);
+        icoB.xy *= rot(.18 + uSeed * .08);
+        float iB = sdRoundedIcosahedron(icoB, .48, .04);
+
+        sculpture = min(min(pA, pB), min(iA, iB));
       }
 
       sculpture *= .78;
@@ -231,28 +285,53 @@
     }
 
     vec3 environment(vec3 rd) {
-      float elevation = smoothstep(-.18, .82, rd.y);
-      vec3 sky = mix(vec3(.78, .13, .22), vec3(.10, .27, .64), elevation);
       float horizon = exp(-abs(rd.y - .035) * 5.2);
-      float sideGlow = .58 + .42 * smoothstep(-1., .65, -rd.x);
-      sky += vec3(1.0, .28, .08) * horizon * sideGlow * .85;
-      sky += vec3(.72, .09, .38) * pow(horizon, 2.) * .34;
+      float elevation = smoothstep(-.18, .82, rd.y);
+      vec3 sky;
 
-      vec3 sunDirection = normalize(vec3(-.68, .19, -.71));
-      float sunCore = smoothstep(.9985, .99975, dot(rd, sunDirection));
-      float sunHalo = pow(max(dot(rd, sunDirection), 0.), 96.);
-      sky += vec3(1.0, .54, .18) * sunHalo * 2.8;
-      sky += vec3(1.0, .82, .52) * sunCore * 9.;
+      if (uLighting == 0) {
+        sky = mix(vec3(.78, .13, .22), vec3(.10, .27, .64), elevation);
+        float sideGlow = .58 + .42 * smoothstep(-1., .65, -rd.x);
+        sky += vec3(1.0, .28, .08) * horizon * sideGlow * .85;
+        sky += vec3(.72, .09, .38) * pow(horizon, 2.) * .34;
+        vec3 sunDirection = normalize(vec3(-.68, .19, -.71));
+        float sunCore = smoothstep(.9985, .99975, dot(rd, sunDirection));
+        float sunHalo = pow(max(dot(rd, sunDirection), 0.), 96.);
+        sky += vec3(1.0, .54, .18) * sunHalo * 2.8;
+        sky += vec3(1.0, .82, .52) * sunCore * 9.;
+      } else if (uLighting == 1) {
+        sky = mix(vec3(.035, .025, .16), vec3(.06, .42, .72), elevation);
+        sky += vec3(.12, .36, 1.) * horizon * 1.15;
+        float electric = pow(max(dot(rd, normalize(vec3(.48, .38, -.79))), 0.), 120.);
+        sky += vec3(.28, .75, 1.) * electric * 3.4;
+        sky += vec3(.8, .12, .62) * pow(horizon, 3.) * .38;
+      } else if (uLighting == 2) {
+        sky = mix(vec3(.68, .34, .02), vec3(.10, .48, .29), elevation);
+        sky += vec3(.75, 1., .04) * horizon * .92;
+        vec3 sunDirection = normalize(vec3(.72, .31, -.62));
+        float sun = pow(max(dot(rd, sunDirection), 0.), 155.);
+        sky += vec3(.8, 1., .12) * sun * 5.;
+        sky += vec3(.05, .45, .32) * max(rd.y, 0.) * .55;
+      } else {
+        sky = mix(vec3(.11, .012, .018), vec3(.025, .045, .12), elevation);
+        sky += vec3(.88, .07, .015) * pow(horizon, 2.2) * .62;
+        vec3 moonDirection = normalize(vec3(-.42, .64, -.64));
+        float moon = pow(max(dot(rd, moonDirection), 0.), 380.);
+        sky += vec3(.48, .64, 1.) * moon * 7.;
+        sky += vec3(.45, .025, .008) * horizon * .32;
+      }
 
       float highLight = pow(max(dot(rd, normalize(vec3(.62, .72, .24))), 0.), 180.);
-      sky += vec3(.27, .46, 1.) * highLight * .8;
+      sky += (uLighting == 2 ? vec3(.55, 1., .18) : vec3(.27, .46, 1.)) * highLight * .8;
       return sky;
     }
 
     void surfaceMaterial(float id, vec3 p, out vec3 albedo, out float metallic, out float roughness) {
       if (id > 2.5) {
-        vec2 cell = floor((p.xz + vec2(uSeed * .31, 0.) + vec2(.59, .66)) / vec2(1.18, 1.32));
-        float building = hash21(cell + 19.77);
+        const float count = 52.;
+        float stepAngle = 2. * PI / count;
+        float buildingId = floor(atan(p.z, p.x) / stepAngle + .5);
+        float building = hash21(vec2(buildingId, 19.77));
         float mirrorBand = smoothstep(.44, .56, .5 + .5 * sin(p.y * 3.2 + building * 9.));
         vec3 stone = mix(vec3(.075, .045, .095), vec3(.23, .105, .15), building);
         vec3 glass = mix(vec3(.08, .16, .22), vec3(.32, .13, .27), building);
@@ -285,7 +364,10 @@
       float rows = step(.64, fract((p.y + 1.72) * 1.42));
       float columns = step(.52, fract((p.x + p.z * .13) * 3.1));
       float lit = rows * columns * step(.46, hash21(floor(p.xz * 2.7) + floor(p.y * 1.42)));
-      return vec3(1., .19, .055) * lit * 1.9;
+      vec3 windowColor = uLighting == 1 ? vec3(.2, .65, 1.) :
+                         uLighting == 2 ? vec3(.72, 1., .08) :
+                         uLighting == 3 ? vec3(1., .08, .015) : vec3(1., .19, .055);
+      return windowColor * lit * (uLighting == 3 ? 2.8 : 1.9);
     }
 
     vec3 trace(vec3 ro, vec3 rd) {
@@ -314,7 +396,10 @@
         float nDotL = max(dot(n, lightDir), 0.);
         if (nDotL > 0. && visibleToLight(p + n * .006, lightDir, lightDist)) {
           float falloff = 44. / (2. + lightDist * lightDist);
-          vec3 lightColor = vec3(1., .48, .24) * falloff;
+          vec3 themeLight = uLighting == 1 ? vec3(.2, .58, 1.) :
+                            uLighting == 2 ? vec3(.7, 1., .08) :
+                            uLighting == 3 ? vec3(.62, .12, .06) : vec3(1., .48, .24);
+          vec3 lightColor = themeLight * falloff;
           radiance += throughput * albedo * (1. - metallic) * lightColor * nDotL / PI;
         }
 
@@ -357,7 +442,7 @@
       vec3 forward = normalize(target - ro);
       vec3 right = normalize(cross(forward, vec3(0.,1.,0.)));
       vec3 up = cross(right, forward);
-      vec3 rd = normalize(forward * 1.72 + right * uv.x + up * uv.y);
+      vec3 rd = normalize(forward * 2.38 + right * uv.x + up * uv.y);
 
       vec2 lens = diskSample() * .011;
       vec3 focalPoint = ro + rd * uDistance;
@@ -445,7 +530,7 @@
   }
 
   const traceUniform = Object.fromEntries(
-    ['uPrevious','uResolution','uCamera','uDistance','uSeed','uFrame','uForm','uMaterial']
+    ['uPrevious','uResolution','uCamera','uDistance','uSeed','uFrame','uForm','uMaterial','uLighting']
       .map(name => [name, gl.getUniformLocation(traceProgram, name)])
   );
   const displayUniform = {
@@ -461,9 +546,9 @@
   let needsResize = true;
   let quality = .6;
   let seed = Math.random() * 8.;
-  let yaw = .62;
+  let yaw = .664;
   let pitch = .12;
-  let distance = 5.8;
+  let distance = 8.15;
   let pointerDown = false;
   let pointerX = 0;
   let pointerY = 0;
@@ -536,6 +621,7 @@
     gl.uniform1i(traceUniform.uFrame, frame);
     gl.uniform1i(traceUniform.uForm, Number(formSelect.value));
     gl.uniform1i(traceUniform.uMaterial, Number(materialSelect.value));
+    gl.uniform1i(traceUniform.uLighting, Number(lightingSelect.value));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     readIndex = writeIndex;
     frame += 1;
@@ -602,7 +688,7 @@
 
   canvas.addEventListener('wheel', event => {
     event.preventDefault();
-    distance = Math.max(3.5, Math.min(7.4, distance + event.deltaY * .003));
+    distance = Math.max(4.4, Math.min(11., distance + event.deltaY * .004));
     hint.style.opacity = '0';
     reset();
   }, { passive: false });
@@ -611,6 +697,7 @@
   resetButton.addEventListener('click', () => reset(true));
   formSelect.addEventListener('change', () => reset());
   materialSelect.addEventListener('change', () => reset());
+  lightingSelect.addEventListener('change', () => reset());
 
   qualityInput.addEventListener('input', () => {
     quality = Number(qualityInput.value) / 100;
