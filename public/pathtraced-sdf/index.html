@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="A progressive GLSL path-traced SDF sculpture study rendered live in WebGL2.">
+  <meta name="theme-color" content="#171814">
+  <title>Common Ground — Path-traced SDF</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="stage">
+    <canvas id="gl-canvas" aria-label="A progressively path-traced procedural sculpture"></canvas>
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="wordmark" href="/" aria-label="Return to Sandbox Miami">
+        <span class="mark" aria-hidden="true"></span>
+        <span>Common Ground</span>
+      </a>
+      <p class="edition">SDF study <span>№ 01</span></p>
+      <div class="render-state">
+        <span class="pulse" id="pulse" aria-hidden="true"></span>
+        <span id="render-label">Preparing field</span>
+      </div>
+    </header>
+
+    <section class="intro" aria-labelledby="piece-title">
+      <p class="eyebrow">A shape found between two systems</p>
+      <h1 id="piece-title">Vessel<br><i>for</i> light</h1>
+      <p class="intro-copy">A signed distance field is carved, intersected, and allowed to gather light one ray at a time.</p>
+      <button class="text-button" id="about-open" type="button">Read the process <span>↗</span></button>
+    </section>
+
+    <aside class="controls" aria-label="Rendering controls">
+      <div class="sample-meter">
+        <span>Samples</span>
+        <strong id="sample-count">0000</strong>
+      </div>
+
+      <div class="control-group">
+        <label for="form-select">Form</label>
+        <select id="form-select">
+          <option value="0">Reliquary</option>
+          <option value="1">Tidal knot</option>
+          <option value="2">Common ground</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label for="material-select">Surface</label>
+        <select id="material-select">
+          <option value="0">Oxidized silver</option>
+          <option value="1">Burnished clay</option>
+          <option value="2">Obsidian</option>
+        </select>
+      </div>
+
+      <div class="control-group range-group">
+        <div><label for="quality">Resolution</label><output id="quality-value">60%</output></div>
+        <input id="quality" type="range" min="45" max="100" value="60" step="5">
+      </div>
+
+      <div class="button-row">
+        <button id="pause" type="button"><span class="pause-icon" aria-hidden="true"></span>Pause</button>
+        <button id="reset" type="button">Recast</button>
+      </div>
+      <button class="save-button" id="save" type="button">Save still <span>↓</span></button>
+    </aside>
+
+    <div class="hint" id="hint"><span></span>Drag to orbit · Scroll to move</div>
+
+    <dialog id="about-dialog">
+      <button class="dialog-close" id="about-close" aria-label="Close" type="button">×</button>
+      <p class="eyebrow">Process / 01</p>
+      <h2>Nothing here is modeled.</h2>
+      <p>The sculpture is described entirely as mathematics in a fragment shader. Two periodic fields are rotated through one another and constrained by a soft volume. Each pixel traces a new light path every frame; the result becomes quieter and more precise as samples accumulate.</p>
+      <dl>
+        <div><dt>Field</dt><dd>Gyroid shells + rounded volume</dd></div>
+        <div><dt>Light</dt><dd>Stochastic area source</dd></div>
+        <div><dt>Renderer</dt><dd>WebGL2 / GLSL ES 3.0</dd></div>
+      </dl>
+    </dialog>
+
+    <section class="fallback" id="fallback" hidden>
+      <p class="eyebrow">Renderer unavailable</p>
+      <h2>This study needs WebGL2.</h2>
+      <p>Try a current version of Chrome, Firefox, Edge, or Safari with hardware acceleration enabled.</p>
+      <a href="/">Return to the catalog</a>
+    </section>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>

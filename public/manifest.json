@@ -6,6 +6,12 @@
     "category": "hebrew-verbs"
   },
   {
+    "path": "/pathtraced-sdf/",
+    "title": "Common Ground — Path-traced SDF",
+    "description": "A progressive GLSL path-traced SDF sculpture study rendered live in WebGL2.",
+    "category": "pathtraced-sdf"
+  },
+  {
     "path": "/threejs/attractor_viewer/",
     "title": "Chaotic Attractor Viewer V2",
     "description": "No description available.",
