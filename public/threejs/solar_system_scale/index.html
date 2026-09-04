@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="A physically scaled Three.js solar system with elliptical Kepler orbits and mass-weighted moon paths.">
+  <meta name="theme-color" content="#03060b">
+  <title>Heliocentric — Scale Solar System</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main id="app">
+    <div id="scene" aria-label="Interactive scale model of the solar system"></div>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a href="/" class="back-link" aria-label="Back to Sandbox Miami"><span>←</span> Sandbox Miami</a>
+      <div class="identity"><span class="system-dot"></span><strong>Heliocentric</strong><small>Scale study 02</small></div>
+      <div class="scale-readout"><span>Spatial scale</span><strong>1 unit = 10<sup>6</sup> km</strong></div>
+    </header>
+
+    <nav class="body-nav" aria-label="Select a celestial body">
+      <p>System index</p>
+      <button class="body-link active" data-body="system"><span class="planet-glyph sun"></span><b>Overview</b><small>5.9B km</small></button>
+      <div id="planet-list"></div>
+    </nav>
+
+    <aside class="inspector" id="inspector">
+      <div class="inspector-heading">
+        <p id="object-kicker">Current focus</p>
+        <button id="close-focus" type="button" aria-label="Return to system overview">×</button>
+      </div>
+      <h1 id="object-name">Solar System</h1>
+      <p class="object-type" id="object-type">One star · eight planets · one dwarf planet</p>
+      <dl id="object-stats">
+        <div><dt>Outer radius</dt><dd>5,906M km</dd></div>
+        <div><dt>Simulation date</dt><dd id="date-readout">—</dd></div>
+        <div><dt>Model</dt><dd>Keplerian</dd></div>
+      </dl>
+      <p class="inspector-note" id="inspector-note">Select a planet to travel to its physical-scale body and satellite system.</p>
+      <div class="moon-key" id="moon-key" hidden>
+        <p>Satellite orbit weight <span>mass (kg)</span></p>
+        <div class="weight-scale"><i></i><i></i><i></i></div>
+        <div><span>lighter</span><span>heavier</span></div>
+      </div>
+    </aside>
+
+    <section class="timeline" aria-label="Simulation controls">
+      <button id="play-toggle" class="play-toggle" type="button" aria-label="Pause simulation"><span></span></button>
+      <div class="time-copy"><strong id="time-label">1 day / sec</strong><span>Orbital time</span></div>
+      <input id="time-speed" type="range" min="0" max="5" value="2" step="1" aria-label="Simulation speed">
+      <div class="time-marks" aria-hidden="true"><span>Stop</span><span>1 hr</span><span>1 day</span><span>1 wk</span><span>1 mo</span><span>1 yr</span></div>
+      <button id="reset-date" class="text-control" type="button">Reset epoch</button>
+      <button id="orbit-toggle" class="text-control active" type="button" aria-pressed="true">Orbits on</button>
+    </section>
+
+    <div class="view-hint" id="view-hint"><span></span>Drag to orbit · Scroll to cross scale</div>
+
+    <section class="loading" id="loading">
+      <div class="loading-orbit"><i></i><i></i><span></span></div>
+      <p>Resolving ephemerides</p>
+      <div class="load-line"><i id="load-progress"></i></div>
+    </section>
+
+    <div class="unsupported" id="unsupported" hidden>
+      <h1>WebGL is unavailable.</h1>
+      <p>This scale model needs a current browser with hardware acceleration.</p>
+      <a href="/">Return to the catalog</a>
+    </div>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

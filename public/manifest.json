@@ -108,6 +108,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/solar_system_scale/",
+    "title": "Heliocentric — Scale Solar System",
+    "description": "A physically scaled Three.js solar system with elliptical Kepler orbits and mass-weighted moon paths.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/sp500_impact/",
     "title": "S&P Impact Tracker",
     "description": "Manual-refresh S&P 500 impact tracker using SPY holdings as a weight proxy and FMP quotes for movement data.",
