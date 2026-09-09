@@ -18,6 +18,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/collatz_canopy/",
+    "title": "Collatz Canopy — Three.js Study",
+    "description": "An interactive Three.js canopy grown from 5,000 Collatz conjecture paths, with shared edges weighted by traversal frequency.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/demo_1/",
     "title": "Three.js Sandbox - Miami",
     "description": "Interactive Three.js playground with a torus knot, orbit controls, and particle backdrop.",

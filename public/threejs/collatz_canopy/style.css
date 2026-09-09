@@ -1,0 +1,215 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap');
+
+:root {
+  color-scheme: light;
+  --paper: #f7f1e8;
+  --ink: #2f0d5d;
+  --muted: #8d6674;
+  --coral: #f26761;
+  --gold: #efb95f;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app, #scene {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "DM Mono", monospace;
+}
+
+#app { position: relative; isolation: isolate; }
+#scene { position: absolute; inset: 0; }
+#scene canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+#scene canvas:active { cursor: grabbing; }
+
+.paper-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: .19;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E");
+}
+
+.masthead {
+  position: fixed;
+  z-index: 5;
+  top: max(24px, env(safe-area-inset-top));
+  left: clamp(22px, 3.4vw, 58px);
+  right: clamp(22px, 3.4vw, 58px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+
+.masthead p { margin: 0; color: var(--muted); }
+.masthead b { color: var(--coral); font-weight: 500; }
+.back { color: var(--ink); text-decoration: none; }
+.back:hover span { border-bottom-color: currentColor; }
+.back span { border-bottom: 1px solid transparent; transition: border-color .2s; }
+
+.title-block {
+  position: fixed;
+  z-index: 4;
+  left: clamp(22px, 6.2vw, 108px);
+  bottom: clamp(42px, 8vh, 112px);
+  width: min(390px, calc(100vw - 44px));
+  pointer-events: none;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  color: var(--coral);
+  font-size: 10px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+}
+
+.title-block h1 {
+  margin: 0;
+  font: 400 clamp(58px, 7.5vw, 116px)/.72 "Instrument Serif", Georgia, serif;
+  letter-spacing: -.045em;
+}
+
+.title-block h1 em {
+  color: var(--coral);
+  font-weight: 400;
+}
+
+.dek {
+  width: 33ch;
+  max-width: 100%;
+  margin: 24px 0 0 4px;
+  color: var(--muted);
+  font: 400 12px/1.7 "DM Mono", monospace;
+}
+
+.legend {
+  position: fixed;
+  z-index: 4;
+  top: 17%;
+  right: clamp(22px, 3.4vw, 58px);
+  width: 150px;
+  pointer-events: none;
+}
+
+.legend p { margin: 0 0 9px; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; }
+.legend .gradient { height: 2px; background: linear-gradient(90deg, #efc77b, #f26d61 45%, #b62878 72%, #2f0d5d); }
+.legend .gradient i { display: block; width: 5px; height: 5px; border-radius: 50%; background: var(--ink); transform: translate(145px, -1px); }
+.legend > div:last-child { display: flex; justify-content: space-between; margin-top: 7px; color: var(--muted); font-size: 8px; }
+
+.readout {
+  position: fixed;
+  z-index: 4;
+  right: clamp(22px, 3.4vw, 58px);
+  bottom: clamp(94px, 14vh, 180px);
+  display: grid;
+  gap: 15px;
+  width: 150px;
+  pointer-events: none;
+}
+
+.readout div { border-top: 1px solid rgba(47, 13, 93, .17); padding-top: 8px; }
+.readout span { display: block; color: var(--muted); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
+.readout strong { display: block; margin-top: 3px; font: 400 22px/1 "Instrument Serif", Georgia, serif; }
+
+.controls {
+  position: fixed;
+  z-index: 8;
+  right: clamp(22px, 3.4vw, 58px);
+  bottom: max(24px, env(safe-area-inset-bottom));
+  width: 252px;
+  padding: 12px 14px;
+  border: 1px solid rgba(47, 13, 93, .13);
+  background: rgba(247, 241, 232, .78);
+  backdrop-filter: blur(14px);
+}
+
+.control-row { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 9px; min-height: 28px; }
+.control-row label, .control-row output { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .09em; }
+.control-row output { width: 32px; text-align: right; }
+select, button { font: 500 9px "DM Mono", monospace; letter-spacing: .08em; text-transform: uppercase; }
+select { width: 100%; padding: 6px 8px; border: 1px solid rgba(47, 13, 93, .16); border-radius: 0; color: var(--ink); background: transparent; }
+input[type="range"] { width: 100%; height: 2px; margin: 0; accent-color: var(--coral); }
+.button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
+button { min-height: 30px; border: 1px solid var(--ink); color: var(--paper); background: var(--ink); cursor: pointer; }
+button.quiet { color: var(--ink); background: transparent; border-color: rgba(47, 13, 93, .2); }
+button.quiet.active::before { content: "●"; margin-right: 6px; color: var(--coral); }
+
+.instructions {
+  position: fixed;
+  z-index: 4;
+  left: 50%;
+  bottom: max(27px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  margin: 0;
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.instructions span { display: inline-block; width: 15px; height: 1px; margin: 0 7px 3px 0; background: var(--coral); }
+
+.node-label {
+  position: absolute;
+  z-index: 3;
+  padding: 2px 4px;
+  color: var(--ink);
+  background: rgba(247, 241, 232, .76);
+  font: 400 11px "Instrument Serif", Georgia, serif;
+  pointer-events: none;
+  transform: translate(6px, -50%);
+  white-space: nowrap;
+}
+.node-label.featured { color: var(--coral); font-size: 13px; }
+
+.loading {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  background: var(--paper);
+  transition: opacity .65s ease, visibility .65s;
+}
+.loading.done { opacity: 0; visibility: hidden; pointer-events: none; }
+.loading p { margin: 0; color: var(--muted); font-size: 9px; letter-spacing: .2em; text-transform: uppercase; }
+.seed { position: relative; width: 70px; height: 54px; }
+.seed i { position: absolute; left: 4px; bottom: 5px; width: 60px; height: 1px; background: var(--coral); transform-origin: left; animation: sprout 1.3s ease-in-out infinite alternate; }
+.seed i:nth-child(2) { transform: rotate(-24deg) scaleX(.72); animation-delay: -.4s; }
+.seed i:nth-child(3) { transform: rotate(19deg) scaleX(.84); animation-delay: -.8s; }
+@keyframes sprout { from { opacity: .25; scale: .35 1; } to { opacity: 1; scale: 1 1; } }
+
+.unsupported { position: fixed; inset: 0; z-index: 30; display: grid; place-content: center; text-align: center; background: var(--paper); }
+.unsupported h1 { font: 50px "Instrument Serif", serif; margin: 0; }
+.unsupported a { color: var(--coral); }
+
+@media (max-width: 760px) {
+  .masthead { top: max(18px, env(safe-area-inset-top)); }
+  .masthead p, .legend, .instructions { display: none; }
+  .title-block { top: 70px; bottom: auto; width: 255px; }
+  .title-block h1 { font-size: 62px; }
+  .dek { margin-top: 18px; font-size: 10px; width: 29ch; }
+  .readout { left: 22px; right: auto; bottom: 126px; width: 98px; gap: 7px; }
+  .readout strong { font-size: 17px; }
+  .controls { left: 22px; right: 22px; bottom: max(16px, env(safe-area-inset-bottom)); width: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seed i { animation: none; }
+}

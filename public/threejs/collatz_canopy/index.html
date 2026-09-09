@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="An interactive Three.js canopy grown from 5,000 Collatz conjecture paths, with shared edges weighted by traversal frequency.">
+  <meta name="theme-color" content="#f7f1e8">
+  <title>Collatz Canopy — Three.js Study</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main id="app">
+    <div id="scene" aria-label="Interactive three-dimensional Collatz path tree"></div>
+    <div class="paper-grain" aria-hidden="true"></div>
+
+    <header class="masthead">
+      <a class="back" href="/" aria-label="Back to Sandbox Miami">← <span>Sandbox Miami</span></a>
+      <p>Mathematical field study <b>03</b></p>
+    </header>
+
+    <section class="title-block">
+      <p class="eyebrow">The shape of iteration</p>
+      <h1>Collatz<br><em>canopy</em></h1>
+      <p class="dek"><span id="sample-copy">5,000</span> starting integers below one million, gathered into one branching history.</p>
+    </section>
+
+    <aside class="legend" aria-label="Visualization legend">
+      <p>Edge traffic</p>
+      <div class="gradient"><i></i></div>
+      <div><span>one path</span><span>shared trunk</span></div>
+    </aside>
+
+    <section class="readout" aria-live="polite">
+      <div><span>Unique edges</span><strong id="edge-count">—</strong></div>
+      <div><span>Longest flight</span><strong id="flight-count">—</strong></div>
+      <div><span>Peak value</span><strong id="peak-value">—</strong></div>
+    </section>
+
+    <section class="controls" aria-label="Collatz canopy controls">
+      <div class="control-row">
+        <label for="sample-count">Paths</label>
+        <select id="sample-count">
+          <option value="1000">1,000</option>
+          <option value="2500">2,500</option>
+          <option value="5000" selected>5,000</option>
+          <option value="10000">10,000</option>
+        </select>
+      </div>
+      <div class="control-row slider-row">
+        <label for="depth">Depth</label>
+        <input id="depth" type="range" min="0" max="1.8" value="0.72" step="0.01">
+        <output id="depth-output" for="depth">72%</output>
+      </div>
+      <div class="button-row">
+        <button id="new-sample" type="button">New sample</button>
+        <button id="rotate-toggle" class="quiet active" type="button" aria-pressed="true">Drift on</button>
+      </div>
+    </section>
+
+    <p class="instructions"><span></span> Drag to orbit · scroll to explore · double-click to reset</p>
+
+    <div class="loading" id="loading">
+      <div class="seed"><i></i><i></i><i></i></div>
+      <p>Growing integer paths</p>
+    </div>
+
+    <div class="unsupported" id="unsupported" hidden>
+      <h1>WebGL is unavailable.</h1>
+      <p>This sketch needs a current browser with hardware acceleration.</p>
+      <a href="/">Return to the catalog</a>
+    </div>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
