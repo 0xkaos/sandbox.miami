@@ -153,7 +153,8 @@ function makeTree(graph, positions) {
   treeGroup.name = 'collatz-canopy';
   scene.add(treeGroup);
 
-  const maxTraffic = Math.max(...Array.from(graph.edges.values(), (edge) => edge.count));
+  let maxTraffic = 1;
+  for (const edge of graph.edges.values()) maxTraffic = Math.max(maxTraffic, edge.count);
   const bins = Array.from({ length: BUCKETS }, () => []);
 
   for (const edge of graph.edges.values()) {
@@ -214,15 +215,21 @@ function fitCamera(group) {
 
 function rebuild() {
   loading.classList.remove('done');
+  loading.querySelector('p').textContent = 'Growing integer paths';
   const sampleCount = Number(sampleSelect.value);
   window.setTimeout(() => {
-    const graph = buildGraph(sampleCount);
-    const positions = layoutGraph(graph);
-    makeTree(graph, positions);
-    edgeCount.textContent = fullNumber(graph.edges.size);
-    flightCount.textContent = `${fullNumber(graph.longest.steps)} steps`;
-    peakValue.textContent = compactNumber(graph.overallPeak);
-    requestAnimationFrame(() => loading.classList.add('done'));
+    try {
+      const graph = buildGraph(sampleCount);
+      const positions = layoutGraph(graph);
+      makeTree(graph, positions);
+      edgeCount.textContent = fullNumber(graph.edges.size);
+      flightCount.textContent = `${fullNumber(graph.longest.steps)} steps`;
+      peakValue.textContent = compactNumber(graph.overallPeak);
+      requestAnimationFrame(() => loading.classList.add('done'));
+    } catch (error) {
+      console.error('Could not build the Collatz canopy.', error);
+      loading.querySelector('p').textContent = 'Could not grow paths — try fewer samples';
+    }
   }, 40);
 }
 
