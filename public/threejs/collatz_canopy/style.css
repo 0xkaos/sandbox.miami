@@ -59,42 +59,6 @@ body {
 .back:hover span { border-bottom-color: currentColor; }
 .back span { border-bottom: 1px solid transparent; transition: border-color .2s; }
 
-.title-block {
-  position: fixed;
-  z-index: 4;
-  left: clamp(22px, 6.2vw, 108px);
-  bottom: clamp(42px, 8vh, 112px);
-  width: min(390px, calc(100vw - 44px));
-  pointer-events: none;
-}
-
-.eyebrow {
-  margin: 0 0 10px;
-  color: var(--coral);
-  font-size: 10px;
-  letter-spacing: .2em;
-  text-transform: uppercase;
-}
-
-.title-block h1 {
-  margin: 0;
-  font: 400 clamp(58px, 7.5vw, 116px)/.72 "Instrument Serif", Georgia, serif;
-  letter-spacing: -.045em;
-}
-
-.title-block h1 em {
-  color: var(--coral);
-  font-weight: 400;
-}
-
-.dek {
-  width: 33ch;
-  max-width: 100%;
-  margin: 24px 0 0 4px;
-  color: var(--muted);
-  font: 400 12px/1.7 "DM Mono", monospace;
-}
-
 .legend {
   position: fixed;
   z-index: 4;
@@ -163,19 +127,6 @@ button.quiet.active::before { content: "●"; margin-right: 6px; color: var(--co
 }
 .instructions span { display: inline-block; width: 15px; height: 1px; margin: 0 7px 3px 0; background: var(--coral); }
 
-.node-label {
-  position: absolute;
-  z-index: 3;
-  padding: 2px 4px;
-  color: var(--ink);
-  background: rgba(247, 241, 232, .76);
-  font: 400 11px "Instrument Serif", Georgia, serif;
-  pointer-events: none;
-  transform: translate(6px, -50%);
-  white-space: nowrap;
-}
-.node-label.featured { color: var(--coral); font-size: 13px; }
-
 .loading {
   position: fixed;
   inset: 0;
@@ -203,9 +154,6 @@ button.quiet.active::before { content: "●"; margin-right: 6px; color: var(--co
 @media (max-width: 760px) {
   .masthead { top: max(18px, env(safe-area-inset-top)); }
   .masthead p, .legend, .instructions { display: none; }
-  .title-block { top: 70px; bottom: auto; width: 255px; }
-  .title-block h1 { font-size: 62px; }
-  .dek { margin-top: 18px; font-size: 10px; width: 29ch; }
   .readout { left: 22px; right: auto; bottom: 126px; width: 98px; gap: 7px; }
   .readout strong { font-size: 17px; }
   .controls { left: 22px; right: 22px; bottom: max(16px, env(safe-area-inset-bottom)); width: auto; }
