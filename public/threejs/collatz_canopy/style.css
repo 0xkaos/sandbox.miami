@@ -196,6 +196,7 @@ button.quiet.active::before { content: "●"; margin-right: 6px; color: var(--co
 @keyframes sprout { from { opacity: .25; scale: .35 1; } to { opacity: 1; scale: 1 1; } }
 
 .unsupported { position: fixed; inset: 0; z-index: 30; display: grid; place-content: center; text-align: center; background: var(--paper); }
+.unsupported[hidden] { display: none; }
 .unsupported h1 { font: 50px "Instrument Serif", serif; margin: 0; }
 .unsupported a { color: var(--coral); }
 
