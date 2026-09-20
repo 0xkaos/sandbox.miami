@@ -78,6 +78,12 @@
     "category": "threejs"
   },
   {
+    "path": "/threejs/piano_motion/",
+    "title": "Piano / Motion — A living score",
+    "description": "Turn a MIDI performance into a moving 3D score, with a richly sampled grand piano, a bouncing note guide, and an unhurried camera.",
+    "category": "threejs"
+  },
+  {
     "path": "/threejs/ribbon_growth/",
     "title": "Ribbon Growth",
     "description": "Generative ribbon growth system with branching, turning, collision avoidance, and organic decay — ported from a Processing sketch.",

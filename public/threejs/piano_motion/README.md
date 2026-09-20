@@ -1,0 +1,52 @@
+# Piano / Motion
+
+Open `/threejs/piano_motion/`. Press **Play study** to audition the original, one-minute piano study, or open/drop a `.mid` / `.midi` file. MIDI is parsed locally and never uploaded. The first play downloads the samples needed by the selected tracks; subsequent plays use the browser cache where available.
+
+## Sound first
+
+The instrument uses Alexander Holm’s **Salamander Grand Piano**, a stereo Yamaha C5 sampled in minor thirds at 16 velocities. The native Web Audio sampler selects an actual velocity recording, transposes at most one semitone inside the piano’s range, and applies a small within-layer gain adjustment. Notes outside the 88-key range transpose the nearest endpoint sample. A four-layer mode reduces memory and loading time.
+
+The scheduler preserves the MIDI’s note timings, velocities, tempo map, and channel-specific CC64 sustain, including controllers carried on separate tracks. Key-up noises and alternating pedal recordings add mechanical texture. A stereo convolution room and output compressor complete the signal path. The built-in demo includes dynamics, sustain, and tempo changes, and can be downloaded as MIDI.
+
+**Humanize defaults to off.** It adds reproducible timing variation of at most 11 ms and proportional velocity variation of at most 9%. It cannot create a pianist’s phrasing from a flat sequence. Start with a performed MIDI for the most natural result. Tempo changes affect playback speed, not pitch. The browser audio clock drives both the scheduler and the visualization.
+
+This is a sampled instrument, not a physical piano model. Sustain uses the standard CC64 on/off threshold; half pedaling, soft pedal, sostenuto, pitch bend, other MIDI controllers, sympathetic resonance modeling, and VST hosting are not implemented. All selected instruments are voiced as piano; piano tracks are selected initially when present, otherwise non-percussion tracks are selected.
+
+## Visual study
+
+Three.js draws an ivory grand staff, raised noteheads that highlight while sounding, a bouncing guide following the upper voice at each onset, and a camera that follows the performance. Perspective and overhead views are available. Reduced-motion preferences disable the guide’s bounce. A phone layout places sound controls below the score.
+
+The display is a **proportional performance map, not engraved sheet music**: treble/bass registers split at middle C, chromatic notes use sharps, and notehead/stem/flag shapes approximate durations. Bar lines follow the meter map. It does not infer key signatures, enharmonic spelling, rests, voices, ties, beams, or fingering. MusicXML plus a dedicated engraving renderer would be the appropriate next step for publication-quality notation. No video export is included.
+
+## Runtime and limits
+
+- Standard MIDI Type 0 and Type 1 with PPQ timing; Type 2 and SMPTE are rejected explicitly.
+- Maximum input: 8 MB and 20,000 selected notes.
+- Samples load with four concurrent requests, timeouts, cancellation, visible progress, and retry. Only the required velocity/pitch recordings are loaded; unused audio tails are trimmed for the piece, allowing the slowest tempo setting. Decoded buffers are capped at 240 MB; select four layers or fewer tracks if that limit is reached.
+- Playback pauses when the tab is hidden or the scheduling timer stalls. Seeking/resuming reconstructs held strings from their sample offsets. Pause cancels queued sources with a short fade; existing room reverb decays naturally.
+- Requires Web Audio and an initial network connection to the sample host. The score requires WebGL; audio controls remain available if the graphics library or WebGL fails.
+- Dependencies are pinned: Three.js 0.160.0 from jsDelivr and a vendored `@tonejs/midi` 2.0.28 UMD bundle. The page has no build-time dependency or backend requirement. Google Fonts are optional; system serif/sans-serif fonts are fallbacks.
+
+## Development
+
+From the repository root:
+
+```sh
+npm run dev
+# http://localhost:8000/threejs/piano_motion/
+node --test scripts/test-piano-motion.mjs
+npm run build
+```
+
+The build discovers this page from its title/description and adds it to `public/manifest.json`. Cloudflare Pages uses `npm run build` with output directory `public`. The existing Worker configuration also serves `public` through its assets binding. No deployment configuration changes are needed.
+
+The automated regression suite covers MIDI round trips, tempo maps, sustain routing and unclosed pedals, track filtering, deterministic expression, unsupported formats, sample mapping, and meter changes. Browser checks should include real sample loading under the site's COOP/COEP headers, nonzero audio output, pause/resume, seek, tempo changes, file upload, sample failure/retry, cancellation, mobile layout, and the WebGL fallback.
+
+## Attribution and research
+
+- **Samples:** [Salamander Grand Piano](https://github.com/sfzinstruments/SalamanderGrandPiano), Alexander Holm, [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/). Samples are fetched as MP3 from [Tone Piano’s audio hosting](https://github.com/tambien/Piano/tree/master/audio). Playback changes pitch, gain, release envelopes, and room processing; samples are not bundled or redistributed in this repository. Its upstream [sample documentation](https://github.com/Tonejs/audio/blob/master/salamander/README) describes the recordings.
+- **MIDI parser:** [Tone.js MIDI](https://github.com/Tonejs/Midi), MIT. Its license is retained in `vendor/Midi.LICENSE.md`.
+- **Graphics:** [Three.js](https://github.com/mrdoob/three.js), MIT.
+- **Music glyphs:** [Bravura](https://github.com/steinbergmedia/bravura), Steinberg Media Technologies, SIL Open Font License 1.1. The unmodified webfont and its license are included in `vendor/`.
+- **Alternative evaluated:** [smplr](https://github.com/danigb/smplr) provides a convenient sampler/sequencer API and a four-layer Splendid Grand Piano. Salamander was chosen here to audition finer sampled velocity detail and recorded key/pedal textures.
+- **Composition:** “After the rain” was created for this experiment; it is not a transcription of an existing recording. It follows the repository’s MIT license.

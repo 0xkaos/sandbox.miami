@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Turn a MIDI performance into a moving 3D score, with a richly sampled grand piano, a bouncing note guide, and an unhurried camera.">
+  <meta name="theme-color" content="#f3efe6">
+  <title>Piano / Motion — A living score</title>
+  <link rel="stylesheet" href="./style.css?v=1">
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+  <script src="./vendor/Midi.js"></script>
+</head>
+<body>
+  <main>
+    <header class="masthead">
+      <a href="/" class="brand"><span class="brand-mark" aria-hidden="true">Ⅱ</span> SANDBOX MIAMI <span class="slash">/</span> <strong>PIANO / MOTION</strong></a>
+      <span class="edition">An audiovisual study <span>№ 01</span></span>
+    </header>
+
+    <section class="workspace">
+      <div class="stage">
+        <div class="intro">
+          <p class="eyebrow"><span class="dot"></span> A LIVING SCORE</p>
+          <h1>A little more <em>human.</em></h1>
+          <p>The weight of a key. The space between notes.<br>A piano performance, made visible.</p>
+        </div>
+        <div id="scene" role="img" aria-label="Animated 3D grand staff. Notes glow as the piano plays and a small ball follows the upper voice."></div>
+        <div class="scene-error" id="scene-error" hidden></div>
+        <div class="view-controls" aria-label="Score view">
+          <button class="selected" data-view="drift" aria-pressed="true">Perspective</button>
+          <button data-view="overhead" aria-pressed="false">Overhead</button>
+          <span></span>
+          <button id="ball-toggle" aria-pressed="true">● Bouncing guide</button>
+        </div>
+        <div class="score-caption"><span><i class="treble-dot"></i> Upper register <i class="bass-dot"></i> Lower register</span><span>Grand staff · proportional time</span></div>
+        <div id="drop-overlay" hidden>Drop your MIDI here<span>Played locally, in your browser</span></div>
+      </div>
+
+      <aside class="inspector" aria-label="Performance and piano settings">
+        <div class="section-heading"><span>01 / THE PERFORMANCE</span><span aria-hidden="true">↗</span></div>
+        <h2 id="piece-title">After the rain</h2>
+        <p class="piece-meta" id="piece-meta">Original piano study · 6/8</p>
+        <button id="upload" class="upload-button"><span>＋</span> Open a MIDI file <small>.mid</small></button>
+        <input id="midi-file" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
+        <p class="local-note">Or drop it anywhere. Your MIDI stays here.</p>
+        <div class="small-actions"><button id="demo">Load study</button><button id="download">Download MIDI ↓</button></div>
+        <details class="tracks"><summary>Tracks <span id="track-count">2 selected</span></summary><div id="track-list"></div><p>Selected tracks are voiced as piano.</p></details>
+
+        <div class="section-heading sound-heading"><span>02 / THE INSTRUMENT</span><span aria-hidden="true">♫</span></div>
+        <div class="instrument"><div class="piano-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><div><h3>Salamander grand</h3><p>Sampled Yamaha C5 · stereo</p></div></div>
+        <label class="select-row" for="quality"><span>Touch detail</span><select id="quality"><option value="16">16 velocity layers</option><option value="4">4 layers · lighter</option></select></label>
+        <label class="slider-label" for="room"><span>Room</span><output id="room-value">22%</output></label>
+        <input id="room" type="range" min="0" max="60" value="22" aria-label="Room reverb">
+        <div class="range-ends"><span>Close & intimate</span><span>Recital hall</span></div>
+        <label class="slider-label" for="mechanics"><span>Pedal & key texture</span><output id="mechanics-value">28%</output></label>
+        <input id="mechanics" type="range" min="0" max="100" value="28" aria-label="Pedal and key release volume">
+        <label class="slider-label" for="expression"><span>Humanize</span><output id="expression-value">Original MIDI</output></label>
+        <input id="expression" type="range" min="0" max="100" value="0" aria-describedby="expression-help">
+        <p class="hint" id="expression-help">Keep the original touch, or add subtle timing and dynamic variation to a rigid performance.</p>
+        <details class="about"><summary>What makes it feel alive?</summary><p>Real recordings at different playing strengths change the tone of each note. Your MIDI supplies the phrasing, tempo changes, and sustain pedal. Recorded key releases, pedal sounds, and a little room add texture.</p><p>This is an expressive staff map, not a fully engraved score. MIDI carries no reliable spelling, fingering, or voice layout.</p><p>Samples: Alexander Holm’s <a href="https://github.com/sfzinstruments/SalamanderGrandPiano" target="_blank" rel="noreferrer">Salamander Grand Piano</a>, <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer">CC BY 3.0</a>. MP3 hosting by <a href="https://github.com/tambien/Piano" target="_blank" rel="noreferrer">Tone Piano</a>. <a href="./README.md">Study notes</a>.</p></details>
+      </aside>
+    </section>
+
+    <footer class="transport" aria-label="Playback controls">
+      <div class="transport-main">
+        <button id="restart" class="restart" aria-label="Return to beginning" title="Return to beginning">↤</button>
+        <button id="play" class="play" disabled><span id="play-icon" aria-hidden="true">▶</span><span id="play-label">Play study</span></button>
+        <div class="timeline"><div class="timeline-label"><span id="current-time">0:00</span><span id="playback-caption">Ready when you are</span><span id="duration">0:00</span></div><input id="seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Playback position"></div>
+        <label class="tempo" for="speed">Tempo<select id="speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1.0×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label>
+        <label class="volume" for="volume"><span>Volume</span><input id="volume" type="range" min="0" max="100" value="70"></label>
+      </div>
+      <div class="status-row"><span id="status" role="status" aria-live="polite">Preparing the score…</span><span id="pedal-status">SUSTAIN <i></i></span></div>
+    </footer>
+  </main>
+  <script type="module">
+    import('./app.mjs').catch(error => {
+      console.error(error);
+      document.getElementById('status').textContent = 'The study could not start. Check your connection and reload the page.';
+    });
+  </script>
+</body>
+</html>
