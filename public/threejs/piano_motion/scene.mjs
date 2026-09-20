@@ -1,33 +1,34 @@
 import * as THREE from 'three';
-import { clamp, lowerBound, notePosition } from './performance.mjs';
+import { handGuidePose, lowerBound, notePosition } from './performance.mjs';
 
-const SPACING = 1.15;
-const INK = 0x343c35, MUTED = 0xa3a595, TREBLE = 0xbd583e, BASS = 0x617764;
+const SPACING = 8;
+const INK = 0xaebfc9, MUTED = 0x354650, TREBLE = 0xefaa83, BASS = 0x77c8cf;
 
 export class ScoreScene {
   constructor(container) {
     this.container = container;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xf3efe6);
+    this.scene.background = new THREE.Color(0x0b1017);
+    this.scene.fog = new THREE.Fog(0x0b1017, 50, 180);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.append(this.renderer.domElement);
-    this.camera = new THREE.PerspectiveCamera(35, 1, 0.1, 180);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xc6bb9e, 2.8));
-    this.light = new THREE.DirectionalLight(0xfff5df, 3.2);
+    this.camera = new THREE.PerspectiveCamera(44, 1, 0.1, 500);
+    this.scene.add(new THREE.HemisphereLight(0xacc9e8, 0x080c13, 1.1));
+    this.light = new THREE.DirectionalLight(0xb7d1ed, 1.7);
     this.light.castShadow = true;
     this.light.shadow.mapSize.set(1024, 1024);
-    Object.assign(this.light.shadow.camera, { left: -18, right: 18, top: 12, bottom: -12 });
+    Object.assign(this.light.shadow.camera, { left: -24, right: 24, top: 16, bottom: -16 });
     this.light.shadow.bias = -0.0007;
     this.scene.add(this.light, this.light.target);
-    this.paper = new THREE.Mesh(new THREE.BoxGeometry(80, 11, 0.07), new THREE.MeshStandardMaterial({ color: 0xf7f3ea, roughness: 1 }));
+    this.paper = new THREE.Mesh(new THREE.BoxGeometry(512, 11, 0.07), new THREE.MeshStandardMaterial({ color: 0x111b26, roughness: 0.82, metalness: 0.15 }));
     this.paper.position.z = -0.09;
     this.paper.receiveShadow = true;
     this.scene.add(this.paper);
-    this.paperEdge = new THREE.Mesh(new THREE.BoxGeometry(80, 11.04, 0.05), new THREE.MeshStandardMaterial({ color: 0xe5dece, roughness: 1 }));
+    this.paperEdge = new THREE.Mesh(new THREE.BoxGeometry(512, 11.04, 0.05), new THREE.MeshStandardMaterial({ color: 0x253446, roughness: 0.7 }));
     this.paperEdge.position.set(0, -0.035, -0.15);
     this.scene.add(this.paperEdge);
     this.score = new THREE.Group();
@@ -35,12 +36,27 @@ export class ScoreScene {
     this.headGeometry = new THREE.SphereGeometry(1, 16, 8);
     this.ringGeometry = new THREE.TorusGeometry(0.12, 0.035, 6, 18);
     this.stemMaterial = new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.72 });
-    this.staffMaterial = new THREE.LineBasicMaterial({ color: 0xb0b1a2, transparent: true, opacity: 0.65 });
-    this.ball = new THREE.Mesh(new THREE.SphereGeometry(0.19, 24, 16), new THREE.MeshStandardMaterial({ color: TREBLE, roughness: 0.28, metalness: 0.15 }));
-    this.ball.castShadow = true;
-    this.scene.add(this.ball);
-    this.halo = new THREE.Mesh(new THREE.RingGeometry(0.23, 0.25, 40), new THREE.MeshBasicMaterial({ color: TREBLE, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
-    this.scene.add(this.halo);
+    this.staffMaterial = new THREE.LineBasicMaterial({ color: 0x5b7788, transparent: true, opacity: 0.65 });
+    const glowCanvas = document.createElement('canvas');
+    glowCanvas.width = glowCanvas.height = 64;
+    const glowContext = glowCanvas.getContext('2d');
+    const gradient = glowContext.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, '#ffffff'); gradient.addColorStop(0.15, '#ffffff80'); gradient.addColorStop(1, '#ffffff00');
+    glowContext.fillStyle = gradient; glowContext.fillRect(0, 0, 64, 64);
+    const glowTexture = new THREE.CanvasTexture(glowCanvas);
+    this.handBalls = {};
+    for (const [hand, color] of [['right', TREBLE], ['left', BASS]]) {
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.23, 24, 16), new THREE.MeshStandardMaterial({
+        color, emissive: color, emissiveIntensity: 0.7, roughness: 0.24, metalness: 0.2, transparent: true,
+      }));
+      ball.castShadow = true;
+      const halo = new THREE.Mesh(new THREE.RingGeometry(0.29, 0.32, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+      glow.scale.set(1.8, 1.8, 1.8);
+      const light = new THREE.PointLight(color, 3, 5);
+      this.handBalls[hand] = { ball, halo, glow, light };
+      this.scene.add(ball, halo, glow, light);
+    }
     this.view = 'drift';
     this.showBall = true;
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -68,7 +84,7 @@ export class ScoreScene {
     this.byBeat = [...performance.notes].sort((a, b) => a.beat - b.beat);
     let bottom = -5.5, top = 5.5;
     for (const note of performance.notes) {
-      const y = notePosition(note.midi).y;
+      const y = notePosition(note.midi, note.hand).y;
       bottom = Math.min(bottom, y - 1.2);
       top = Math.max(top, y + 1.2);
     }
@@ -93,7 +109,7 @@ export class ScoreScene {
     const canvas = document.createElement('canvas');
     canvas.width = 256; canvas.height = 128;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#727969';
+    ctx.fillStyle = '#8aa5b6';
     ctx.font = `${serif ? 'italic' : ''} 70px ${serif ? 'Georgia, serif' : 'sans-serif'}`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     if (music) {
@@ -121,9 +137,14 @@ export class ScoreScene {
     });
     this.score.clear();
     this.noteMeshes = [];
-    const from = Math.max(-4, Math.floor(beat / 8) * 8 - 16), to = from + 64;
+    const from = Math.max(-2, Math.floor(beat / 4) * 4 - 6), to = from + 36;
     for (const bottom of [-2.65, 1.05]) {
-      for (let i = 0; i < 5; i++) this.line([[from * SPACING, bottom + i * 0.48, 0], [to * SPACING, bottom + i * 0.48, 0]], this.staffMaterial);
+      for (let i = 0; i < 5; i++) {
+        // Short segments keep near-plane clipping stable as the camera rides over the staff.
+        const points = [];
+        for (let step = from; step <= to; step += 2) points.push([step * SPACING, bottom + i * 0.48, 0.02]);
+        this.line(points, this.staffMaterial);
+      }
     }
     for (const bar of this.performance.bars) {
       if (bar.beat < from || bar.beat > to) continue;
@@ -143,7 +164,7 @@ export class ScoreScene {
     const start = lowerBound(this.byBeat, from, 'beat');
     for (let i = start; i < this.byBeat.length && this.byBeat[i].beat <= to; i++) {
       const note = this.byBeat[i];
-      const position = notePosition(note.midi);
+      const position = notePosition(note.midi, note.hand);
       const x = note.beat * SPACING, y = position.y;
       const length = note.durationTicks / this.performance.header.ppq;
       const material = new THREE.MeshStandardMaterial({ color: INK, roughness: 0.8 });
@@ -174,43 +195,45 @@ export class ScoreScene {
   draw(time, delta = 0.016) {
     if (!this.performance) return;
     const beat = Math.max(0, this.performance.header.secondsToTicks(Math.min(time, this.performance.end)) / this.performance.header.ppq);
-    const chunk = Math.floor(beat / 8);
+    const chunk = Math.floor(beat / 4);
     if (chunk !== this.chunk) { this.rebuild(beat); this.chunk = chunk; }
     const target = beat * SPACING;
-    if (Math.abs(target - this.focus) > 7) this.focus = target;
+    if (Math.abs(target - this.focus) > SPACING * 4) this.focus = target;
     this.focus += (target - this.focus) * (1 - Math.exp(-delta * 7));
-    const center = this.focus + 4;
+    const center = this.focus + 10;
     const overhead = this.view === 'overhead';
     const narrow = this.camera.aspect < 1.5;
-    const cameraTarget = new THREE.Vector3(center + (overhead ? 0 : 2.8), this.centerY + (overhead ? -0.1 : -8.6), (overhead ? 22 : 18) * this.heightScale);
-    if (narrow) cameraTarget.z += 3;
+    // Ride behind the notes, looking along +X (musical time), with a slight diagonal across both hands.
+    this.camera.up.set(0, overhead ? 1 : 0, overhead ? 0 : 1);
+    const cameraTarget = new THREE.Vector3(overhead ? center : this.focus - 14,
+      this.centerY + (overhead ? -0.1 : -8), (overhead ? 24 : 14) * this.heightScale);
+    if (narrow) cameraTarget.z += 4;
     this.camera.position.lerp(cameraTarget, 1 - Math.exp(-delta * 5));
     this.camera.lookAt(center, this.centerY + 0.05, 0);
-    this.light.position.set(center - 8, 10, 15);
+    this.light.position.set(this.focus - 3, 5, 18);
     this.light.target.position.set(center, 0, 0);
-    this.paper.position.x = center;
-    this.paperEdge.position.x = center;
+    this.paper.position.x = this.paperEdge.position.x = this.focus + 80;
     for (const { note, head, color } of this.noteMeshes) {
       const active = time >= note.time && time < note.end;
       head.material.color.setHex(active ? color : time >= note.end ? MUTED : INK);
       head.material.emissive.setHex(active ? color : 0x000000);
-      head.material.emissiveIntensity = active ? 0.16 : 0;
+      head.material.emissiveIntensity = active ? 0.65 : 0;
       head.position.z = active ? 0.095 : 0.055;
     }
-    const melody = this.performance.melody;
-    if (melody.length) {
-      const nextIndex = lowerBound(melody, time + 0.00001);
-      const a = melody[Math.max(0, nextIndex - 1)], b = melody[Math.min(melody.length - 1, nextIndex)];
-      const fraction = clamp((time - a.time) / Math.max(0.01, b.time - a.time), 0, 1);
-      const from = notePosition(a.midi), to = notePosition(b.midi);
-      this.ball.position.set((a.beat + (b.beat - a.beat) * fraction) * SPACING,
-        from.y + (to.y - from.y) * fraction,
-        0.29 + (this.reduced ? 0 : Math.sin(fraction * Math.PI) * Math.min(1.5, 0.5 + (b.time - a.time) * 0.55)));
-      this.halo.position.set(this.ball.position.x, this.ball.position.y, 0.025);
-      this.halo.scale.setScalar(1 + (this.ball.position.z - 0.29) * 0.65);
-      this.halo.material.opacity = 0.3 / (this.ball.position.z + 0.6);
-      this.ball.visible = this.halo.visible = this.showBall && time <= this.performance.end;
-    } else this.ball.visible = this.halo.visible = false;
+    for (const [hand, { ball, halo, glow, light }] of Object.entries(this.handBalls)) {
+      const pose = handGuidePose(this.performance.guides[hand], time, SPACING, this.reduced);
+      ball.visible = halo.visible = glow.visible = light.visible = this.showBall && !!pose && pose.opacity > 0;
+      if (!pose) continue;
+      ball.position.set(pose.x, pose.y, pose.z);
+      ball.material.opacity = pose.opacity;
+      glow.position.copy(ball.position);
+      glow.material.opacity = pose.opacity * 0.48;
+      light.position.copy(ball.position);
+      light.intensity = pose.opacity * 3;
+      halo.position.set(pose.x, pose.y, 0.025);
+      halo.scale.setScalar(1 + (pose.z - 0.32) * 0.65);
+      halo.material.opacity = pose.opacity * 0.4 / (pose.z + 0.6);
+    }
     this.renderer.render(this.scene, this.camera);
   }
 }

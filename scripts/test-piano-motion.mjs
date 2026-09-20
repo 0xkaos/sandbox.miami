@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
-import { compilePerformance, createDemo, notePosition, sampleFor, trackOptions, validateMidi } from '../public/threejs/piano_motion/performance.mjs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { compilePerformance, createDemo, defaultTrackHands, handGuidePose, notePosition, sampleFor, suggestHandSplit, trackOptions, validateMidi } from '../public/threejs/piano_motion/performance.mjs';
 
 const require = createRequire(import.meta.url);
 const { Midi } = require('../public/threejs/piano_motion/vendor/Midi.js');
+const { scanMidiFiles } = require('./generate-midi-manifest.js');
 
 test('the original study survives MIDI export/import with tempo, meter, dynamics, and pedal', () => {
   const original = createDemo(Midi);
@@ -107,4 +111,83 @@ test('measure boundaries follow meter changes', () => {
   midi.header.update();
   midi.addTrack().addNote({ midi: 60, ticks: ppq * 12, durationTicks: ppq, velocity: 1 });
   assert.deepEqual(compilePerformance(midi, new Set([0])).bars.slice(0, 6).map(bar => bar.beat), [0, 3, 6, 8.5, 11, 13.5]);
+});
+
+test('the MIDI library finds nested files and safely encodes names without indexing other assets', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'piano-library-'));
+  try {
+    mkdirSync(path.join(root, 'Studies'));
+    for (const file of ['First piece.mid', 'Studies/Étude #2.MIDI', 'notes.txt', '.hidden.mid']) writeFileSync(path.join(root, file), 'fixture');
+    const files = scanMidiFiles(root);
+    assert.equal(files.length, 2);
+    assert.ok(files.some(file => file.path === '/midi/First%20piece.mid'));
+    assert.ok(files.some(file => file.path === '/midi/Studies/%C3%89tude%20%232.MIDI' && file.title === 'Studies/Étude #2'));
+    assert.deepEqual(scanMidiFiles(path.join(root, 'missing')), []);
+    rmSync(path.join(root, 'First piece.mid'));
+    assert.equal(scanMidiFiles(root).length, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('hand-labelled tracks keep their hands when crossing middle C', () => {
+  const midi = new Midi();
+  const left = midi.addTrack(); left.name = 'Left hand';
+  left.addNote({ midi: 72, time: 0, duration: 0.4, velocity: 0.7 });
+  const right = midi.addTrack(); right.name = 'Right hand';
+  right.addNote({ midi: 48, time: 0, duration: 0.4, velocity: 0.7 });
+  const performance = compilePerformance(midi, new Set([0, 1]));
+  assert.deepEqual(defaultTrackHands(midi), new Map([[0, 'left'], [1, 'right']]));
+  assert.equal(performance.guides.left[0].midi, 72);
+  assert.equal(performance.guides.right[0].midi, 48);
+  assert.equal(notePosition(72, 'left').treble, false);
+});
+
+test('combined tracks split by adjustable pitch, with independent rhythms and chord landings', () => {
+  const midi = new Midi(); const track = midi.addTrack();
+  for (const [time, pitch] of [[0, 48], [0, 55], [0, 72], [0, 76], [0.2, 74], [0.4, 60], [0.6, 77]]) {
+    track.addNote({ midi: pitch, time, duration: 0.18, velocity: 0.7 });
+  }
+  const selected = new Set([0]);
+  const performance = compilePerformance(midi, selected, 0, { handSplit: 65 });
+  assert.deepEqual(performance.guides.left.map(note => note.midi), [48, 60]);
+  assert.deepEqual(performance.guides.right.map(note => note.midi), [76, 74, 77]);
+  assert.equal(compilePerformance(midi, selected, 0, { handSplit: 60 }).guides.left.length, 1);
+  const forced = compilePerformance(midi, selected, 0, { trackHands: new Map([[0, 'right']]) });
+  assert.equal(forced.guides.left.length, 0);
+  assert.equal(forced.notes.length, performance.notes.length);
+  assert.equal(forced.duration, performance.duration);
+});
+
+test('hand guides land on their notes, travel along time, handle rests, and honor reduced motion', () => {
+  const guide = [
+    { midi: 60, hand: 'right', beat: 0, time: 0, keyEnd: 0.45 },
+    { midi: 67, hand: 'right', beat: 1, time: 0.5, keyEnd: 0.95 },
+    { midi: 72, hand: 'right', beat: 8, time: 4, keyEnd: 4.5 },
+  ];
+  const halfway = handGuidePose(guide, 0.25, 8);
+  assert.equal(halfway.x, 4);
+  assert.ok(halfway.z > 0.32);
+  assert.equal(handGuidePose(guide, 0.5, 8).x, 8);
+  assert.equal(handGuidePose(guide, 0.5, 8).z, 0.32);
+  assert.equal(handGuidePose(guide, 2, 8).opacity, 0);
+  assert.equal(handGuidePose(guide, 4, 8).x, 64);
+  assert.equal(handGuidePose(guide, 5, 8).opacity, 0);
+  assert.equal(handGuidePose(guide, 0.25, 8, true).z, 0.32);
+  assert.equal(handGuidePose([], 0, 8), null);
+});
+
+test('the supplied Interstellar MIDI indexes and produces two independent hand guides', () => {
+  const file = new URL('../public/midi/The Interstellar Experience.mid', import.meta.url);
+  const bytes = new Uint8Array(readFileSync(file));
+  validateMidi(bytes);
+  const midi = new Midi(bytes);
+  const split = suggestHandSplit(midi);
+  const selected = new Set(trackOptions(midi).map(track => track.id));
+  const performance = compilePerformance(midi, selected, 0, { handSplit: split });
+  assert.equal(split, 65);
+  assert.equal(performance.notes.length, 2190);
+  assert.ok(performance.guides.left.length > 700);
+  assert.ok(performance.guides.right.length > 1000);
+  for (const guide of Object.values(performance.guides)) {
+    assert.ok(guide.every((note, i) => i === 0 || note.time > guide[i - 1].time));
+  }
 });

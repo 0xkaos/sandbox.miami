@@ -51,3 +51,5 @@ console.log(`Found ${demos.length} demos.`);
 
 fs.writeFileSync(OUTPUT_FILE, JSON.stringify(demos, null, 2));
 console.log('Manifest written to ' + OUTPUT_FILE);
+
+require('./generate-midi-manifest').generateMidiManifest();

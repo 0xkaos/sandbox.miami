@@ -1,5 +1,5 @@
 import { GrandPiano } from './piano.mjs';
-import { compilePerformance, createDemo, lowerBound, trackOptions, validateMidi } from './performance.mjs';
+import { compilePerformance, createDemo, defaultTrackHands, lowerBound, suggestHandSplit, trackOptions, validateMidi } from './performance.mjs';
 
 const $ = id => document.getElementById(id);
 const Midi = window.Midi;
@@ -15,6 +15,11 @@ const piano = new GrandPiano(state => {
 let midi, performance, selected = new Set(), scene;
 let ready = false, loading = false, loadController, revision = 0, importing = 0;
 let title = 'After the rain', isDemo = true;
+let trackHands = new Map(), suggestedSplit = 60, library = [], libraryController;
+let fileLoading = false;
+const noteName = pitch => ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][pitch % 12] + (Math.floor(pitch / 12) - 1);
+for (let pitch = 48; pitch <= 72; pitch++) $('hand-split').add(new Option(noteName(pitch), String(pitch)));
+const handOptions = () => ({ handSplit: $('hand-split').value === 'auto' ? suggestedSplit : Number($('hand-split').value), trackHands });
 
 function status(message, error = false) {
   $('status').textContent = message;
@@ -28,19 +33,19 @@ function invalidate() {
   loading = false;
   piano.pause();
   ready = false;
-  $('play').disabled = !performance?.notes.length;
+  $('play').disabled = fileLoading || !performance?.notes.length;
 }
 
 function rebuild(preservePosition = false) {
   const position = preservePosition ? piano.time : 0;
   invalidate();
   try {
-    performance = compilePerformance(midi, selected, Number($('expression').value) / 100);
+    performance = compilePerformance(midi, selected, Number($('expression').value) / 100, handOptions());
     piano.performance = performance;
     piano.position = Math.min(position, performance.duration);
     scene?.setPerformance(performance);
     $('track-count').textContent = `${selected.size} selected`;
-    $('play').disabled = !performance.notes.length;
+    $('play').disabled = fileLoading || !performance.notes.length;
     $('duration').textContent = clock(performance.duration);
     const meter = midi.header.timeSignatures[0]?.timeSignature || [4, 4];
     $('piece-meta').textContent = `${isDemo ? 'Original piano study' : `${performance.notes.length.toLocaleString()} notes`} · ${meter.join('/')} · ${Math.round(midi.header.tempos[0]?.bpm || 120)} BPM`;
@@ -53,6 +58,14 @@ function rebuild(preservePosition = false) {
   }
 }
 
+function refreshHands() {
+  if (!performance) return;
+  performance = compilePerformance(midi, selected, Number($('expression').value) / 100, handOptions());
+  piano.performance = performance;
+  scene?.setPerformance(performance);
+  scene?.draw(piano.time, 1);
+}
+
 function loadMidi(nextMidi, name, demo = false) {
   const options = trackOptions(nextMidi);
   if (!options.length) throw new Error('This MIDI has no playable notes. Try another file.');
@@ -61,15 +74,25 @@ function loadMidi(nextMidi, name, demo = false) {
   // Validate before replacing the current playable study.
   compilePerformance(nextMidi, nextSelected);
   midi = nextMidi; selected = nextSelected; title = name; isDemo = demo;
+  trackHands = defaultTrackHands(midi);
+  suggestedSplit = suggestHandSplit(midi);
+  $('hand-split').value = 'auto';
+  $('hand-split').options[0].textContent = `Auto · ${noteName(suggestedSplit)}`;
   $('track-list').replaceChildren();
   for (const track of options) {
-    const label = document.createElement('label'); label.className = 'track-item';
+    const row = document.createElement('div'); row.className = 'track-item';
+    const label = document.createElement('label');
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox'; checkbox.checked = selected.has(track.id);
     const text = document.createElement('span'); text.textContent = track.name;
     const detail = document.createElement('small');
     detail.textContent = `${track.instrument} · ${track.count.toLocaleString()} notes`;
-    text.append(detail); label.append(checkbox, text); $('track-list').append(label);
+    text.append(detail); label.append(checkbox, text);
+    const hand = document.createElement('select'); hand.setAttribute('aria-label', `Hand for ${track.name}`);
+    for (const [value, name] of [['auto', 'Split'], ['right', 'Right'], ['left', 'Left']]) hand.add(new Option(name, value));
+    hand.value = trackHands.get(track.id) || 'auto';
+    hand.addEventListener('change', () => { trackHands.set(track.id, hand.value); refreshHands(); });
+    row.append(label, hand); $('track-list').append(row);
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) selected.add(track.id); else selected.delete(track.id);
       rebuild();
@@ -81,6 +104,9 @@ function loadMidi(nextMidi, name, demo = false) {
 async function importFile(file) {
   if (!file) return;
   const request = ++importing;
+  libraryController?.abort();
+  fileLoading = false;
+  $('play').disabled = loading || !performance?.notes.length;
   try {
     if (file.size > 8 * 1024 * 1024) throw new Error('Choose a MIDI file smaller than 8 MB.');
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -88,12 +114,58 @@ async function importFile(file) {
     validateMidi(bytes);
     const next = new Midi(bytes);
     loadMidi(next, next.name?.trim() || file.name.replace(/\.midi?$/i, ''));
+    $('midi-library').value = '';
   } catch (error) { if (request === importing) status(error.message || 'This MIDI could not be read. Try exporting it again.', true); }
+}
+
+async function loadSavedMidi(entry) {
+  if (!entry) return;
+  const request = ++importing;
+  libraryController?.abort();
+  const controller = libraryController = new AbortController();
+  invalidate();
+  fileLoading = true;
+  $('play').disabled = true;
+  status(`Opening ${entry.title}…`);
+  try {
+    const response = await fetch(entry.path, { signal: controller.signal });
+    if (!response.ok) throw new Error(`Could not open ${entry.title}. Choose it again to retry.`);
+    if (Number(response.headers.get('Content-Length')) > 8 * 1024 * 1024) throw new Error('Choose a MIDI file smaller than 8 MB.');
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (request !== importing) return;
+    if (bytes.length > 8 * 1024 * 1024) throw new Error('Choose a MIDI file smaller than 8 MB.');
+    validateMidi(bytes);
+    loadMidi(new Midi(bytes), entry.title);
+    $('midi-library').value = entry.path;
+  } catch (error) {
+    if (request === importing) { $('midi-library').value = ''; status(error.message, true); }
+  } finally {
+    if (request === importing) { fileLoading = false; $('play').disabled = !performance?.notes.length; }
+  }
+}
+
+async function loadLibrary() {
+  const initialImport = importing, initialRevision = revision;
+  try {
+    const response = await fetch('/midi/manifest.json', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Saved performances are unavailable. You can still open a MIDI file.');
+    const entries = await response.json();
+    if (!Array.isArray(entries)) throw new Error('The saved performance list could not be read.');
+    library = entries.filter(entry => typeof entry.title === 'string' && typeof entry.path === 'string' && entry.path.startsWith('/midi/'));
+    $('midi-library').replaceChildren(new Option('Choose a saved MIDI…', ''));
+    for (const entry of library) $('midi-library').add(new Option(entry.title, entry.path));
+    $('midi-library').disabled = !library.length;
+    $('library-status').textContent = library.length ? `${library.length} saved ${library.length === 1 ? 'performance' : 'performances'}` : 'Your saved performances will appear here.';
+    if (library.length && importing === initialImport && revision === initialRevision && !loading && !piano.playing) await loadSavedMidi(library[0]);
+  } catch (error) {
+    $('midi-library').replaceChildren(new Option('Library unavailable', ''));
+    $('library-status').textContent = error.message;
+  }
 }
 
 async function togglePlay() {
   if (piano.playing) { piano.pause(); status('Paused. Press Play to continue.'); return; }
-  if (loading || !performance?.notes.length) return;
+  if (loading || fileLoading || !performance?.notes.length) return;
   const currentRevision = revision;
   const controller = new AbortController();
   loadController = controller;
@@ -133,7 +205,12 @@ async function togglePlay() {
 $('play').addEventListener('click', togglePlay);
 $('upload').addEventListener('click', () => $('midi-file').click());
 $('midi-file').addEventListener('change', event => { importFile(event.target.files[0]); event.target.value = ''; });
-$('demo').addEventListener('click', () => { importing++; loadMidi(createDemo(Midi), 'After the rain', true); });
+$('demo').addEventListener('click', () => {
+  importing++; libraryController?.abort(); fileLoading = false;
+  $('midi-library').value = ''; loadMidi(createDemo(Midi), 'After the rain', true);
+});
+$('midi-library').addEventListener('change', () => loadSavedMidi(library.find(entry => entry.path === $('midi-library').value)));
+$('hand-split').addEventListener('change', refreshHands);
 $('download').addEventListener('click', () => {
   const url = URL.createObjectURL(new Blob([midi.toArray()], { type: 'audio/midi' }));
   const link = document.createElement('a'); link.href = url;
@@ -165,7 +242,7 @@ $('ball-toggle').addEventListener('click', () => {
   const show = $('ball-toggle').getAttribute('aria-pressed') !== 'true';
   $('ball-toggle').setAttribute('aria-pressed', String(show));
   if (scene) scene.showBall = show;
-  $('ball-toggle').textContent = `${show ? '●' : '○'} Bouncing guide`;
+  $('ball-toggle').textContent = `${show ? '●' : '○'} Hand guides`;
 });
 document.addEventListener('keydown', event => {
   if (event.code !== 'Space' || event.repeat || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'SUMMARY', 'A'].includes(event.target.tagName)) return;
@@ -181,10 +258,13 @@ document.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth
 document.addEventListener('drop', event => { event.preventDefault(); dragDepth = 0; $('drop-overlay').hidden = true; importFile(event.dataTransfer.files[0]); });
 
 loadMidi(createDemo(Midi), 'After the rain', true);
+loadLibrary();
 try {
   const { ScoreScene } = await import('./scene.mjs');
   await document.fonts.load('100px Bravura');
   scene = new ScoreScene($('scene'));
+  scene.view = document.querySelector('[data-view][aria-pressed="true"]').dataset.view;
+  scene.showBall = $('ball-toggle').getAttribute('aria-pressed') === 'true';
   scene.setPerformance(performance);
   $('scene').addEventListener('scene-lost', () => {
     $('scene-error').hidden = false;

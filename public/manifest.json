@@ -80,7 +80,7 @@
   {
     "path": "/threejs/piano_motion/",
     "title": "Piano / Motion — A living score",
-    "description": "Turn a MIDI performance into a moving 3D score, with a richly sampled grand piano, a bouncing note guide, and an unhurried camera.",
+    "description": "A sampled grand piano and a dark, cinematic MIDI score with independent hand guides and a camera traveling down the staff.",
     "category": "threejs"
   },
   {

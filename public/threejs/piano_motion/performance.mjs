@@ -35,7 +35,34 @@ function noise(seed) {
   return (value - Math.floor(value)) * 2 - 1;
 }
 
-export function compilePerformance(midi, selected, expression = 0) {
+export function defaultTrackHands(midi) {
+  const hands = new Map();
+  for (const { id, name } of trackOptions(midi)) {
+    if (/\b(left(?:\s+hand)?|l\.?h\.?|bass)\b/i.test(name)) hands.set(id, 'left');
+    else if (/\b(right(?:\s+hand)?|r\.?h\.?|treble)\b/i.test(name)) hands.set(id, 'right');
+  }
+  return hands;
+}
+
+// A suggested split for unlabelled, combined tracks. It is editable because MIDI does not encode hands.
+export function suggestHandSplit(midi) {
+  const pitches = midi.tracks.filter(track => !track.instrument.percussion).flatMap(track => track.notes.map(note => note.midi));
+  if (!pitches.length) return 60;
+  let low = 48, high = 76;
+  for (let pass = 0; pass < 12; pass++) {
+    const split = (low + high) / 2;
+    let left = 0, right = 0, leftCount = 0, rightCount = 0;
+    for (const pitch of pitches) {
+      if (pitch < split) { left += pitch; leftCount++; }
+      else { right += pitch; rightCount++; }
+    }
+    if (!leftCount || !rightCount) return 60;
+    low = left / leftCount; high = right / rightCount;
+  }
+  return clamp(Math.round((low + high) / 2), 48, 72);
+}
+
+export function compilePerformance(midi, selected, expression = 0, { handSplit = 60, trackHands = defaultTrackHands(midi) } = {}) {
   const channels = new Set([...selected].map(id => midi.tracks[id].channel));
   const raw = [];
   for (const id of selected) {
@@ -43,6 +70,7 @@ export function compilePerformance(midi, selected, expression = 0) {
       if (![note.time, note.duration, note.velocity, note.midi].every(Number.isFinite)) return;
       const delay = expression * (0.008 * noise(note.ticks) + 0.003 * noise(index + id * 71));
       raw.push({ id: `${id}:${index}`, track: id, channel: midi.tracks[id].channel,
+        hand: ['left', 'right'].includes(trackHands.get(id)) ? trackHands.get(id) : note.midi < handSplit ? 'left' : 'right',
         midi: note.midi, ticks: note.ticks, durationTicks: note.durationTicks,
         time: Math.max(0, note.time + delay), keyEnd: Math.max(0, note.time + delay) + Math.max(0.025, note.duration),
         velocity: clamp(note.velocity * (1 + expression * 0.09 * noise(index + note.midi)), 0.01, 1),
@@ -86,15 +114,20 @@ export function compilePerformance(midi, selected, expression = 0) {
   }
   pedals.sort((a, b) => a.time - b.time);
   const end = raw.reduce((value, note) => Math.max(value, note.end), 0);
-  // Follow the upper voice at each onset, including near-simultaneous played chords.
-  const melody = [];
+  // Independent hand timelines: outer chord voices provide stable landing points.
+  const guides = { left: [], right: [] };
   for (const note of raw) {
-    const previous = melody.at(-1);
+    const guide = guides[note.hand];
+    const previous = guide.at(-1);
     if (previous && note.time - previous.time < 0.045) {
-      if (note.midi > previous.midi) melody[melody.length - 1] = { ...note, time: previous.time };
-    } else melody.push({ ...note });
+      const outer = note.hand === 'right' ? note.midi > previous.midi : note.midi < previous.midi;
+      const keyEnd = Math.max(previous.keyEnd, note.keyEnd);
+      const end = Math.max(previous.end, note.end);
+      if (outer) guide[guide.length - 1] = { ...note, time: previous.time, keyEnd, end };
+      else { previous.keyEnd = keyEnd; previous.end = end; }
+    } else guide.push({ ...note });
   }
-  return { notes: raw, pedals, intervals, melody, duration: end + 2.5,
+  return { notes: raw, pedals, intervals, guides, duration: end + 2.5,
     header: midi.header, bars: makeBars(midi.header, raw), end };
 }
 
@@ -124,12 +157,38 @@ export function sampleFor(note, layers = 16) {
   return { key: `${name}v${layer}`, root, layer, rate: 2 ** ((note.midi - root) / 12) };
 }
 
-export function notePosition(midi) {
+export function notePosition(midi, hand) {
   const degree = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6][midi % 12];
   const diatonic = Math.floor(midi / 12) * 7 + degree;
-  const treble = midi >= 60;
+  const treble = hand ? hand === 'right' : midi >= 60;
   return { y: treble ? 1.05 + (diatonic - 37) * 0.24 : -2.65 + (diatonic - 25) * 0.24,
     sharp: [1, 3, 6, 8, 10].includes(midi % 12), treble };
+}
+
+export function handGuidePose(guide, time, spacing, reduced = false) {
+  if (!guide.length) return null;
+  const nextIndex = lowerBound(guide, time + 1e-7);
+  const a = guide[Math.max(0, nextIndex - 1)], b = guide[Math.min(guide.length - 1, nextIndex)];
+  const from = notePosition(a.midi, a.hand), to = notePosition(b.midi, b.hand);
+  const gap = b.time - a.time;
+  let fraction = clamp((time - a.time) / Math.max(0.01, gap), 0, 1);
+  let opacity = 1;
+  if (time < a.time) opacity = clamp(1 - (a.time - time) / 0.4, 0, 1);
+  else if (a === b) opacity = clamp(1 - (time - a.keyEnd) / 0.4, 0, 1);
+  else if (b.time - a.keyEnd > 0.9) {
+    // Rest at the last key, fade away, and approach the next entrance near its onset.
+    if (time < b.time - 0.55) {
+      fraction = 0;
+      opacity = clamp(1 - (time - a.keyEnd) / 0.35, 0, 1);
+    } else {
+      const approach = clamp((time - (b.time - 0.55)) / 0.55, 0, 1);
+      return { x: b.beat * spacing - spacing * (1 - approach), y: to.y,
+        z: 0.32 + (reduced ? 0 : Math.sin(approach * Math.PI) * 0.55), opacity: approach };
+    }
+  }
+  return { x: (a.beat + (b.beat - a.beat) * fraction) * spacing,
+    y: from.y + (to.y - from.y) * fraction,
+    z: 0.32 + (reduced ? 0 : Math.sin(fraction * Math.PI) * Math.min(0.95, 0.35 + gap * 0.3)), opacity };
 }
 
 export function createDemo(Midi) {
