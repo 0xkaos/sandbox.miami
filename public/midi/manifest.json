@@ -1,5 +1,21 @@
 [
   {
+    "title": "Beethoven-Moonlight-Sonata",
+    "path": "/midi/Beethoven-Moonlight-Sonata.mid"
+  },
+  {
+    "title": "ps23 01",
+    "path": "/midi/ps23_01.mid"
+  },
+  {
+    "title": "ps23 02",
+    "path": "/midi/ps23_02.mid"
+  },
+  {
+    "title": "ps29 01",
+    "path": "/midi/ps29_01.mid"
+  },
+  {
     "title": "The Interstellar Experience",
     "path": "/midi/The%20Interstellar%20Experience.mid"
   }

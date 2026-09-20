@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { handGuidePose, lowerBound, notePosition } from './performance.mjs';
+import { cameraDrift } from './camera-motion.mjs';
 
 const SPACING = 8;
 const INK = 0xaebfc9, MUTED = 0x354650, TREBLE = 0xefaa83, BASS = 0x77c8cf;
@@ -60,6 +61,7 @@ export class ScoreScene {
     this.view = 'drift';
     this.showBall = true;
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.driftEnabled = !this.reduced;
     this.focus = 0;
     this.chunk = null;
     this.noteMeshes = [];
@@ -200,13 +202,14 @@ export class ScoreScene {
     const target = beat * SPACING;
     if (Math.abs(target - this.focus) > SPACING * 4) this.focus = target;
     this.focus += (target - this.focus) * (1 - Math.exp(-delta * 7));
-    const center = this.focus + 10;
     const overhead = this.view === 'overhead';
+    const drift = cameraDrift(time, this.driftEnabled);
+    const center = this.focus + (overhead ? 10 : drift.ahead);
     const narrow = this.camera.aspect < 1.5;
     // Ride behind the notes, looking along +X (musical time), with a slight diagonal across both hands.
     this.camera.up.set(0, overhead ? 1 : 0, overhead ? 0 : 1);
-    const cameraTarget = new THREE.Vector3(overhead ? center : this.focus - 14,
-      this.centerY + (overhead ? -0.1 : -8), (overhead ? 24 : 14) * this.heightScale);
+    const cameraTarget = new THREE.Vector3(overhead ? center : this.focus + drift.x,
+      this.centerY + (overhead ? -0.1 : drift.y), (overhead ? 24 : drift.z) * this.heightScale);
     if (narrow) cameraTarget.z += 4;
     this.camera.position.lerp(cameraTarget, 1 - Math.exp(-delta * 5));
     this.camera.lookAt(center, this.centerY + 0.05, 0);

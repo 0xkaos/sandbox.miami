@@ -5,11 +5,15 @@ const $ = id => document.getElementById(id);
 const Midi = window.Midi;
 if (typeof Midi !== 'function') throw new Error('MIDI reader did not load.');
 const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
-const piano = new GrandPiano(state => {
-  $('play-label').textContent = state === 'playing' ? 'Pause' : 'Play';
-  $('play-icon').textContent = state === 'playing' ? 'Ⅱ' : '▶';
-  $('play').setAttribute('aria-label', state === 'playing' ? 'Pause performance' : 'Play performance');
-  $('playback-caption').textContent = state === 'playing' ? 'Listen to the space between notes' : state === 'ended' ? 'A moment of quiet' : 'Ready when you are';
+const piano = new GrandPiano((state, message) => {
+  const active = state === 'playing' || state === 'buffering';
+  $('play-label').textContent = active ? 'Pause' : 'Play';
+  $('play-icon').textContent = active ? 'Ⅱ' : '▶';
+  $('play').setAttribute('aria-label', active ? 'Pause performance' : 'Play performance');
+  $('playback-caption').textContent = state === 'buffering' ? 'Preparing this passage…' : state === 'playing' ? 'Listen to the space between notes' : state === 'ended' ? 'A moment of quiet' : 'Ready when you are';
+  if (state === 'buffering') status('Preparing the piano for this passage. Playback will resume automatically.');
+  if (state === 'playing') status(`Salamander grand · ${piano.layers} velocity layers · original sustain${Number($('expression').value) ? ' · humanize on' : ''}`);
+  if (state === 'error') { ready = false; $('play-label').textContent = 'Retry'; status(message, true); }
   if (state === 'interrupted') status('Playback paused after a browser interruption. Press Play to continue.');
 });
 let midi, performance, selected = new Set(), scene;
@@ -164,7 +168,7 @@ async function loadLibrary() {
 }
 
 async function togglePlay() {
-  if (piano.playing) { piano.pause(); status('Paused. Press Play to continue.'); return; }
+  if (piano.playing || piano.buffering) { piano.pause(); status('Paused. Press Play to continue.'); return; }
   if (loading || fileLoading || !performance?.notes.length) return;
   const currentRevision = revision;
   const controller = new AbortController();
@@ -176,8 +180,10 @@ async function togglePlay() {
     if (currentRevision !== revision) return;
     if (!ready) {
       $('play-label').textContent = 'Loading…';
-      await piano.load(performance, Number($('quality').value), (completed, total) => {
-        if (currentRevision === revision) status(`Loading the grand piano · ${completed} / ${total} samples. First listen takes a little longer.`);
+      await piano.load(performance, Number($('quality').value), (completed, total, phase) => {
+        if (currentRevision === revision) status(phase === 'decode'
+          ? `Preparing this passage · ${completed} / ${total} samples.`
+          : `Loading the grand piano · ${completed} / ${total} samples. First listen takes a little longer.`);
       }, controller.signal);
       if (currentRevision !== revision) return;
       ready = true;
@@ -191,7 +197,6 @@ async function togglePlay() {
       return;
     }
     piano.play();
-    status(`Salamander grand · ${piano.layers} velocity layers · original sustain${Number($('expression').value) ? ' · humanize on' : ''}`);
   } catch (error) {
     if (currentRevision === revision) {
       status(error.message, true);
@@ -244,12 +249,18 @@ $('ball-toggle').addEventListener('click', () => {
   if (scene) scene.showBall = show;
   $('ball-toggle').textContent = `${show ? '●' : '○'} Hand guides`;
 });
+$('camera-drift').addEventListener('click', () => {
+  const enabled = $('camera-drift').getAttribute('aria-pressed') !== 'true';
+  $('camera-drift').setAttribute('aria-pressed', String(enabled));
+  $('camera-drift').textContent = `Drift ${enabled ? 'on' : 'off'}`;
+  if (scene) scene.driftEnabled = enabled;
+});
 document.addEventListener('keydown', event => {
   if (event.code !== 'Space' || event.repeat || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'SUMMARY', 'A'].includes(event.target.tagName)) return;
   event.preventDefault(); togglePlay();
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && piano.playing) { piano.pause(); status('Paused while the tab is hidden. Press Play to continue.'); }
+  if (document.hidden && (piano.playing || piano.buffering)) { piano.pause(); status('Paused while the tab is hidden. Press Play to continue.'); }
 });
 let dragDepth = 0;
 document.addEventListener('dragenter', event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); dragDepth++; $('drop-overlay').hidden = false; } });
@@ -265,6 +276,11 @@ try {
   scene = new ScoreScene($('scene'));
   scene.view = document.querySelector('[data-view][aria-pressed="true"]').dataset.view;
   scene.showBall = $('ball-toggle').getAttribute('aria-pressed') === 'true';
+  if (scene.reduced) {
+    $('camera-drift').setAttribute('aria-pressed', 'false');
+    $('camera-drift').textContent = 'Drift off';
+  }
+  scene.driftEnabled = $('camera-drift').getAttribute('aria-pressed') === 'true';
   scene.setPerformance(performance);
   $('scene').addEventListener('scene-lost', () => {
     $('scene-error').hidden = false;

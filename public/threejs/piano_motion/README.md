@@ -16,7 +16,7 @@ This is a sampled instrument, not a physical piano model. Sustain uses the stand
 
 ## Visual study
 
-Three.js draws a dark grand staff with cool lighting, raised noteheads that highlight while sounding, and two glowing balls: warm amber for the right hand and blue for the left. Each hand follows its own onset rhythm and outer chord voice, fades during rests, and reappears at its next entrance. The time axis uses 8 scene units per quarter note (about seven times the original spacing), with shallow bounces and a camera riding behind the notes looking down the staff. An overhead view remains available. Reduced-motion preferences disable vertical bouncing. A phone layout places sound controls below the score.
+Three.js draws a dark grand staff with cool lighting, raised noteheads that highlight while sounding, and two glowing balls: warm amber for the right hand and blue for the left. Each hand follows its own onset rhythm and outer chord voice, fades during rests, and reappears at its next entrance. The time axis uses 8 scene units per quarter note (about seven times the original spacing), with shallow bounces and a camera riding behind the notes looking down the staff. The camera gently moves closer, toward overhead, and back over a 72-second cycle on the music clock, holding still when paused. **Drift on/off** toggles this movement; a fixed overhead view remains available. Reduced-motion preferences disable drift by default and disable vertical bouncing. A phone layout places sound controls below the score.
 
 Hand-labelled tracks (`Left hand`, `Right hand`, `LH`, `RH`, `bass`, `treble`) retain their assignments across registers. Combined or unlabelled tracks use an editable pitch split; the initial suggestion clusters the file’s pitches into two groups. **Tracks & hands** also lets you assign any track to a hand explicitly. This is a visual heuristic: MIDI does not encode actual fingering, and crossing or overlapping hands may need a manual adjustment. Changing hand assignments preserves the current audio and playback position.
 
@@ -26,7 +26,9 @@ The display is a **proportional performance map, not engraved sheet music**: eac
 
 - Standard MIDI Type 0 and Type 1 with PPQ timing; Type 2 and SMPTE are rejected explicitly.
 - Maximum input: 8 MB and 20,000 selected notes.
-- Samples load with four concurrent requests, timeouts, cancellation, visible progress, and retry. Only the required velocity/pitch recordings are loaded; unused audio tails are trimmed for the piece, allowing the slowest tempo setting. Decoded buffers are capped at 240 MB; select four layers or fewer tracks if that limit is reached.
+- Required recordings download as compressed MP3s with four concurrent requests, browser caching, timeouts, cancellation, visible progress, and retry. The compressed inventory stays available for the selected piece; only a moving window (normally 12 seconds of musical time) is decoded. Sample tails are trimmed for the current tempo and passage. This supports long, expressive pieces at 16 velocity layers without decoding the entire performance up front.
+- Retained decoded samples, including buffers still used by sounding notes, are limited to 192 MiB. Older unused buffers are evicted; decoding runs serially and dense passages automatically use a shorter lookahead. Compressed recordings, the temporary full recording during decoding, reverb, and graphics use additional memory. An exceptionally dense passage may still require four velocity layers.
+- A seek or tempo change can briefly show **Preparing this passage** while new buffers are decoded. Playback resumes automatically when ready; the music clock and animation wait together rather than skipping unavailable notes. Pause, new seeks, and file changes cancel stale preparation.
 - Playback pauses when the tab is hidden or the scheduling timer stalls. Seeking/resuming reconstructs held strings from their sample offsets. Pause cancels queued sources with a short fade; existing room reverb decays naturally.
 - Requires Web Audio and an initial network connection to the sample host. The score requires WebGL; audio controls remain available if the graphics library or WebGL fails.
 - Dependencies are pinned: Three.js 0.160.0 from jsDelivr and a vendored `@tonejs/midi` 2.0.28 UMD bundle. The page has no build-time dependency or backend requirement. Google Fonts are optional; system serif/sans-serif fonts are fallbacks.
@@ -38,13 +40,13 @@ From the repository root:
 ```sh
 npm run dev
 # http://localhost:8000/threejs/piano_motion/
-node --test scripts/test-piano-motion.mjs
+node --test scripts/test-piano-motion.mjs scripts/test-piano-streaming.mjs
 npm run build
 ```
 
 The build discovers this page from its title/description and adds it to `public/manifest.json`. It also generates `public/midi/manifest.json` from the saved MIDI files. Cloudflare Pages uses `npm run build` with output directory `public`. The existing Worker configuration also serves `public` through its assets binding. No deployment configuration changes are needed.
 
-The automated regression suite covers MIDI round trips, tempo maps, sustain routing and unclosed pedals, track filtering, deterministic expression, unsupported formats, sample mapping, meter changes, MIDI catalog discovery, hand assignment, independent guide landings/rests, and the supplied Interstellar MIDI. Browser checks include real sample loading under the site's COOP/COEP headers, nonzero audio output, saved-file selection, pause/resume, seek, tempo changes, file upload, failures/retry, cancellation, hand changes during playback, mobile layout, and the WebGL fallback.
+The automated regression suite covers MIDI round trips, tempo maps, sustain routing and unclosed pedals, track filtering, deterministic expression, unsupported formats, sample mapping, meter changes, MIDI catalog discovery, hand assignment, independent guide landings/rests, and the supplied Interstellar MIDI. It also checks decoded-cache eviction, active-buffer accounting, cancellation, retry, sample windows across sustain and tempo changes, half-tempo memory requirements throughout `ps29_01.mid`, and the camera's smooth return path. Browser checks include real sample loading under the site's COOP/COEP headers, nonzero audio output, saved-file selection, pause/resume, seek, tempo changes, file upload, failures/retry, cancellation, hand changes during playback, mobile layout, and the WebGL fallback.
 
 ## Attribution and research
 

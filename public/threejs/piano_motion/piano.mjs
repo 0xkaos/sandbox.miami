@@ -1,8 +1,6 @@
 import { clamp, lowerBound, sampleFor } from './performance.mjs';
 
-const SAMPLE_BASE = 'https://tambien.github.io/Piano/audio/';
-const CACHE_NAME = 'piano-motion-salamander-v1';
-const MAX_MEMORY = 240 * 1024 * 1024;
+import { SampleBank, SampleCapacityError, releaseSeconds, sampleRequirements } from './sample-bank.mjs';
 
 export class GrandPiano {
   constructor(onState) {
@@ -12,6 +10,9 @@ export class GrandPiano {
     this.position = 0;
     this.speed = 1;
     this.playing = false;
+    this.wantPlay = false;
+    this.buffering = false;
+    this.nextPrepareTime = 0;
     this.layers = 16;
     this.room = 0.22;
     this.volume = 0.7;
@@ -24,6 +25,8 @@ export class GrandPiano {
       if (!Audio) throw new Error('This browser does not support Web Audio. Try a current Safari, Firefox, or Chrome.');
       this.context = new Audio({ latencyHint: 'playback', sampleRate: 44100 });
       const ctx = this.context;
+      this.bank = new SampleBank(ctx);
+      this.buffers = this.bank.buffers;
       this.input = ctx.createGain();
       this.noise = ctx.createGain();
       this.dry = ctx.createGain();
@@ -58,85 +61,98 @@ export class GrandPiano {
 
   async load(performance, layers, onProgress, signal) {
     this.pause();
+    await this.preparation?.catch(() => {});
+    signal.throwIfAborted();
     this.performance = performance;
     this.layers = layers;
-    // Retain only the portion a piece can use; pitch shifts and slower tempo need extra source audio.
-    const needed = new Map();
-    const need = (key, seconds) => needed.set(key, Math.max(needed.get(key) || 0, seconds));
-    for (const note of performance.notes) {
-      const sample = sampleFor(note, layers);
-      need(sample.key, ((note.end - note.time) / 0.5 + 2.8) * sample.rate);
-      need(`rel${clamp(note.midi - 20, 1, 88)}`, 1.4);
-    }
-    if (performance.pedals.length) ['pedalD1', 'pedalD2', 'pedalU1', 'pedalU2'].forEach(key => need(key, 2));
-    for (const key of this.buffers.keys()) if (!needed.has(key)) this.buffers.delete(key);
-    let memory = [...this.buffers.values()].reduce((sum, buffer) => sum + buffer.length * buffer.numberOfChannels * 4, 0);
-    let cache;
-    try { cache = await caches.open(CACHE_NAME); } catch { /* Private browsing can disable CacheStorage. */ }
-    const queue = [...needed.entries()];
-    let completed = 0, cursor = 0, failed = false;
-    const workers = Array.from({ length: 4 }, async () => {
-      while (cursor < queue.length && !failed) {
-        signal.throwIfAborted();
-        const [key, seconds] = queue[cursor++];
-        const existing = this.buffers.get(key);
-        if (!existing || (existing.duration + 0.05 < seconds && !existing.completeSample)) {
-          try {
-            const url = SAMPLE_BASE + key + '.mp3';
-            let response = await cache?.match(url);
-            if (!response) {
-              const timeout = AbortSignal.timeout(25000);
-              const controller = new AbortController();
-              const cancel = () => controller.abort();
-              signal.addEventListener('abort', cancel, { once: true });
-              timeout.addEventListener('abort', cancel, { once: true });
-              try {
-                response = await fetch(url, { signal: controller.signal, mode: 'cors' });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                // Await the body so a timeout covers the entire download.
-                const data = await response.arrayBuffer();
-                response = new Response(data, { headers: { 'Content-Type': 'audio/mpeg' } });
-                if (cache) await cache.put(url, response.clone()).catch(() => {});
-              } finally {
-                signal.removeEventListener('abort', cancel);
-                timeout.removeEventListener('abort', cancel);
-              }
-            }
-            const decoded = await this.context.decodeAudioData(await response.arrayBuffer());
-            signal.throwIfAborted();
-            const length = Math.min(decoded.length, Math.ceil(seconds * decoded.sampleRate));
-            memory -= existing ? existing.length * existing.numberOfChannels * 4 : 0;
-            memory += length * decoded.numberOfChannels * 4;
-            if (memory > MAX_MEMORY) throw new Error('This piece needs too much sample memory. Choose 4 velocity layers or fewer tracks.');
-            const buffer = this.context.createBuffer(decoded.numberOfChannels, length, decoded.sampleRate);
-            for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-              buffer.copyToChannel(decoded.getChannelData(channel).subarray(0, length), channel);
-            }
-            buffer.completeSample = length === decoded.length;
-            this.buffers.set(key, buffer);
-          } catch (error) {
-            failed = true;
-            if (signal.aborted) throw error;
-            throw new Error(error.message.includes('sample memory') ? error.message : `Could not load piano sample ${key}. Check your connection and press Play to retry.`);
-          }
+    const keys = [...sampleRequirements(performance, layers).keys()];
+    await this.bank.loadEncoded(keys, onProgress, signal);
+    await this.requestWindow(this.position, signal, onProgress);
+  }
+
+  activeBuffers() {
+    return new Set([...this.voices].map(({ source }) => source.buffer).filter(Boolean));
+  }
+
+  get memoryMB() {
+    return Math.round((this.bank?.bytes(this.activeBuffers()) || 0) / 1024 / 1024);
+  }
+
+  windowReady(position, ahead = 0.2 * this.speed) {
+    return this.bank?.ready(sampleRequirements(this.performance, this.layers, position, ahead, this.speed));
+  }
+
+  async requestWindow(position, signal, onProgress) {
+    const previous = this.preparation;
+    this.prepareController?.abort();
+    const controller = this.prepareController = new AbortController();
+    const cancel = () => controller.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) cancel();
+    const performance = this.performance, layers = this.layers, speed = this.speed;
+    const task = (async () => {
+      await previous?.catch(() => {});
+      controller.signal.throwIfAborted();
+      for (let ahead = 12; ahead >= 0.75; ahead /= 2) {
+        try {
+          const required = sampleRequirements(performance, layers, position, ahead, speed);
+          await this.bank.prepare(required, () => this.activeBuffers(), controller.signal, onProgress);
+          this.nextPrepareTime = position + ahead / 4;
+          return;
+        } catch (error) {
+          if (!(error instanceof SampleCapacityError) || ahead === 0.75) throw error;
+          // Dense passages need a shorter lookahead, without reducing sample quality.
         }
-        onProgress(++completed, queue.length);
       }
+    })();
+    this.preparation = task;
+    try { await task; }
+    finally {
+      signal?.removeEventListener('abort', cancel);
+      if (this.preparation === task) this.preparation = null;
+    }
+  }
+
+  bufferAndResume() {
+    this.stopAudio();
+    this.buffering = true;
+    this.onState?.('buffering');
+    const task = this.requestWindow(this.position);
+    const controller = this.prepareController;
+    task.then(() => {
+      if (controller.signal.aborted || !this.wantPlay) return;
+      if (this.context.state !== 'running') {
+        this.pause(); this.onState?.('interrupted'); return;
+      }
+      this.startAudio();
+    }).catch(error => {
+      if (!controller.signal.aborted) { this.pause(); this.onState?.('error', error.message); }
     });
-    const results = await Promise.allSettled(workers);
-    const failure = results.find(result => result.status === 'rejected');
-    if (failure) throw failure.reason;
-    this.memoryMB = Math.round(memory / 1024 / 1024);
+  }
+
+  prefetch() {
+    const task = this.requestWindow(this.time);
+    const controller = this.prepareController;
+    task.catch(error => {
+      if (!controller.signal.aborted) { this.pause(); this.onState?.('error', error.message); }
+    });
   }
 
   get time() {
     if (!this.playing) return this.position;
-    return clamp(this.position + (this.context.currentTime - this.origin) * this.speed, 0, this.performance.duration);
+    return clamp(this.position + Math.max(0, this.context.currentTime - this.origin) * this.speed, 0, this.performance.duration);
   }
 
   play() {
-    if (!this.performance?.notes.length) return;
-    if (this.position >= this.performance.duration - 0.03) this.position = 0;
+    if (!this.performance?.notes.length || this.playing || this.buffering) return;
+    if (this.position >= this.performance.duration - 0.03) this.position = this.nextPrepareTime = 0;
+    this.wantPlay = true;
+    if (this.windowReady(this.position)) this.startAudio();
+    else this.bufferAndResume();
+  }
+
+  startAudio() {
+    this.buffering = false;
     this.origin = this.context.currentTime + 0.075;
     this.playing = true;
     this.noteIndex = lowerBound(this.performance.notes, this.position);
@@ -147,9 +163,9 @@ export class GrandPiano {
       if (note.end > this.position) this.scheduleNote(note, this.origin, (this.position - note.time) / this.speed);
     }
     this.lastTick = this.context.currentTime;
-    this.tick();
-    this.timer = setInterval(() => this.tick(), 25);
     this.onState?.('playing');
+    this.tick();
+    if (this.playing) this.timer = setInterval(() => this.tick(), 25);
   }
 
   tick() {
@@ -161,6 +177,8 @@ export class GrandPiano {
     }
     this.lastTick = now;
     const horizon = this.time + 0.2 * this.speed;
+    if (!this.windowReady(this.time)) { this.bufferAndResume(); return; }
+    if (!this.preparation && this.time >= this.nextPrepareTime) this.prefetch();
     while (this.noteIndex < this.performance.notes.length && this.performance.notes[this.noteIndex].time <= horizon) {
       const note = this.performance.notes[this.noteIndex++];
       const at = this.origin + (note.time - this.position) / this.speed;
@@ -186,7 +204,7 @@ export class GrandPiano {
     const duration = Math.max(0.02, (note.end - note.time) / this.speed - elapsed);
     // The recordings already contain the timbral dynamics; only interpolate gain within a layer.
     const gain = 0.7 * clamp((note.velocity * 16 + 0.5) / (layer + 0.5), 0.25, 1.45);
-    const release = clamp(0.48 + (72 - note.midi) * 0.01, 0.22, 1.1);
+    const release = releaseSeconds(note.midi);
     this.source(buffer, at, offset, rate, gain, duration, release, this.input);
     const keyTime = at + (note.keyEnd - note.time) / this.speed - elapsed;
     if (keyTime >= at) this.oneShot(`rel${clamp(note.midi - 20, 1, 88)}`, keyTime, 0.024 * note.velocity);
@@ -215,7 +233,7 @@ export class GrandPiano {
     source.stop(at + Math.max(0.03, audible) + release + 0.02);
   }
 
-  pause() {
+  stopAudio() {
     this.position = this.time;
     this.playing = false;
     clearInterval(this.timer);
@@ -227,18 +245,27 @@ export class GrandPiano {
         source.stop(now + 0.03);
       }
     }
+  }
+
+  pause() {
+    this.wantPlay = false;
+    this.buffering = false;
+    this.prepareController?.abort();
+    this.stopAudio();
+    this.nextPrepareTime = this.position;
     this.onState?.('paused');
   }
 
   seek(position) {
-    const resume = this.playing;
+    const resume = this.wantPlay;
     this.pause();
     this.position = clamp(position, 0, this.performance?.duration || 0);
+    this.nextPrepareTime = this.position;
     if (resume) this.play();
   }
 
   setSpeed(speed) {
-    const resume = this.playing;
+    const resume = this.wantPlay;
     this.pause();
     this.speed = speed;
     if (resume) this.play();
