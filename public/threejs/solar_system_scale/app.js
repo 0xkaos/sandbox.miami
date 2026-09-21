@@ -110,14 +110,17 @@ function loadTexture(file) {
   return texture;
 }
 
-function radialTexture(core = '#fff', edge = 'rgba(255,255,255,0)') {
+function locatorTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 128;
   const context = canvas.getContext('2d');
   const gradient = context.createRadialGradient(64,64,0,64,64,64);
-  gradient.addColorStop(0, core);
-  gradient.addColorStop(.16, core);
-  gradient.addColorStop(1, edge);
+  // Leave the physical body visible through the center of its location hint.
+  gradient.addColorStop(0, 'rgba(255,255,255,0)');
+  gradient.addColorStop(.48, 'rgba(255,255,255,0)');
+  gradient.addColorStop(.65, 'rgba(255,255,255,.85)');
+  gradient.addColorStop(.78, 'rgba(255,255,255,.3)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
   context.fillStyle = gradient;
   context.fillRect(0,0,128,128);
   const texture = new THREE.CanvasTexture(canvas);
@@ -125,8 +128,7 @@ function radialTexture(core = '#fff', edge = 'rgba(255,255,255,0)') {
   return texture;
 }
 
-const locatorMap = radialTexture('#ffffff');
-const glowMap = radialTexture('#fff3ba', 'rgba(255,165,40,0)');
+const locatorMap = locatorTexture();
 const orbitMaterials = [];
 const planetObjects = [];
 const moonObjects = [];
@@ -190,7 +192,8 @@ function createOrbitLine(body, color, linewidth = 1.05, opacity = .3, segments =
 }
 
 function createLocator(color) {
-  const material = new THREE.SpriteMaterial({ map:locatorMap, color, transparent:true, opacity:.92, depthWrite:false, blending:THREE.AdditiveBlending });
+  const tint = new THREE.Color(color).lerp(new THREE.Color(0xffffff), .3);
+  const material = new THREE.SpriteMaterial({ map:locatorMap, color:tint, transparent:true, opacity:.34, depthWrite:false, toneMapped:false });
   const sprite = new THREE.Sprite(material);
   sprite.userData.isLocator = true;
   return sprite;
@@ -233,8 +236,8 @@ function createPlanet(data) {
 
   if (data.name === 'Earth') {
     const atmosphere = new THREE.Mesh(
-      new THREE.SphereGeometry(data.radius * 1.035, 40, 28),
-      new THREE.MeshBasicMaterial({ color:0x66aaff, transparent:true, opacity:.13, blending:THREE.AdditiveBlending, side:THREE.BackSide })
+      new THREE.SphereGeometry(data.radius * 1.015, 40, 28),
+      new THREE.MeshBasicMaterial({ color:0x66aaff, transparent:true, opacity:.045, depthWrite:false, side:THREE.BackSide })
     );
     group.add(atmosphere);
   }
@@ -271,11 +274,8 @@ function createSun() {
     new THREE.MeshBasicMaterial({ map:loadTexture('sun.jpg'), color:0xffe0a0 })
   );
   group.add(mesh);
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowMap, color:0xffb13b, transparent:true, opacity:.72, blending:THREE.AdditiveBlending, depthWrite:false }));
-  glow.scale.setScalar(radius * 12);
-  group.add(glow);
   scene.add(group);
-  return { name:'Sun', kind:'star', radius, mass:1.9885e30, group, mesh, glow, moons:[] };
+  return { name:'Sun', kind:'star', radius, mass:1.9885e30, group, mesh, moons:[] };
 }
 
 function seededRandom(seed) {
@@ -484,19 +484,26 @@ function updateBodies(deltaDays, realDelta) {
   sun.mesh.rotation.y += realDelta * .015;
 }
 
+const locatorPosition = new THREE.Vector3();
 function updateLocators() {
   const viewportHeight = renderer.domElement.clientHeight;
   const tangent = Math.tan(camera.fov * DEG * .5) * 2 / viewportHeight;
+  camera.updateMatrixWorld();
+  function update(body, enabled) {
+    body.group.getWorldPosition(locatorPosition).applyMatrix4(camera.matrixWorldInverse);
+    const depth = -locatorPosition.z;
+    if (!enabled || depth <= 0) { body.locator.visible = false; return; }
+    const unitsPerPixel = depth * tangent;
+    const diameterPixels = body.radius * 2 / unitsPerPixel;
+    // Sub-pixel bodies get only a small hollow hint; resolved discs stand alone.
+    const opacity = .34 * (1 - THREE.MathUtils.smoothstep(diameterPixels, .6, 2.4));
+    body.locator.visible = opacity > .005;
+    body.locator.material.opacity = opacity;
+    body.locator.scale.setScalar(unitsPerPixel * 5);
+  }
   planetObjects.forEach(body => {
-    const distanceToCamera = camera.position.distanceTo(body.group.position);
-    const markerSize = distanceToCamera * tangent * (selected === body ? 0 : 13);
-    body.locator.visible = selected !== body;
-    body.locator.scale.setScalar(markerSize);
-    body.moons.forEach(moon => {
-      const moonDistance = camera.position.distanceTo(moon.group.getWorldPosition(new THREE.Vector3()));
-      moon.locator.visible = selected === body;
-      moon.locator.scale.setScalar(moonDistance * tangent * 7);
-    });
+    update(body, selected !== body);
+    body.moons.forEach(moon => update(moon, selected === body));
   });
 }
 
@@ -530,10 +537,10 @@ function animate(now) {
   }
   updateTravel(now);
   if (selected && !travel) controls.target.copy(selected.group.position);
+  controls.update();
   updateLocators();
   updateMoonLineFade();
   updateDate(now);
-  controls.update();
   renderer.render(scene,camera);
 }
 
@@ -575,8 +582,18 @@ renderer.domElement.addEventListener('pointerup', event => {
   pointer.x = event.clientX / innerWidth * 2 - 1;
   pointer.y = -(event.clientY / innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer,camera);
-  const hit = raycaster.intersectObjects(planetObjects.map(body => body.locator), false)[0];
-  if (hit?.object.userData.body) focusBody(hit.object.userData.body);
+  const hit = raycaster.intersectObjects(planetObjects.map(body => body.mesh), false)[0];
+  if (hit) { focusBody(planetObjects.find(body => body.mesh === hit.object)); return; }
+  // Keep distant bodies easy to click without enlarging their visible markers.
+  let closest = null, closestPixels = 8;
+  planetObjects.forEach(body => {
+    if (!body.locator.visible) return;
+    const point = body.group.getWorldPosition(new THREE.Vector3()).project(camera);
+    if (point.z < -1 || point.z > 1) return;
+    const pixels = Math.hypot((point.x + 1) * innerWidth / 2 - event.clientX, (1 - point.y) * innerHeight / 2 - event.clientY);
+    if (pixels < closestPixels) { closest = body; closestPixels = pixels; }
+  });
+  if (closest) focusBody(closest);
 });
 controls.addEventListener('start', () => { viewHint.style.opacity = '0'; });
 
