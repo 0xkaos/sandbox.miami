@@ -28,13 +28,6 @@
     "createdAt": "2026-08-29T23:48:41-04:00"
   },
   {
-    "path": "/threejs/sp500_impact/",
-    "title": "S&P Impact Tracker",
-    "description": "Manual-refresh S&P 500 impact tracker using SPY holdings as a weight proxy and FMP quotes for movement data.",
-    "category": "threejs",
-    "createdAt": "2026-05-27T13:15:04-04:00"
-  },
-  {
     "path": "/threejs/hamiltonian_arnold_web/",
     "title": "Hamiltonian Arnold Web",
     "description": "Real-time GPU particle simulation of quasiperiodic Hamiltonian chaos and Arnold web transport in a driven acoustic cavity analogue.",
@@ -47,13 +40,6 @@
     "description": "Searchable Hebrew verb conjugation tables with bilingual lookup, roots, binyan metadata, and clickable pronunciation audio.",
     "category": "hebrew-verbs",
     "createdAt": "2026-05-03T11:32:00-04:00"
-  },
-  {
-    "path": "/threejs/fractal_distance_workbench/",
-    "title": "Fractal Distance Workbench",
-    "description": "Three.js WebGL fractal distance workbench with Mandelbrot, Julia, Burning Ship, Tricorn, Multibrot, Celtic, Buffalo, Phoenix, and procedural gradient controls.",
-    "category": "threejs",
-    "createdAt": "2026-04-28T11:23:17-04:00"
   },
   {
     "path": "/threejs/mandelbrot_zoomer/",
@@ -84,13 +70,6 @@
     "createdAt": "2026-04-17T19:54:53-04:00"
   },
   {
-    "path": "/threejs/virtual_8bit_calculator/",
-    "title": "Virtual 8-bit Logic Calculator",
-    "description": "Interactive 8-bit calculator with Three.js logic-gate visualization, binary conversion, and animated signal paths.",
-    "category": "threejs",
-    "createdAt": "2026-04-10T14:00:38-04:00"
-  },
-  {
     "path": "/threejs/fluid_js/",
     "title": "Fluid JS Playground",
     "description": "Interactive fluid simulation sketch powered by Fluid-JS with adjustable behavior controls.",
@@ -117,20 +96,6 @@
     "description": "Realtime raymarched mandelbulb fractal with live controls for formula, animation, color grading, and camera path.",
     "category": "threejs",
     "createdAt": "2026-03-05T18:21:18-05:00"
-  },
-  {
-    "path": "/threejs/verbs_atlas/",
-    "title": "Verb Atlas - Binyan Constellations",
-    "description": "Interactive atlas of Hebrew verb roots with binyan and tense constellations.",
-    "category": "threejs",
-    "createdAt": "2026-02-27T20:10:08-05:00"
-  },
-  {
-    "path": "/threejs/neural_network_particles/",
-    "title": "Neural Network Particles",
-    "description": "Interactive connected particle field with complex sinusoidal undulation and neural network aesthetics.",
-    "category": "threejs",
-    "createdAt": "2025-12-07T21:10:44-05:00"
   },
   {
     "path": "/threejs/sequencer_editor/",
