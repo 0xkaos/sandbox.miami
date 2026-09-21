@@ -1,7 +1,9 @@
 import * as THREE from 'three';
-import { clamp, handGuidePose } from './performance.mjs';
+import { clamp, lowerBound } from './performance.mjs';
+import { handPathEdgePose, MAX_HAND_BALLS } from './hand-paths.mjs';
 
 const TAIL_LIFE = 1.8, TAIL_SEGMENTS = 216;
+const TAIL_CAPACITY = (TAIL_SEGMENTS + 64) * MAX_HAND_BALLS;
 const LEDGER_RADIUS = 1.35, LEDGER_SEGMENTS = 16;
 const smooth = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
 
@@ -20,35 +22,42 @@ function fadingMaterial(color, opacity) {
 export class BounceTail extends THREE.LineSegments {
   constructor(color) {
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TAIL_SEGMENTS * 6), 3).setUsage(THREE.DynamicDrawUsage));
-    geometry.setAttribute('fade', new THREE.BufferAttribute(new Float32Array(TAIL_SEGMENTS * 2), 1).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TAIL_CAPACITY * 6), 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute('fade', new THREE.BufferAttribute(new Float32Array(TAIL_CAPACITY * 2), 1).setUsage(THREE.DynamicDrawUsage));
     geometry.setDrawRange(0, 0);
     super(geometry, fadingMaterial(color, 0.7));
     this.frustumCulled = false;
     this.renderOrder = 1;
   }
 
-  draw(guide, time, spacing, reduced) {
+  draw(path, time, spacing, reduced) {
     const positions = this.geometry.getAttribute('position'), fades = this.geometry.getAttribute('fade');
     let count = 0;
-    let previous = handGuidePose(guide, time, spacing, reduced), previousFade = previous?.opacity || 0;
-    // Rebuild a continuous polyline from musical time, including its height above the sheet.
-    // Reusing these buffers keeps pauses and seeks deterministic without accumulating history.
-    for (let i = 1; i <= TAIL_SEGMENTS && previous; i++) {
-      const age = i / TAIL_SEGMENTS * TAIL_LIFE;
-      if (time < age) break;
-      const pose = handGuidePose(guide, time - age, spacing, reduced);
-      const fade = (1 - age / TAIL_LIFE) ** 1.7 * pose.opacity;
-      // The guide vanishes between rests and entrances. Don't join across that invisible jump
-      // or leave a dot where a resting ball stays still.
-      const distance = Math.hypot(pose.x - previous.x, pose.y - previous.y, pose.z - previous.z);
-      if (pose.opacity > 0.08 && previous.opacity > 0.08 && distance > 0.00001) {
-        positions.setXYZ(count, previous.x, previous.y, previous.z);
-        fades.setX(count++, previousFade);
-        positions.setXYZ(count, pose.x, pose.y, pose.z);
-        fades.setX(count++, fade);
+    const from = Math.max(0, time - TAIL_LIFE);
+    const first = lowerBound(path.sections, from, 'end');
+    const last = lowerBound(path.sections, time + 1e-7) - 1;
+    const alpha = (pose, at) => Math.max(0, 1 - (time - at) / TAIL_LIFE) ** 1.7 * pose.opacity;
+    // Draw actual graph edges, so a tail forks at its source and joins at its destination.
+    // Sampling a ball's slot across chord changes would incorrectly connect unrelated voices.
+    for (let sectionIndex = last; sectionIndex >= first; sectionIndex--) {
+      const section = path.sections[sectionIndex];
+      const start = Math.max(from, section.time), end = Math.min(time, section.end);
+      const steps = Math.ceil((end - start) / TAIL_LIFE * TAIL_SEGMENTS);
+      for (const edge of section.edges) {
+        let previous = handPathEdgePose(edge, end, spacing, reduced), previousFade = alpha(previous, end);
+        for (let i = 1; i <= steps && count + 2 <= positions.count; i++) {
+          const at = end - (end - start) * i / steps;
+          const pose = handPathEdgePose(edge, at, spacing, reduced), fade = alpha(pose, at);
+          const distance = Math.hypot(pose.x - previous.x, pose.y - previous.y, pose.z - previous.z);
+          if (pose.opacity > 0.08 && previous.opacity > 0.08 && distance > 0.00001) {
+            positions.setXYZ(count, previous.x, previous.y, previous.z);
+            fades.setX(count++, previousFade);
+            positions.setXYZ(count, pose.x, pose.y, pose.z);
+            fades.setX(count++, fade);
+          }
+          previous = pose; previousFade = fade;
+        }
       }
-      previous = pose; previousFade = fade;
     }
     this.geometry.setDrawRange(0, count);
     positions.needsUpdate = fades.needsUpdate = true;

@@ -1,12 +1,14 @@
 import * as THREE from 'three';
-import { handGuidePose, lowerBound, notePosition } from './performance.mjs';
+import { lowerBound, notePosition } from './performance.mjs';
 import { cameraDrift } from './camera-motion.mjs';
 import { BounceTail, LedgerLines } from './score-lines.mjs';
+import { buildHandPaths, handPathPoses, HAND_BALL_RADIUS, HAND_LANDING_HEIGHT, MAX_HAND_BALLS } from './hand-paths.mjs';
 
 const SPACING = 8;
 const INK = 0xaebfc9, MUTED = 0x354650, TREBLE = 0xefaa83, BASS = 0x77c8cf;
-const LIGHT_STEP = 0.05, LIGHT_LIFE = 3.2;
-const LIGHT_CAPACITY = 2 * (Math.ceil(LIGHT_LIFE / LIGHT_STEP) + 1);
+const LIGHT_STEP = 0.06, LIGHT_LIFE = 5.6;
+const LIGHT_SAMPLES = Math.ceil(LIGHT_LIFE / LIGHT_STEP);
+const LIGHT_CAPACITY = 2 * MAX_HAND_BALLS * (LIGHT_SAMPLES + 1) * 2;
 
 export class ScoreScene {
   constructor(container) {
@@ -51,20 +53,28 @@ export class ScoreScene {
     gradient.addColorStop(0.55, '#ffffff30'); gradient.addColorStop(1, '#ffffff00');
     glowContext.fillStyle = gradient; glowContext.fillRect(0, 0, 64, 64);
     const glowTexture = new THREE.CanvasTexture(glowCanvas);
+    const ballGeometry = new THREE.SphereGeometry(HAND_BALL_RADIUS, 24, 16);
     this.handBalls = {};
     for (const [hand, color] of [['right', TREBLE], ['left', BASS]]) {
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.23, 24, 16), new THREE.MeshStandardMaterial({
-        color, emissive: color, emissiveIntensity: 0.3, roughness: 0.24, metalness: 0.2, transparent: true,
-      }));
-      ball.castShadow = true;
-      ball.renderOrder = 2;
-      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-      glow.scale.set(0.65, 0.65, 0.65);
-      glow.renderOrder = 3;
-      const light = new THREE.PointLight(color, 9, 9);
+      const voices = Array.from({ length: MAX_HAND_BALLS }, () => {
+        const ball = new THREE.Mesh(ballGeometry, new THREE.MeshStandardMaterial({
+          color, emissive: color, emissiveIntensity: 0.3, roughness: 0.24, metalness: 0.2, transparent: true,
+        }));
+        ball.castShadow = true;
+        ball.renderOrder = 2;
+        const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+        glow.scale.set(0.48, 0.48, 0.48);
+        glow.renderOrder = 3;
+        // Keep the light count fixed, using zero intensity for inactive voices. This avoids
+        // compiling new lighting shaders whenever a chord changes the number of balls.
+        const light = new THREE.PointLight(color, 0, 9);
+        this.scene.add(ball, glow, light);
+        return { ball, glow, light };
+      });
       const tail = new BounceTail(color);
-      this.handBalls[hand] = { ball, glow, light, tail, color: new THREE.Color(color) };
-      this.scene.add(ball, glow, light, tail);
+      this.handBalls[hand] = { voices, tail, color: new THREE.Color(color),
+        coreColor: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.3) };
+      this.scene.add(tail);
     }
     // A single instanced layer projects lingering light onto the paper, below the notation.
     // Per-instance alpha keeps fading smooth without changing the light's hue.
@@ -112,6 +122,7 @@ export class ScoreScene {
 
   setPerformance(performance) {
     this.performance = performance;
+    this.handPaths = buildHandPaths(performance.notes);
     this.byBeat = [...performance.notes].sort((a, b) => a.beat - b.beat);
     let bottom = -5.5, top = 5.5;
     for (const note of performance.notes) {
@@ -226,31 +237,38 @@ export class ScoreScene {
 
   drawSurfaceLight(time) {
     let count = 0;
-    const stamp = (pose, color, opacity) => {
-      if (!pose || pose.opacity <= 0) return;
-      const height = Math.max(0, pose.z - 0.32);
-      const radius = 1.45 + height * 0.45;
+    const stamp = (pose, color, opacity, radiusX, radiusY) => {
       this.lightStamp.position.set(pose.x, pose.y, -0.047);
-      this.lightStamp.scale.set(radius * 2, radius * 2, 1);
+      this.lightStamp.scale.set(radiusX * 2, radiusY * 2, 1);
       this.lightStamp.updateMatrix();
       this.surfaceLights.setMatrixAt(count, this.lightStamp.matrix);
       this.surfaceLights.setColorAt(count, color);
-      this.surfaceOpacity.setX(count, opacity * pose.opacity / (1 + height * height * 0.65));
+      this.surfaceOpacity.setX(count, opacity * pose.opacity);
       count++;
+    };
+    const pool = (poses, color, coreColor, broad, core) => {
+      for (const pose of poses) {
+        const height = Math.max(0, pose.z - HAND_LANDING_HEIGHT);
+        const radius = 1.35 + height * 0.4;
+        stamp(pose, color, broad / (1 + height * height * 0.55), radius, radius);
+        // A tighter, brighter center leaves a lasting streak along the direction of travel.
+        const center = 0.38 + height * 0.08;
+        stamp(pose, coreColor, core / (1 + height * height * 1.1), center * 3.2, center);
+      }
     };
     if (this.showBall) {
       const latest = Math.floor(time / LIGHT_STEP) * LIGHT_STEP;
-      for (const [hand, { color }] of Object.entries(this.handBalls)) {
-        const guide = this.performance.guides[hand];
-        stamp(handGuidePose(guide, time, SPACING, this.reduced), color, 0.28);
-        for (let i = 0; i < LIGHT_CAPACITY / 2 - 1; i++) {
+      for (const [hand, { color, coreColor }] of Object.entries(this.handBalls)) {
+        const path = this.handPaths[hand];
+        pool(handPathPoses(path, time, SPACING, this.reduced), color, coreColor, 0.2, 0.38);
+        for (let i = 0; i < LIGHT_SAMPLES; i++) {
           const past = latest - i * LIGHT_STEP;
           if (past < 0) break;
           const age = time - past;
-          const fade = Math.exp(-age / 1.15) * Math.max(0, 1 - age / LIGHT_LIFE);
+          const fade = Math.exp(-age / 2.2) * Math.sqrt(Math.max(0, 1 - age / LIGHT_LIFE));
           // Fixed musical timestamps keep footprints on the paper as the ball moves away.
           // Reconstructing them also makes pause, reverse seeks, and file changes deterministic.
-          stamp(handGuidePose(guide, past, SPACING, this.reduced), color, fade * 0.06);
+          pool(handPathPoses(path, past, SPACING, this.reduced), color, coreColor, fade * 0.04, fade * 0.11);
         }
       }
     }
@@ -292,18 +310,21 @@ export class ScoreScene {
       head.position.z = active ? 0.095 : 0.055;
     }
     this.ledgerLines.draw(time);
-    for (const [hand, { ball, glow, light, tail }] of Object.entries(this.handBalls)) {
+    for (const [hand, { voices, tail }] of Object.entries(this.handBalls)) {
       tail.visible = this.showBall;
-      tail.draw(this.performance.guides[hand], time, SPACING, this.reduced);
-      const pose = handGuidePose(this.performance.guides[hand], time, SPACING, this.reduced);
-      ball.visible = glow.visible = light.visible = this.showBall && !!pose && pose.opacity > 0;
-      if (!pose) continue;
-      ball.position.set(pose.x, pose.y, pose.z);
-      ball.material.opacity = pose.opacity;
-      glow.position.copy(ball.position);
-      glow.material.opacity = pose.opacity * 0.1;
-      light.position.copy(ball.position);
-      light.intensity = pose.opacity * 9;
+      tail.draw(this.handPaths[hand], time, SPACING, this.reduced);
+      const poses = handPathPoses(this.handPaths[hand], time, SPACING, this.reduced);
+      voices.forEach(({ ball, glow, light }, index) => {
+        const pose = poses[index];
+        ball.visible = glow.visible = this.showBall && !!pose;
+        light.intensity = ball.visible ? pose.opacity * 7 : 0;
+        if (!pose) return;
+        ball.position.set(pose.x, pose.y, pose.z);
+        ball.material.opacity = pose.opacity;
+        glow.position.copy(ball.position);
+        glow.material.opacity = pose.opacity * 0.1;
+        light.position.copy(ball.position);
+      });
     }
     this.drawSurfaceLight(time);
     this.renderer.render(this.scene, this.camera);
