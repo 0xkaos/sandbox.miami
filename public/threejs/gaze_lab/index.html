@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0c1218">
+    <meta name="description" content="Webcam gaze tracking with guided calibration, live gaze trails, and an independent accuracy check.">
+    <title>Gaze Field — Webcam Eye Tracking</title>
+    <link rel="stylesheet" href="./style.css?v=1">
+</head>
+<body>
+    <canvas id="field" aria-label="Live gaze field and validation error map"></canvas>
+    <header class="chrome">
+        <a class="brand" href="/" aria-label="Back to Sandbox Miami"><svg viewBox="0 0 32 20" aria-hidden="true"><path d="M2 10S7 2 16 2s14 8 14 8-5 8-14 8S2 10 2 10Z"/><circle cx="16" cy="10" r="4"/></svg><span>Gaze <b>Field</b></span></a>
+        <div class="header-tools"><span class="eyebrow">A webcam experiment</span><button id="panelToggle" aria-expanded="true" aria-controls="panel" hidden>Hide controls</button></div>
+    </header>
+    <main>
+        <div id="intro" class="chrome">
+            <p class="eyebrow">Look. Calibrate. Explore.</p>
+            <h1>Where are you<br>looking?</h1>
+            <p>Teach the camera your range.<br>Then see how closely it can follow your eyes.</p>
+            <div class="intro-line"></div>
+            <p class="small">Corners are a start. More points can help.<br>The accuracy check will tell us how much.</p>
+        </div>
+        <aside id="panel" class="chrome" aria-label="Gaze tracking controls">
+            <section class="camera-section">
+                <div class="section-heading"><h2>01 <span>Camera</span></h2><span id="cameraState">Off</span></div>
+                <label class="sr-only" for="camera">Camera device</label>
+                <select id="camera"><option value="">Default camera</option></select>
+                <div id="preview" hidden>
+                    <video id="video" autoplay playsinline muted></video>
+                    <canvas id="eyes" aria-hidden="true"></canvas>
+                    <span id="resolution"></span>
+                </div>
+                <p id="quality" class="quality">Sit comfortably, with even light on your face.</p>
+                <div class="button-row"><button id="cameraToggle" class="primary">Start camera</button><button id="fullscreen" title="Change fullscreen before calibrating">Full screen</button></div>
+                <p id="notice" role="status" hidden></p>
+            </section>
+            <section>
+                <div class="section-heading"><h2>02 <span>Calibration</span></h2><span id="calibrationState">Not set</span></div>
+                <label for="points">Coverage</label>
+                <select id="points"><option value="5">5 points · corners + center</option><option value="9" selected>9 points · edges + corners</option><option value="17">17 points · more detail</option></select>
+                <label for="mapping">Screen mapping</label>
+                <select id="mapping"><option value="linear">Linear</option><option value="curved">Curved · try with 17 points</option></select>
+                <button id="calibrate" class="wide" disabled>Calibrate gaze</button>
+                <p class="hint">Follow the amber dot with your eyes. Keep your head comfortably still. Each point takes about 3 seconds.</p>
+            </section>
+            <section>
+                <div class="section-heading"><h2>03 <span>Accuracy check</span></h2><span id="validationState">Not measured</span></div>
+                <div class="metrics"><div><output id="error">—</output><span>median error</span></div><div><output id="jitter">—</output><span>jitter</span></div></div>
+                <p id="resultDetail" class="hint">Six fresh targets, kept separate from calibration. Error is measured in screen pixels.</p>
+                <button id="validate" class="wide" disabled>Check accuracy</button>
+                <div id="history" hidden><h3>Earlier checks this session</h3><ol id="historyList"></ol></div>
+            </section>
+            <section class="display-section">
+                <div class="section-heading"><h2>04 <span>Explore</span></h2><span id="fps">—</span></div>
+                <label class="check"><input id="trail" type="checkbox" checked> Fading gaze trail</label>
+                <label class="check"><input id="raw" type="checkbox"> Show raw estimate</label>
+                <label class="check"><input id="showPreview" type="checkbox" checked> Camera preview</label>
+                <label class="range-label" for="smoothing">Smoothing <output id="smoothingValue">120 ms</output></label>
+                <input id="smoothing" type="range" min="0" max="400" step="20" value="120">
+                <p class="hint">Smoothing steadies the display. Accuracy scores always use unsmoothed estimates.</p>
+            </section>
+            <details><summary>Getting a useful result</summary><p>Use a desktop or laptop, with the camera near the screen. Light your face from the front, avoid glare on glasses, and sit at a comfortable, consistent distance.</p><p>Choose full screen before calibration. Start with 9 points, check accuracy, then compare 17 points or the curved mapping. Recalibrate after moving your camera, seat, or window.</p><p>This is an experimental estimate. Expect broad areas to be easier than small buttons. Iris tracking alone does not know where you are looking; your calibration learns that mapping.</p></details>
+            <details id="cameraHelp"><summary>Camera won’t start?</summary><p>Allow camera access, then close other apps or tabs using the camera. Stop and start the camera here to reconnect.</p><p>For your Microsoft LifeCam on Linux, reset it in a terminal if needed:</p><code>sudo usbreset 045e:0811</code><p>Then click Start camera again. A webpage cannot reset a USB device. HTTPS or localhost is required.</p></details>
+            <p class="privacy">Frames and calibration stay on this device.<br>No recordings, uploads, or saved face data.</p>
+        </aside>
+        <div id="exploreHint" class="chrome" hidden><span class="legend-dot"></span><span id="exploreText">Your estimated gaze</span></div>
+        <div id="target" role="img" aria-label="Look at the calibration target" hidden><div><span id="targetNumber"></span></div></div>
+        <div id="routineBar" hidden><div><strong id="routineTitle"></strong><span id="routineInstruction">Look at the dot; let your eyes settle.</span></div><button id="cancel">Cancel <kbd>Esc</kbd></button></div>
+    </main>
+    <noscript>This experiment needs JavaScript to process the camera locally.</noscript>
+    <script type="module" src="./app.mjs?v=1"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@ An interactive Three.js sandbox hosted on Cloudflare Pages. This project showcas
 
 ## Features
 
+- 👁 **Gaze Field**: Open `/threejs/gaze_lab/` to experiment with local webcam gaze tracking, 5/9/17-point calibration, and an independent accuracy check. [Setup and LifeCam troubleshooting](public/threejs/gaze_lab/README.md).
 - 🎹 **Piano / Motion**: Open `/threejs/piano_motion/` for local MIDI import, a 16-velocity sampled grand piano, and an animated 3D staff. [Workflow, sound design, and limitations](public/threejs/piano_motion/README.md).
 - 🎨 Interactive 3D scene with Three.js
 - 🌌 **Verbs Galaxy**: A data visualization of 350+ Hebrew verbs with audio pronunciation and example sentences.

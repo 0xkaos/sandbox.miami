@@ -1,5 +1,12 @@
 [
   {
+    "path": "/threejs/gaze_lab/",
+    "title": "Gaze Field — Webcam Eye Tracking",
+    "description": "Webcam gaze tracking with guided calibration, live gaze trails, and an independent accuracy check.",
+    "category": "threejs",
+    "createdAt": "2026-09-21T16:22:27.701Z"
+  },
+  {
     "path": "/threejs/piano_motion/",
     "title": "Piano / Motion — A living score",
     "description": "A sampled grand piano and a dark, cinematic MIDI score with independent hand guides and a camera traveling down the staff.",
