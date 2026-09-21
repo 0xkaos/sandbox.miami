@@ -183,12 +183,12 @@ export function handGuidePose(guide, time, spacing, reduced = false) {
     } else {
       const approach = clamp((time - (b.time - 0.55)) / 0.55, 0, 1);
       return { x: b.beat * spacing - spacing * (1 - approach), y: to.y,
-        z: 0.32 + (reduced ? 0 : Math.sin(approach * Math.PI) * 0.55), opacity: approach };
+        z: 0.32 + (reduced ? 0 : Math.sin(approach * Math.PI) * 0.85), opacity: approach };
     }
   }
   return { x: (a.beat + (b.beat - a.beat) * fraction) * spacing,
     y: from.y + (to.y - from.y) * fraction,
-    z: 0.32 + (reduced ? 0 : Math.sin(fraction * Math.PI) * Math.min(0.95, 0.35 + gap * 0.3)), opacity };
+    z: 0.32 + (reduced ? 0 : Math.sin(fraction * Math.PI) * Math.min(3.8, 0.4 + gap * 1.5)), opacity };
 }
 
 export function createDemo(Midi) {

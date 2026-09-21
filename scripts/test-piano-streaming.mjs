@@ -169,8 +169,8 @@ test('camera drift moves closer, toward overhead, and smoothly returns to its or
   assert.ok(cameraDrift(44).z > cameraDrift(0).z);
   for (let time = 0; time <= 144; time += 0.1) {
     const pose = cameraDrift(time), next = cameraDrift(time + 0.01);
-    assert.ok(pose.z >= 11.8 && pose.z <= 19);
-    assert.ok(pose.x >= -14 && pose.x <= -8);
+    assert.ok(pose.z >= 14 && pose.z <= 22);
+    assert.ok(pose.x >= -10 && pose.x <= -7);
     assert.ok(Math.abs(next.z - pose.z) < 0.01);
   }
 });

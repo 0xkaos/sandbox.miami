@@ -6,25 +6,15 @@
   <meta name="description" content="A sampled grand piano and a dark, cinematic MIDI score with independent hand guides and a camera traveling down the staff.">
   <meta name="theme-color" content="#0b1017">
   <title>Piano / Motion — A living score</title>
-  <link rel="stylesheet" href="./style.css?v=3">
+  <link rel="stylesheet" href="./style.css?v=4">
   <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
   <script src="./vendor/Midi.js"></script>
 </head>
 <body>
   <main>
-    <header class="masthead">
-      <a href="/" class="brand"><span class="brand-mark" aria-hidden="true">Ⅱ</span> SANDBOX MIAMI <span class="slash">/</span> <strong>PIANO / MOTION</strong></a>
-      <span class="edition">An audiovisual study <span>№ 01</span></span>
-    </header>
-
     <section class="workspace">
       <div class="stage">
-        <div class="intro">
-          <p class="eyebrow"><span class="dot"></span> A LIVING SCORE</p>
-          <h1>A little more <em>human.</em></h1>
-          <p>The weight of a key. The space between notes.<br>A piano performance, made visible.</p>
-        </div>
-        <div id="scene" role="img" aria-label="Dark 3D grand staff stretching into the distance. A warm ball follows the right hand and a blue ball follows the left hand."></div>
+        <div id="scene" role="img" aria-label="Dark 3D grand staff flowing from left to right. A warm ball follows the upper right-hand staff and a blue ball follows the lower left-hand staff, leaving fading light on the score."></div>
         <div class="scene-error" id="scene-error" hidden></div>
         <div class="view-controls" aria-label="Score view">
           <button class="selected" data-view="drift" aria-pressed="true">Down the staff</button>

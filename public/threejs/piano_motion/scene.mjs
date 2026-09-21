@@ -4,6 +4,8 @@ import { cameraDrift } from './camera-motion.mjs';
 
 const SPACING = 8;
 const INK = 0xaebfc9, MUTED = 0x354650, TREBLE = 0xefaa83, BASS = 0x77c8cf;
+const LIGHT_STEP = 0.05, LIGHT_LIFE = 3.2;
+const LIGHT_CAPACITY = 2 * (Math.ceil(LIGHT_LIFE / LIGHT_STEP) + 1);
 
 export class ScoreScene {
   constructor(container) {
@@ -42,22 +44,43 @@ export class ScoreScene {
     glowCanvas.width = glowCanvas.height = 64;
     const glowContext = glowCanvas.getContext('2d');
     const gradient = glowContext.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gradient.addColorStop(0, '#ffffff'); gradient.addColorStop(0.15, '#ffffff80'); gradient.addColorStop(1, '#ffffff00');
+    gradient.addColorStop(0, '#ffffff'); gradient.addColorStop(0.2, '#ffffffa0');
+    gradient.addColorStop(0.55, '#ffffff30'); gradient.addColorStop(1, '#ffffff00');
     glowContext.fillStyle = gradient; glowContext.fillRect(0, 0, 64, 64);
     const glowTexture = new THREE.CanvasTexture(glowCanvas);
     this.handBalls = {};
     for (const [hand, color] of [['right', TREBLE], ['left', BASS]]) {
       const ball = new THREE.Mesh(new THREE.SphereGeometry(0.23, 24, 16), new THREE.MeshStandardMaterial({
-        color, emissive: color, emissiveIntensity: 0.7, roughness: 0.24, metalness: 0.2, transparent: true,
+        color, emissive: color, emissiveIntensity: 0.3, roughness: 0.24, metalness: 0.2, transparent: true,
       }));
       ball.castShadow = true;
-      const halo = new THREE.Mesh(new THREE.RingGeometry(0.29, 0.32, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-      glow.scale.set(1.8, 1.8, 1.8);
-      const light = new THREE.PointLight(color, 3, 5);
-      this.handBalls[hand] = { ball, halo, glow, light };
-      this.scene.add(ball, halo, glow, light);
+      glow.scale.set(0.65, 0.65, 0.65);
+      const light = new THREE.PointLight(color, 9, 9);
+      this.handBalls[hand] = { ball, glow, light, color: new THREE.Color(color) };
+      this.scene.add(ball, glow, light);
     }
+    // A single instanced layer projects lingering light onto the paper, below the notation.
+    // Per-instance alpha keeps fading smooth without changing the light's hue.
+    const surfaceGeometry = new THREE.PlaneGeometry(1, 1);
+    this.surfaceOpacity = new THREE.InstancedBufferAttribute(new Float32Array(LIGHT_CAPACITY), 1);
+    this.surfaceOpacity.setUsage(THREE.DynamicDrawUsage);
+    surfaceGeometry.setAttribute('surfaceOpacity', this.surfaceOpacity);
+    const surfaceMaterial = new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    surfaceMaterial.onBeforeCompile = shader => {
+      shader.vertexShader = 'attribute float surfaceOpacity; varying float vSurfaceOpacity;\n' + shader.vertexShader
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSurfaceOpacity = surfaceOpacity;');
+      shader.fragmentShader = 'varying float vSurfaceOpacity;\n' + shader.fragmentShader
+        .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.a *= vSurfaceOpacity;');
+    };
+    surfaceMaterial.customProgramCacheKey = () => 'piano-surface-light-v1';
+    this.surfaceLights = new THREE.InstancedMesh(surfaceGeometry, surfaceMaterial, LIGHT_CAPACITY);
+    this.surfaceLights.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.surfaceLights.frustumCulled = false;
+    this.surfaceLights.count = 0;
+    this.lightStamp = new THREE.Object3D();
+    this.scene.add(this.surfaceLights);
     this.view = 'drift';
     this.showBall = true;
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -96,7 +119,6 @@ export class ScoreScene {
     this.paper.position.y = this.centerY;
     this.paperEdge.position.y = this.centerY - 0.035;
     this.chunk = null;
-    this.focus = 0;
     this.draw(0, 1);
   }
 
@@ -139,7 +161,7 @@ export class ScoreScene {
     });
     this.score.clear();
     this.noteMeshes = [];
-    const from = Math.max(-2, Math.floor(beat / 4) * 4 - 6), to = from + 36;
+    const from = Math.max(-2, Math.floor(beat / 4) * 4 - 12), to = from + 40;
     for (const bottom of [-2.65, 1.05]) {
       for (let i = 0; i < 5; i++) {
         // Short segments keep near-plane clipping stable as the camera rides over the staff.
@@ -194,28 +216,66 @@ export class ScoreScene {
     }
   }
 
+  drawSurfaceLight(time) {
+    let count = 0;
+    const stamp = (pose, color, opacity) => {
+      if (!pose || pose.opacity <= 0) return;
+      const height = Math.max(0, pose.z - 0.32);
+      const radius = 1.45 + height * 0.45;
+      this.lightStamp.position.set(pose.x, pose.y, -0.047);
+      this.lightStamp.scale.set(radius * 2, radius * 2, 1);
+      this.lightStamp.updateMatrix();
+      this.surfaceLights.setMatrixAt(count, this.lightStamp.matrix);
+      this.surfaceLights.setColorAt(count, color);
+      this.surfaceOpacity.setX(count, opacity * pose.opacity / (1 + height * height * 0.65));
+      count++;
+    };
+    if (this.showBall) {
+      const latest = Math.floor(time / LIGHT_STEP) * LIGHT_STEP;
+      for (const [hand, { color }] of Object.entries(this.handBalls)) {
+        const guide = this.performance.guides[hand];
+        stamp(handGuidePose(guide, time, SPACING, this.reduced), color, 0.28);
+        for (let i = 0; i < LIGHT_CAPACITY / 2 - 1; i++) {
+          const past = latest - i * LIGHT_STEP;
+          if (past < 0) break;
+          const age = time - past;
+          const fade = Math.exp(-age / 1.15) * Math.max(0, 1 - age / LIGHT_LIFE);
+          // Fixed musical timestamps keep footprints on the paper as the ball moves away.
+          // Reconstructing them also makes pause, reverse seeks, and file changes deterministic.
+          stamp(handGuidePose(guide, past, SPACING, this.reduced), color, fade * 0.06);
+        }
+      }
+    }
+    this.surfaceLights.count = count;
+    this.surfaceLights.instanceMatrix.needsUpdate = true;
+    if (this.surfaceLights.instanceColor) this.surfaceLights.instanceColor.needsUpdate = true;
+    this.surfaceOpacity.needsUpdate = true;
+  }
+
   draw(time, delta = 0.016) {
     if (!this.performance) return;
     const beat = Math.max(0, this.performance.header.secondsToTicks(Math.min(time, this.performance.end)) / this.performance.header.ppq);
     const chunk = Math.floor(beat / 4);
     if (chunk !== this.chunk) { this.rebuild(beat); this.chunk = chunk; }
     const target = beat * SPACING;
-    if (Math.abs(target - this.focus) > SPACING * 4) this.focus = target;
-    this.focus += (target - this.focus) * (1 - Math.exp(-delta * 7));
+    // Follow the music clock exactly; smooth only changes in viewing angle and distance.
+    // Translating both the camera and its target also keeps seeks centered immediately.
+    this.camera.position.x += target - this.focus;
+    this.focus = target;
     const overhead = this.view === 'overhead';
     const drift = cameraDrift(time, this.driftEnabled);
-    const center = this.focus + (overhead ? 10 : drift.ahead);
-    const narrow = this.camera.aspect < 1.5;
-    // Ride behind the notes, looking along +X (musical time), with a slight diagonal across both hands.
+    const center = this.focus + (overhead ? 0 : drift.ahead);
+    const framing = Math.max(1, 1.25 / this.camera.aspect);
+    // Look across the staff from its bass side: time runs mainly left to right,
+    // the left hand stays below the right, and the present sits near the center.
     this.camera.up.set(0, overhead ? 1 : 0, overhead ? 0 : 1);
-    const cameraTarget = new THREE.Vector3(overhead ? center : this.focus + drift.x,
-      this.centerY + (overhead ? -0.1 : drift.y), (overhead ? 24 : drift.z) * this.heightScale);
-    if (narrow) cameraTarget.z += 4;
+    const cameraTarget = new THREE.Vector3(overhead ? center : center + drift.x * framing,
+      this.centerY + (overhead ? -0.1 : drift.y * framing), (overhead ? 24 : drift.z) * this.heightScale * framing);
     this.camera.position.lerp(cameraTarget, 1 - Math.exp(-delta * 5));
     this.camera.lookAt(center, this.centerY + 0.05, 0);
     this.light.position.set(this.focus - 3, 5, 18);
     this.light.target.position.set(center, 0, 0);
-    this.paper.position.x = this.paperEdge.position.x = this.focus + 80;
+    this.paper.position.x = this.paperEdge.position.x = this.focus;
     for (const { note, head, color } of this.noteMeshes) {
       const active = time >= note.time && time < note.end;
       head.material.color.setHex(active ? color : time >= note.end ? MUTED : INK);
@@ -223,20 +283,18 @@ export class ScoreScene {
       head.material.emissiveIntensity = active ? 0.65 : 0;
       head.position.z = active ? 0.095 : 0.055;
     }
-    for (const [hand, { ball, halo, glow, light }] of Object.entries(this.handBalls)) {
+    for (const [hand, { ball, glow, light }] of Object.entries(this.handBalls)) {
       const pose = handGuidePose(this.performance.guides[hand], time, SPACING, this.reduced);
-      ball.visible = halo.visible = glow.visible = light.visible = this.showBall && !!pose && pose.opacity > 0;
+      ball.visible = glow.visible = light.visible = this.showBall && !!pose && pose.opacity > 0;
       if (!pose) continue;
       ball.position.set(pose.x, pose.y, pose.z);
       ball.material.opacity = pose.opacity;
       glow.position.copy(ball.position);
-      glow.material.opacity = pose.opacity * 0.48;
+      glow.material.opacity = pose.opacity * 0.1;
       light.position.copy(ball.position);
-      light.intensity = pose.opacity * 3;
-      halo.position.set(pose.x, pose.y, 0.025);
-      halo.scale.setScalar(1 + (pose.z - 0.32) * 0.65);
-      halo.material.opacity = pose.opacity * 0.4 / (pose.z + 0.6);
+      light.intensity = pose.opacity * 9;
     }
+    this.drawSurfaceLight(time);
     this.renderer.render(this.scene, this.camera);
   }
 }
