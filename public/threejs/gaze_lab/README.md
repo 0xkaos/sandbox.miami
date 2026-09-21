@@ -25,6 +25,14 @@ sudo usbreset 045e:0811
 
 Then start the camera again. The page displays permission, missing-device, busy-device, and tracker-load errors. It cannot perform an OS-level USB reset.
 
+## Built-in laptop cameras and missing prompts
+
+Starting the default camera first requests `getUserMedia({ audio: false, video: true })`, without resolution, facing-mode, or frame-rate restrictions. After video opens, the sketch requests its preferred quality using optional `ideal` settings; a rejected preference leaves the working native stream in use. If the default device cannot be found but the browser exposes other cameras, the sketch tries those explicit devices. An explicitly selected camera is respected, and permission denials are never retried automatically.
+
+An error before a prompt does not establish that the laptop has no camera. Open **Camera details** below the error to see the browser's actual error, failed startup stage, permission state (when supported), and exposed camera list. This is only a local diagnostic readout; a pre-permission device list can be incomplete and is never used to block starting the camera.
+
+If web-based Zoom works in the same browser, compare which camera it uses and check the camera permission specifically for `sandbox.miami`. Close Zoom before retrying. For laptops with both color and infrared cameras, select the color camera. On Windows, system camera access also includes access for desktop apps such as browsers. See the [browser API's error definitions](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia#exceptions) and [Microsoft's camera troubleshooting](https://support.microsoft.com/en-us/windows/hardware/camera/camera-doesn-t-work-in-windows).
+
 ## Implementation
 
 - Google's [MediaPipe Face Landmarker](https://developers.google.com/edge/mediapipe/solutions/vision/face_landmarker/web_js), `@mediapipe/tasks-vision` **1.0.1**, runs on the CPU in a dedicated worker. Camera frames are transferred one at a time, processed locally, and discarded. The preview and canvas stay responsive during inference.
@@ -37,7 +45,7 @@ Then start the camera again. The page displays permission, missing-device, busy-
 ## Checks
 
 ```bash
-node --test scripts/test-gaze-lab.mjs
+node --test scripts/test-gaze-lab.mjs scripts/test-gaze-camera.mjs
 npm run build
 ```
 

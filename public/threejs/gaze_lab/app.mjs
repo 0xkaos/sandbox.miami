@@ -1,4 +1,5 @@
 import { clamp, calibrationPoints, validationPoints, cleanSamples, fitGaze, predictGaze, headMoved, validationReport } from './gaze-math.mjs?v=1';
+import { openCamera, preferCameraQuality, cameraErrorMessage, cameraDiagnostics } from './camera.mjs?v=1';
 
 const $ = id => document.getElementById(id);
 const canvas = $('field'), ctx = canvas.getContext('2d');
@@ -76,12 +77,20 @@ async function cameras() {
     } catch { /* Camera access may be denied until the user chooses Start. */ }
 }
 
-function cameraError(error) {
-    if (error.name === 'NotAllowedError' || error.name === 'SecurityError') return 'Camera access was blocked. Allow it in the browser’s site permissions, then try again.';
-    if (error.name === 'NotFoundError') return 'No camera was found. Connect your webcam, then try again.';
-    if (error.name === 'OverconstrainedError') return 'That camera is no longer available. Select another camera and try again.';
-    if (error.name === 'NotReadableError' || error.name === 'AbortError') return 'The camera could not be opened. Close other camera apps. If your LifeCam is locked, use the USB reset command in the help below, then try again.';
-    return error.message || 'Could not start the camera. Stop and try again.';
+async function showCameraDiagnostics(error, stage, request) {
+    const token = session;
+    const rows = await cameraDiagnostics({ error, stage, request, secure: isSecureContext,
+        mediaDevices: navigator.mediaDevices, permissions: navigator.permissions,
+        policy: document.permissionsPolicy || document.featurePolicy });
+    if (token !== session) return;
+    $('cameraDetails').replaceChildren();
+    for (const [label, value] of rows) {
+        const term = document.createElement('dt'), description = document.createElement('dd');
+        term.textContent = label;
+        description.textContent = value;
+        $('cameraDetails').append(term, description);
+    }
+    $('cameraDiagnostics').hidden = false;
 }
 
 function loadTracker(token) {
@@ -131,14 +140,17 @@ async function startCamera() {
     }
     const token = ++session;
     starting = true;
+    $('cameraDiagnostics').hidden = true;
+    $('cameraDiagnostics').open = false;
     controls();
     notice('Allow webcam access when your browser asks.');
+    let stage = 'Requesting camera access', request = '';
     try {
         const cameraId = $('camera').value;
-        const acquired = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
-            width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 },
-            ...(cameraId ? { deviceId: { exact: cameraId } } : { facingMode: 'user' }),
-        } });
+        const acquired = await openCamera(navigator.mediaDevices, { deviceId: cameraId,
+            isCurrent: () => token === session,
+            onAttempt: description => { request = description; },
+        });
         if (token !== session) { acquired.getTracks().forEach(track => track.stop()); return; }
         stream = acquired;
         video.srcObject = stream;
@@ -146,6 +158,7 @@ async function startCamera() {
             if (token === session) fatal('The camera disconnected. Reconnect it, then start the camera again.');
         });
         controls();
+        stage = 'Opening camera video';
         notice('Opening the camera…');
         let playbackTimeout;
         try {
@@ -154,11 +167,14 @@ async function startCamera() {
             })]);
         } finally { clearTimeout(playbackTimeout); }
         if (token !== session) return;
+        await preferCameraQuality(stream.getVideoTracks()[0]);
+        if (token !== session) return;
         const settings = stream.getVideoTracks()[0].getSettings();
         $('resolution').textContent = `${settings.width || video.videoWidth} × ${settings.height || video.videoHeight}`;
         $('preview').style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
         await cameras();
         if (token !== session) return;
+        stage = 'Loading the eye tracker';
         notice('Loading the eye tracker… The first load may take a moment.');
         await loadTracker(token);
         if (token !== session) return;
@@ -169,9 +185,9 @@ async function startCamera() {
     } catch (error) {
         if (token !== session) return;
         stopCamera();
-        notice(cameraError(error));
+        notice(cameraErrorMessage(error));
         $('cameraHelp').open = true;
-        await cameras();
+        await Promise.all([cameras(), showCameraDiagnostics(error, stage, request)]);
     }
 }
 

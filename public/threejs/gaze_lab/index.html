@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0c1218">
     <meta name="description" content="Webcam gaze tracking with guided calibration, live gaze trails, and an independent accuracy check.">
     <title>Gaze Field — Webcam Eye Tracking</title>
-    <link rel="stylesheet" href="./style.css?v=1">
+    <link rel="stylesheet" href="./style.css?v=2">
 </head>
 <body>
     <canvas id="field" aria-label="Live gaze field and validation error map"></canvas>
@@ -35,6 +35,7 @@
                 <p id="quality" class="quality">Sit comfortably, with even light on your face.</p>
                 <div class="button-row"><button id="cameraToggle" class="primary">Start camera</button><button id="fullscreen" title="Change fullscreen before calibrating">Full screen</button></div>
                 <p id="notice" role="status" hidden></p>
+                <details id="cameraDiagnostics" hidden><summary>Camera details</summary><dl id="cameraDetails"></dl><p>Device lists can be incomplete before permission is granted. These details come from the browser and stay on this page.</p></details>
             </section>
             <section>
                 <div class="section-heading"><h2>02 <span>Calibration</span></h2><span id="calibrationState">Not set</span></div>
@@ -62,7 +63,7 @@
                 <p class="hint">Smoothing steadies the display. Accuracy scores always use unsmoothed estimates.</p>
             </section>
             <details><summary>Getting a useful result</summary><p>Use a desktop or laptop, with the camera near the screen. Light your face from the front, avoid glare on glasses, and sit at a comfortable, consistent distance.</p><p>Choose full screen before calibration. Start with 9 points, check accuracy, then compare 17 points or the curved mapping. Recalibrate after moving your camera, seat, or window.</p><p>This is an experimental estimate. Expect broad areas to be easier than small buttons. Iris tracking alone does not know where you are looking; your calibration learns that mapping.</p></details>
-            <details id="cameraHelp"><summary>Camera won’t start?</summary><p>Allow camera access, then close other apps or tabs using the camera. Stop and start the camera here to reconnect.</p><p>For your Microsoft LifeCam on Linux, reset it in a terminal if needed:</p><code>sudo usbreset 045e:0811</code><p>Then click Start camera again. A webpage cannot reset a USB device. HTTPS or localhost is required.</p></details>
+            <details id="cameraHelp"><summary>Camera won’t start?</summary><p>A browser can fail before showing a permission prompt. If Zoom works in the same browser, compare the selected camera and check this site’s camera permission. Choose Default camera, or the built-in color camera if both color and infrared cameras appear.</p><p>Otherwise, check your laptop’s camera privacy switch or shutter and whether the camera works in your system’s Camera app. Close that app before retrying here.</p><p>On Windows, check Settings → Privacy &amp; security → Camera, including access for desktop apps such as your browser. On Linux, check that the camera is enabled and that your browser package has camera/device access.</p><p>Stop and start the camera here to reconnect. For your Microsoft LifeCam on Linux, reset it in a terminal if needed:</p><code>sudo usbreset 045e:0811</code><p>Then click Start camera again. A webpage cannot reset a USB device. HTTPS or localhost is required.</p></details>
             <p class="privacy">Frames and calibration stay on this device.<br>No recordings, uploads, or saved face data.</p>
         </aside>
         <div id="exploreHint" class="chrome" hidden><span class="legend-dot"></span><span id="exploreText">Your estimated gaze</span></div>
@@ -70,6 +71,6 @@
         <div id="routineBar" hidden><div><strong id="routineTitle"></strong><span id="routineInstruction">Look at the dot; let your eyes settle.</span></div><button id="cancel">Cancel <kbd>Esc</kbd></button></div>
     </main>
     <noscript>This experiment needs JavaScript to process the camera locally.</noscript>
-    <script type="module" src="./app.mjs?v=1"></script>
+    <script type="module" src="./app.mjs?v=2"></script>
 </body>
 </html>
