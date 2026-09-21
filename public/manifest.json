@@ -1,170 +1,198 @@
 [
   {
-    "path": "/hebrew-verbs/",
-    "title": "Hebrew Verb Tables",
-    "description": "Searchable Hebrew verb conjugation tables with bilingual lookup, roots, binyan metadata, and clickable pronunciation audio.",
-    "category": "hebrew-verbs"
-  },
-  {
-    "path": "/pathtraced-sdf/",
-    "title": "Common Ground — Path-traced SDF",
-    "description": "A progressive GLSL path-traced SDF sculpture study rendered live in WebGL2.",
-    "category": "pathtraced-sdf"
-  },
-  {
-    "path": "/threejs/attractor_viewer/",
-    "title": "Chaotic Attractor Viewer V2",
-    "description": "No description available.",
-    "category": "threejs"
+    "path": "/threejs/piano_motion/",
+    "title": "Piano / Motion — A living score",
+    "description": "A sampled grand piano and a dark, cinematic MIDI score with independent hand guides and a camera traveling down the staff.",
+    "category": "threejs",
+    "createdAt": "2026-09-20T16:29:47-04:00"
   },
   {
     "path": "/threejs/collatz_canopy/",
     "title": "Collatz Canopy — Three.js Study",
     "description": "An interactive Three.js canopy grown from 5,000 Collatz conjecture paths, with shared edges weighted by traversal frequency.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/demo_1/",
-    "title": "Three.js Sandbox - Miami",
-    "description": "Interactive Three.js playground with a torus knot, orbit controls, and particle backdrop.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/fluid_js/",
-    "title": "Fluid JS Playground",
-    "description": "Interactive fluid simulation sketch powered by Fluid-JS with adjustable behavior controls.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/fractal_distance_workbench/",
-    "title": "Fractal Distance Workbench",
-    "description": "Three.js WebGL fractal distance workbench with Mandelbrot, Julia, Burning Ship, Tricorn, Multibrot, Celtic, Buffalo, Phoenix, and procedural gradient controls.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/hamiltonian_arnold_web/",
-    "title": "Hamiltonian Arnold Web",
-    "description": "Real-time GPU particle simulation of quasiperiodic Hamiltonian chaos and Arnold web transport in a driven acoustic cavity analogue.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/iphone_stylus/",
-    "title": "iPhone 3D Stylus Bridge",
-    "description": "Use an iPhone as a 3D stylus controller for a desktop Three.js scene via Cloudflare Worker WebSocket relay.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/mahjong_game/",
-    "title": "Mahjong Game - Three.js",
-    "description": "No description available.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/mandelbrot_zoomer/",
-    "title": "Fractal Explorer Lab",
-    "description": "High-quality fractal explorer with deep zoom, Julia and Mandelbrot variants, smooth coloring, and live controls.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/mandelbulb_realtime/",
-    "title": "Realtime Mandelbulb Lab",
-    "description": "Realtime raymarched mandelbulb fractal with live controls for formula, animation, color grading, and camera path.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/neural_network_particles/",
-    "title": "Neural Network Particles",
-    "description": "Interactive connected particle field with complex sinusoidal undulation and neural network aesthetics.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/piano_motion/",
-    "title": "Piano / Motion — A living score",
-    "description": "A sampled grand piano and a dark, cinematic MIDI score with independent hand guides and a camera traveling down the staff.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/ribbon_growth/",
-    "title": "Ribbon Growth",
-    "description": "Generative ribbon growth system with branching, turning, collision avoidance, and organic decay — ported from a Processing sketch.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/script_editor/",
-    "title": "Script Editor",
-    "description": "Create and refine vector stroke data for script characters with live playback and editing tools.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/script_font_morph/",
-    "title": "Script Font Morph",
-    "description": "Animate high-density point clouds that morph between script glyphs with interactive controls.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/scripted_ribbons/",
-    "title": "Scripted Ribbons",
-    "description": "Perlin flow particle ribbons — translucent, spring-connected ribbon chains pushed by curl noise flow fields, inspired by Anthony Mattox's Scripted Ribbons (~2009).",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/sequencer_editor/",
-    "title": "Audio Sequencer Editor",
-    "description": "No description available.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/sin_cos_flow_lines/",
-    "title": "Sin-Cos Flow Lines Lab",
-    "description": "Realtime sin/cos attractor flow lines with interactive controls for c-values, integration step, particle count, and rendering style.",
-    "category": "threejs"
+    "category": "threejs",
+    "createdAt": "2026-09-08T22:45:49-04:00"
   },
   {
     "path": "/threejs/solar_system_scale/",
     "title": "Heliocentric — Scale Solar System",
     "description": "A physically scaled Three.js solar system with elliptical Kepler orbits and mass-weighted moon paths.",
-    "category": "threejs"
+    "category": "threejs",
+    "createdAt": "2026-09-04T13:49:57-04:00"
+  },
+  {
+    "path": "/pathtraced-sdf/",
+    "title": "Common Ground — Path-traced SDF",
+    "description": "A progressive GLSL path-traced SDF sculpture study rendered live in WebGL2.",
+    "category": "pathtraced-sdf",
+    "createdAt": "2026-08-29T23:48:41-04:00"
   },
   {
     "path": "/threejs/sp500_impact/",
     "title": "S&P Impact Tracker",
     "description": "Manual-refresh S&P 500 impact tracker using SPY holdings as a weight proxy and FMP quotes for movement data.",
-    "category": "threejs"
+    "category": "threejs",
+    "createdAt": "2026-05-27T13:15:04-04:00"
+  },
+  {
+    "path": "/threejs/hamiltonian_arnold_web/",
+    "title": "Hamiltonian Arnold Web",
+    "description": "Real-time GPU particle simulation of quasiperiodic Hamiltonian chaos and Arnold web transport in a driven acoustic cavity analogue.",
+    "category": "threejs",
+    "createdAt": "2026-05-25T18:19:40-04:00"
+  },
+  {
+    "path": "/hebrew-verbs/",
+    "title": "Hebrew Verb Tables",
+    "description": "Searchable Hebrew verb conjugation tables with bilingual lookup, roots, binyan metadata, and clickable pronunciation audio.",
+    "category": "hebrew-verbs",
+    "createdAt": "2026-05-03T11:32:00-04:00"
+  },
+  {
+    "path": "/threejs/fractal_distance_workbench/",
+    "title": "Fractal Distance Workbench",
+    "description": "Three.js WebGL fractal distance workbench with Mandelbrot, Julia, Burning Ship, Tricorn, Multibrot, Celtic, Buffalo, Phoenix, and procedural gradient controls.",
+    "category": "threejs",
+    "createdAt": "2026-04-28T11:23:17-04:00"
+  },
+  {
+    "path": "/threejs/mandelbrot_zoomer/",
+    "title": "Fractal Explorer Lab",
+    "description": "High-quality fractal explorer with deep zoom, Julia and Mandelbrot variants, smooth coloring, and live controls.",
+    "category": "threejs",
+    "createdAt": "2026-04-28T00:22:31-04:00"
+  },
+  {
+    "path": "/threejs/scripted_ribbons/",
+    "title": "Scripted Ribbons",
+    "description": "Perlin flow particle ribbons — translucent, spring-connected ribbon chains pushed by curl noise flow fields, inspired by Anthony Mattox's Scripted Ribbons (~2009).",
+    "category": "threejs",
+    "createdAt": "2026-04-19T14:52:54-04:00"
+  },
+  {
+    "path": "/threejs/ribbon_growth/",
+    "title": "Ribbon Growth",
+    "description": "Generative ribbon growth system with branching, turning, collision avoidance, and organic decay — ported from a Processing sketch.",
+    "category": "threejs",
+    "createdAt": "2026-04-19T14:46:44-04:00"
   },
   {
     "path": "/threejs/terrain_raymarch/",
     "title": "Terrain Raymarch",
     "description": "Raymarched sinusoidal terrain with multi-octave noise, rotate2D warping, and arrow-key directional navigation.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/text_effects_studio/",
-    "title": "Text Effects Studio",
-    "description": "Design stylized neon, chrome, and bloom-heavy text renders with realtime Three.js post-processing.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/text_writer/",
-    "title": "Text Writer",
-    "description": "Animate stroke-by-stroke text drawing with adjustable size, stroke width, and colors.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/verbs_atlas/",
-    "title": "Verb Atlas - Binyan Constellations",
-    "description": "Interactive atlas of Hebrew verb roots with binyan and tense constellations.",
-    "category": "threejs"
-  },
-  {
-    "path": "/threejs/verbs_galaxy/",
-    "title": "Verbs Galaxy - Roots Edition",
-    "description": "Explore 350+ verb roots in a 3D galaxy with search, audio pronunciations, and conjugation panels.",
-    "category": "threejs"
+    "category": "threejs",
+    "createdAt": "2026-04-17T19:54:53-04:00"
   },
   {
     "path": "/threejs/virtual_8bit_calculator/",
     "title": "Virtual 8-bit Logic Calculator",
     "description": "Interactive 8-bit calculator with Three.js logic-gate visualization, binary conversion, and animated signal paths.",
-    "category": "threejs"
+    "category": "threejs",
+    "createdAt": "2026-04-10T14:00:38-04:00"
+  },
+  {
+    "path": "/threejs/fluid_js/",
+    "title": "Fluid JS Playground",
+    "description": "Interactive fluid simulation sketch powered by Fluid-JS with adjustable behavior controls.",
+    "category": "threejs",
+    "createdAt": "2026-03-13T17:50:59-04:00"
+  },
+  {
+    "path": "/threejs/iphone_stylus/",
+    "title": "iPhone 3D Stylus Bridge",
+    "description": "Use an iPhone as a 3D stylus controller for a desktop Three.js scene via Cloudflare Worker WebSocket relay.",
+    "category": "threejs",
+    "createdAt": "2026-03-13T10:33:19-04:00"
+  },
+  {
+    "path": "/threejs/sin_cos_flow_lines/",
+    "title": "Sin-Cos Flow Lines Lab",
+    "description": "Realtime sin/cos attractor flow lines with interactive controls for c-values, integration step, particle count, and rendering style.",
+    "category": "threejs",
+    "createdAt": "2026-03-10T15:25:31-04:00"
+  },
+  {
+    "path": "/threejs/mandelbulb_realtime/",
+    "title": "Realtime Mandelbulb Lab",
+    "description": "Realtime raymarched mandelbulb fractal with live controls for formula, animation, color grading, and camera path.",
+    "category": "threejs",
+    "createdAt": "2026-03-05T18:21:18-05:00"
+  },
+  {
+    "path": "/threejs/verbs_atlas/",
+    "title": "Verb Atlas - Binyan Constellations",
+    "description": "Interactive atlas of Hebrew verb roots with binyan and tense constellations.",
+    "category": "threejs",
+    "createdAt": "2026-02-27T20:10:08-05:00"
+  },
+  {
+    "path": "/threejs/neural_network_particles/",
+    "title": "Neural Network Particles",
+    "description": "Interactive connected particle field with complex sinusoidal undulation and neural network aesthetics.",
+    "category": "threejs",
+    "createdAt": "2025-12-07T21:10:44-05:00"
+  },
+  {
+    "path": "/threejs/sequencer_editor/",
+    "title": "Audio Sequencer Editor",
+    "description": "No description available.",
+    "category": "threejs",
+    "createdAt": "2025-12-01T11:48:40-05:00"
+  },
+  {
+    "path": "/threejs/attractor_viewer/",
+    "title": "Chaotic Attractor Viewer V2",
+    "description": "No description available.",
+    "category": "threejs",
+    "createdAt": "2025-11-29T12:25:29-05:00"
+  },
+  {
+    "path": "/threejs/mahjong_game/",
+    "title": "Mahjong Game - Three.js",
+    "description": "No description available.",
+    "category": "threejs",
+    "createdAt": "2025-11-29T03:35:42-05:00"
+  },
+  {
+    "path": "/threejs/text_effects_studio/",
+    "title": "Text Effects Studio",
+    "description": "Design stylized neon, chrome, and bloom-heavy text renders with realtime Three.js post-processing.",
+    "category": "threejs",
+    "createdAt": "2025-11-23T18:46:39-05:00"
+  },
+  {
+    "path": "/threejs/text_writer/",
+    "title": "Text Writer",
+    "description": "Animate stroke-by-stroke text drawing with adjustable size, stroke width, and colors.",
+    "category": "threejs",
+    "createdAt": "2025-11-23T13:32:24-05:00"
+  },
+  {
+    "path": "/threejs/script_editor/",
+    "title": "Script Editor",
+    "description": "Create and refine vector stroke data for script characters with live playback and editing tools.",
+    "category": "threejs",
+    "createdAt": "2025-11-23T00:08:41-05:00"
+  },
+  {
+    "path": "/threejs/script_font_morph/",
+    "title": "Script Font Morph",
+    "description": "Animate high-density point clouds that morph between script glyphs with interactive controls.",
+    "category": "threejs",
+    "createdAt": "2025-11-22T23:27:54-05:00"
+  },
+  {
+    "path": "/threejs/verbs_galaxy/",
+    "title": "Verbs Galaxy - Roots Edition",
+    "description": "Explore 350+ verb roots in a 3D galaxy with search, audio pronunciations, and conjugation panels.",
+    "category": "threejs",
+    "createdAt": "2025-11-22T11:52:47-05:00"
+  },
+  {
+    "path": "/threejs/demo_1/",
+    "title": "Three.js Sandbox - Miami",
+    "description": "Interactive Three.js playground with a torus knot, orbit controls, and particle backdrop.",
+    "category": "threejs",
+    "createdAt": "2025-11-22T08:48:02-05:00"
   }
 ]

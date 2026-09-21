@@ -34,6 +34,8 @@ npm run dev
 
 3. Navigate to `http://localhost:8000` in your browser
 
+The front page lists experiments newest first. The build uses each page's original Git addition date when available, follows renames, and records `createdAt` in `public/manifest.json`. Recorded dates stay stable through later edits, shallow deployment checkouts, and builds without Git history. A new page without history uses its file modification date on its first build.
+
 ## Deployment to Cloudflare Pages
 
 ### Option 1: Via Git Integration (Recommended)
