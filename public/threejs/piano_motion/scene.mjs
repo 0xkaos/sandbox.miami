@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { handGuidePose, lowerBound, notePosition } from './performance.mjs';
 import { cameraDrift } from './camera-motion.mjs';
+import { BounceTail, LedgerLines } from './score-lines.mjs';
 
 const SPACING = 8;
 const INK = 0xaebfc9, MUTED = 0x354650, TREBLE = 0xefaa83, BASS = 0x77c8cf;
@@ -36,6 +37,8 @@ export class ScoreScene {
     this.scene.add(this.paperEdge);
     this.score = new THREE.Group();
     this.scene.add(this.score);
+    this.ledgerLines = new LedgerLines();
+    this.scene.add(this.ledgerLines);
     this.headGeometry = new THREE.SphereGeometry(1, 16, 8);
     this.ringGeometry = new THREE.TorusGeometry(0.12, 0.035, 6, 18);
     this.stemMaterial = new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.72 });
@@ -54,11 +57,14 @@ export class ScoreScene {
         color, emissive: color, emissiveIntensity: 0.3, roughness: 0.24, metalness: 0.2, transparent: true,
       }));
       ball.castShadow = true;
+      ball.renderOrder = 2;
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
       glow.scale.set(0.65, 0.65, 0.65);
+      glow.renderOrder = 3;
       const light = new THREE.PointLight(color, 9, 9);
-      this.handBalls[hand] = { ball, glow, light, color: new THREE.Color(color) };
-      this.scene.add(ball, glow, light);
+      const tail = new BounceTail(color);
+      this.handBalls[hand] = { ball, glow, light, tail, color: new THREE.Color(color) };
+      this.scene.add(ball, glow, light, tail);
     }
     // A single instanced layer projects lingering light onto the paper, below the notation.
     // Per-instance alpha keeps fading smooth without changing the light's hue.
@@ -161,6 +167,7 @@ export class ScoreScene {
     });
     this.score.clear();
     this.noteMeshes = [];
+    const ledgerMarks = [];
     const from = Math.max(-2, Math.floor(beat / 4) * 4 - 12), to = from + 40;
     for (const bottom of [-2.65, 1.05]) {
       for (let i = 0; i < 5; i++) {
@@ -200,8 +207,8 @@ export class ScoreScene {
       this.score.add(head);
       this.noteMeshes.push({ note, head, color: position.treble ? TREBLE : BASS });
       const bottom = position.treble ? 1.05 : -2.65, top = bottom + 1.92;
-      for (let ledger = bottom - 0.48; ledger >= y - 0.025; ledger -= 0.48) this.line([[x - 0.29, ledger, 0.012], [x + 0.29, ledger, 0.012]]);
-      for (let ledger = top + 0.48; ledger <= y + 0.025; ledger += 0.48) this.line([[x - 0.29, ledger, 0.012], [x + 0.29, ledger, 0.012]]);
+      for (let ledger = bottom - 0.48; ledger >= y - 0.025; ledger -= 0.48) ledgerMarks.push({ x, y: ledger, start: note.time, end: note.end });
+      for (let ledger = top + 0.48; ledger <= y + 0.025; ledger += 0.48) ledgerMarks.push({ x, y: ledger, start: note.time, end: note.end });
       if (length < 3.7) {
         const direction = y > bottom + 0.96 ? -1 : 1;
         const sx = x + direction * 0.155, tip = y + direction * 0.94;
@@ -214,6 +221,7 @@ export class ScoreScene {
       }
       if (position.sharp) this.label('♯', x - 0.38, y, 0.49);
     }
+    this.ledgerLines.setMarks(ledgerMarks);
   }
 
   drawSurfaceLight(time) {
@@ -283,7 +291,10 @@ export class ScoreScene {
       head.material.emissiveIntensity = active ? 0.65 : 0;
       head.position.z = active ? 0.095 : 0.055;
     }
-    for (const [hand, { ball, glow, light }] of Object.entries(this.handBalls)) {
+    this.ledgerLines.draw(time);
+    for (const [hand, { ball, glow, light, tail }] of Object.entries(this.handBalls)) {
+      tail.visible = this.showBall;
+      tail.draw(this.performance.guides[hand], time, SPACING, this.reduced);
       const pose = handGuidePose(this.performance.guides[hand], time, SPACING, this.reduced);
       ball.visible = glow.visible = light.visible = this.showBall && !!pose && pose.opacity > 0;
       if (!pose) continue;
