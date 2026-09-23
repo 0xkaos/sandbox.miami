@@ -1,4 +1,4 @@
-import { WaveChamber, ParticleCloud } from './physics.mjs?v=1';
+import { WaveChamber, ParticleCloud } from './physics.mjs?v=2';
 let field, particles, generation = 0, remainder = 0;
 self.onmessage = ({ data }) => {
     try {

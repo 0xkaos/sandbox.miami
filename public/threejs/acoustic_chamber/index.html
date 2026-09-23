@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#090e13">
   <meta name="description" content="A three-dimensional acoustic chamber: reflected pressure waves, an adjustable outlet, and particles gathering at interference nodes.">
   <title>Resonant Chamber — Spatial Cymatics</title>
-  <link rel="stylesheet" href="./style.css?v=1">
+  <link rel="stylesheet" href="./style.css?v=2">
   <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 </head>
 <body>
@@ -42,7 +42,11 @@
     </section>
     <section>
       <h2>Particles</h2>
-      <label for="count">Count <output id="countValue">12,000</output></label><input id="count" type="range" min="1000" max="30000" step="1000" value="12000">
+      <label for="count">Count <output id="countValue">48,000</output></label><input id="count" type="range" min="1000" max="120000" step="1000" value="48000">
+      <label for="particleSize">Point size <output id="particleSizeValue">70%</output></label><input id="particleSize" type="range" min="35" max="120" step="5" value="70">
+      <label for="layers">Particle layers</label><select id="layers"><option value="bands">Three energy bands</option><option value="nodes">Quiet nodes · color by energy</option></select>
+      <div class="particle-key" aria-label="Particle pressure-energy bands"><span><i class="band-quiet"></i>Quiet</span><span><i class="band-low"></i>Low</span><span><i class="band-high"></i>Higher</span></div>
+      <p class="hint" id="layersHint">Three colored populations follow quiet, low, and higher pressure-energy contours as the field changes.</p>
       <label for="mobility">Response <output id="mobilityValue">100%</output></label><input id="mobility" type="range" min="0" max="300" step="10" value="100">
       <button id="reseed" class="wide">Redistribute particles</button>
     </section>
@@ -55,11 +59,11 @@
       <p class="hint" id="resolutionHint">Frequency range follows the chamber size and field detail.</p>
       <button id="resetView" class="wide">Reset view</button>
     </section>
-    <details><summary>About this model</summary><p>A 3D wave equation carries pressure through the chamber, reflects it from lossy walls, and lets it spread through the outlet into an absorbing exterior region. Blue is rarefaction; amber is compression.</p><p>Particles drift toward minima of time-averaged pressure energy. These are quiet pressure nodes, not permanently low-density air. Their motion is exaggerated so patterns develop in seconds.</p><p>This is a qualitative acoustic study, not a calibrated loudspeaker design tool. It omits gravity, particle collisions, elastic walls, and the full acoustic radiation force. Dimensions and frequencies are physical; pressure and particle response use relative units.</p><p>The waves run in slow motion. Burst mode makes the first arrival, reflections, and decay easier to see. Particle redistribution is useful when comparing configurations.</p></details>
+    <details><summary>About this model</summary><p>A 3D wave equation carries pressure through the chamber, reflects it from lossy walls, and lets it spread through the outlet into an absorbing exterior region. Blue is rarefaction; amber is compression.</p><p>Pearl particles seek minima of time-averaged pressure energy. Cyan and rose populations trace neighboring higher-energy contours, revealing layers around the quiet structures. These colored tracers illustrate the field; they are not three simulated physical materials. Quiet-node mode sends every particle toward the minima and colors them by local energy.</p><p>These are quiet pressure nodes, not permanently low-density air. Particle motion is exaggerated so patterns develop in seconds. This is a qualitative acoustic study, not a calibrated loudspeaker design tool. It omits gravity, particle collisions, elastic walls, and the full acoustic radiation force. Dimensions and frequencies are physical; pressure and particle response use relative units.</p><p>The waves run in slow motion. Burst mode makes the first arrival, reflections, and decay easier to see. Particle redistribution is useful when comparing configurations.</p></details>
   </aside>
-  <footer><div class="transport"><button id="pause" aria-pressed="false">Pause</button><button id="clear">Restart field</button></div><div class="legend"><span><i class="negative"></i>Rarefaction</span><span><i class="positive"></i>Compression</span><span><i class="particle"></i>Particles</span></div><span class="navigation">Drag to orbit · Scroll to zoom</span></footer>
+  <footer><div class="transport"><button id="pause" aria-pressed="false">Pause</button><button id="clear">Restart field</button></div><div class="legend"><span><i class="negative"></i>Rarefaction</span><span><i class="positive"></i>Compression</span><span title="Particle bands: pearl = quiet, cyan = low, rose = higher pressure energy"><i class="band-quiet"></i><i class="band-low"></i><i class="band-high"></i>Particle bands</span></div><span class="navigation">Drag to orbit · Scroll to zoom</span></footer>
   <div id="unsupported" hidden><h2>This sketch needs WebGL 2.</h2><p>Try a browser with hardware acceleration enabled.</p><a href="/">Back to the sketches</a></div>
   <noscript>JavaScript is required to run the acoustic field locally.</noscript>
-  <script type="module" src="./app.mjs?v=1"></script>
+  <script type="module" src="./app.mjs?v=2"></script>
 </body>
 </html>

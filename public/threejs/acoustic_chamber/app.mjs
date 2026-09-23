@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
-import { DEFAULTS, configure, SOUND_SPEED } from './physics.mjs?v=1';
-import { volumeVertex, volumeFragment, sliceFragment, particleVertex, particleFragment } from './field-shaders.mjs?v=1';
+import { DEFAULTS, configure, SOUND_SPEED } from './physics.mjs?v=2';
+import { volumeVertex, volumeFragment, sliceFragment, particleVertex, particleFragment } from './field-shaders.mjs?v=2';
 
 const $ = id => document.getElementById(id);
 function notice(message = '') { $('notice').textContent = message; $('notice').hidden = !message; }
@@ -38,7 +38,7 @@ function boot() {
     let generation = 0, ready = false, inFlight = false, refreshPending = false, paused = false, acousticTime = 0;
     let lastSubmit = performance.now(), pendingRebuild, pendingCount, loadTimeout;
     let panelHidden = innerWidth < 760, sourcePulseTime = 0;
-    const worker = new Worker(new URL('./simulation.mjs?v=1', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./simulation.mjs?v=2', import.meta.url), { type: 'module' });
 
     function fail(message) {
         ready = false; inFlight = false;
@@ -50,7 +50,7 @@ function boot() {
     function readControls() {
         return configure({ shape: $('shape').value, length: +$('length').value, height: +$('height').value, depth: +$('depth').value,
             frequency: +$('frequency').value, amplitude: +$('amplitude').value / 100, reflection: +$('reflection').value / 100,
-            opening: $('opening').checked, openingSize: +$('openingSize').value, count: +$('count').value,
+            opening: $('opening').checked, openingSize: +$('openingSize').value, count: +$('count').value, layers: $('layers').value,
             mobility: +$('mobility').value / 100, drive: $('drive').value, resolution: +$('resolution').value,
             slow: +$('slow').value, seed: config.seed });
     }
@@ -62,6 +62,10 @@ function boot() {
         $('reflectionValue').textContent = `${$('reflection').value}%`;
         $('mobilityValue').textContent = `${$('mobility').value}%`;
         $('countValue').textContent = Number($('count').value).toLocaleString('en');
+        $('particleSizeValue').textContent = `${$('particleSize').value}%`;
+        $('layersHint').textContent = config.layers === 'bands'
+            ? 'Three colored populations follow quiet, low, and higher pressure-energy contours as the field changes.'
+            : 'All particles seek quiet nodes; their color follows the local pressure-energy range.';
         $('opacityValue').textContent = `${$('opacity').value}%`;
         $('openingSizeValue').textContent = `${config.openingSize.toFixed(2)} m`;
         $('openingSize').disabled = !config.opening;
@@ -193,7 +197,8 @@ function boot() {
             geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions.length), 3).setUsage(THREE.DynamicDrawUsage));
             geometry.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(colors.length), 3, true).setUsage(THREE.DynamicDrawUsage));
             points = new THREE.Points(geometry, new THREE.ShaderMaterial({ vertexShader: particleVertex, fragmentShader: particleFragment,
-                uniforms: { uPixelRatio: { value: renderer.getPixelRatio() } }, transparent: true, depthWrite: false }));
+                uniforms: { uPixelRatio: { value: renderer.getPixelRatio() }, uSize: { value: +$('particleSize').value / 100 } },
+                transparent: true, depthWrite: false }));
             points.frustumCulled = false; points.renderOrder = 1; scene.add(points);
         }
         points.geometry.attributes.position.array.set(positions); points.geometry.attributes.position.needsUpdate = true;
@@ -270,7 +275,7 @@ function boot() {
     function tune() {
         config = readControls(); updateLabels();
         worker.postMessage({ type: 'tune', generation, changes: { frequency: config.frequency, amplitude: config.amplitude,
-            reflection: config.reflection, mobility: config.mobility, drive: config.drive, slow: config.slow } });
+            reflection: config.reflection, mobility: config.mobility, drive: config.drive, slow: config.slow, layers: config.layers } });
     }
     for (const id of ['length', 'height', 'depth', 'openingSize']) $(id).addEventListener('input', () => {
         config = readControls(); updateLabels();
@@ -293,6 +298,11 @@ function boot() {
     }
     $('count').addEventListener('input', () => { updateLabels(); clearTimeout(pendingCount); pendingCount = setTimeout(reseed, 150); });
     $('reseed').addEventListener('click', reseed);
+    $('layers').addEventListener('change', () => { tune(); if (paused) requestFrame(0); });
+    $('particleSize').addEventListener('input', () => {
+        updateLabels();
+        if (points) points.material.uniforms.uSize.value = +$('particleSize').value / 100;
+    });
     $('display').addEventListener('change', setDisplay);
     $('opacity').addEventListener('input', () => { updateLabels(); setDisplay(); });
     $('resetView').addEventListener('click', resetView);

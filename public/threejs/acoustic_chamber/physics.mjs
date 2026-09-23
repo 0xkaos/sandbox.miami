@@ -2,7 +2,12 @@ export const SOUND_SPEED = 343;
 export const COURANT = 0.48; // Below the 3D six-neighbor limit, 1 / sqrt(3).
 export const DEFAULTS = Object.freeze({ shape: 'box', length: 3.6, height: 2.2, depth: 2.6,
     resolution: 40, frequency: 240, amplitude: 1, reflection: 0.38, opening: false,
-    openingSize: 1.4, count: 12000, mobility: 1, drive: 'continuous', slow: 100, seed: 1847 });
+    openingSize: 1.4, count: 48000, layers: 'bands', mobility: 1, drive: 'continuous', slow: 100, seed: 1847 });
+export const PARTICLE_BANDS = Object.freeze([
+    { energy: 0, color: [244, 229, 196] },
+    { energy: 0.18, color: [81, 204, 235] },
+    { energy: 0.55, color: [238, 128, 164] },
+]);
 export const clamp = (x, min, max) => Math.max(min, Math.min(max, x));
 const numeric = (value, fallback, min, max) => clamp(Number.isFinite(Number(value)) ? Number(value) : fallback, min, max);
 
@@ -17,7 +22,8 @@ export function configure(input = {}) {
     c.reflection = numeric(c.reflection, 0.38, 0, 0.9);
     c.opening = Boolean(c.opening);
     c.openingSize = numeric(c.openingSize, 1.4, 0.15, Math.min(c.height * (c.shape === 'taper' ? 0.58 : 0.92), c.depth * 0.92));
-    c.count = Math.round(numeric(c.count, 12000, 500, 30000));
+    c.count = Math.round(numeric(c.count, 48000, 1000, 120000));
+    c.layers = c.layers === 'nodes' ? 'nodes' : 'bands';
     c.mobility = numeric(c.mobility, 1, 0, 3);
     c.drive = c.drive === 'burst' ? 'burst' : 'continuous';
     c.slow = numeric(c.slow, 100, 40, 250);
@@ -222,28 +228,37 @@ export class ParticleCloud {
         let x, y, z;
         do { x = (this.random() - 0.5) * c.length; y = (this.random() - 0.5) * c.height; z = (this.random() - 0.5) * c.depth; }
         while (!insideChamber(c, x, y, z, 0.025));
-        this.positions.set([x, y, z], j);
+        this.positions[j] = x; this.positions[j + 1] = y; this.positions[j + 2] = z;
         this.velocities.fill(0, j, j + 3);
     }
     advance(seconds) {
         const f = this.field, c = f.config, dt = Math.min(seconds, 0.05);
         const forceScale = c.mobility * c.amplitude ** 2 * 0.12 / Math.max(f.meanEnergy, 0.00003);
         const drag = Math.exp(-3.8 * dt), maxSpeed = Math.min(c.length, c.height, c.depth) * 0.24;
+        const bands = c.layers === 'bands';
         for (let i = 0; i < this.count; i++) {
             const j = i * 3, x = this.positions[j], y = this.positions[j + 1], z = this.positions[j + 2];
+            const energy = f.sample(f.meanSquare, x, y, z);
+            const population = i % PARTICLE_BANDS.length;
+            const target = PARTICLE_BANDS[population].energy * f.meanEnergy;
+            // The node population follows the original downhill force. The others
+            // follow -grad((E - target)^2), with a soft, capped attraction to the contour.
+            const direction = bands && population > 0 ? clamp((energy - target) / Math.max(target * 0.5, 0.00001), -1, 1) : 1;
             for (let axis = 0; axis < 3; axis++) {
-                const acceleration = clamp(-f.sample(f.gradient[axis], x, y, z) * forceScale, -2, 2);
+                const acceleration = clamp(-f.sample(f.gradient[axis], x, y, z) * forceScale * direction, -2, 2);
                 this.velocities[j + axis] = clamp((this.velocities[j + axis] + acceleration * dt) * drag, -maxSpeed, maxSpeed);
             }
             const nx = x + this.velocities[j] * dt, ny = y + this.velocities[j + 1] * dt, nz = z + this.velocities[j + 2] * dt;
             const escaping = c.opening && nx > c.length / 2 - 0.025 && Math.hypot(ny, nz) < c.openingSize / 2 - 0.02;
             if (escaping && nx > c.length / 2 + f.exteriorX * c.cell * 0.75) this.respawn(i);
-            else if (insideChamber(c, nx, ny, nz, 0.02) || escaping) this.positions.set([nx, ny, nz], j);
+            else if (insideChamber(c, nx, ny, nz, 0.02) || escaping) {
+                this.positions[j] = nx; this.positions[j + 1] = ny; this.positions[j + 2] = nz;
+            }
             else { this.velocities[j] *= -0.15; this.velocities[j + 1] *= -0.15; this.velocities[j + 2] *= -0.15; }
-            const quiet = 1 - clamp(f.sample(f.meanSquare, x, y, z) / Math.max(f.meanEnergy * 1.5, 0.00003), 0, 1);
-            this.colors[j] = 105 + quiet * 138;
-            this.colors[j + 1] = 185 + quiet * 29;
-            this.colors[j + 2] = 207 - quiet * 38;
+            const relativeEnergy = energy / Math.max(f.meanEnergy, 0.00003);
+            const colorBand = bands ? population : relativeEnergy < 0.09 ? 0 : relativeEnergy < 0.365 ? 1 : 2;
+            const color = PARTICLE_BANDS[colorBand].color;
+            this.colors[j] = color[0]; this.colors[j + 1] = color[1]; this.colors[j + 2] = color[2];
         }
     }
 }

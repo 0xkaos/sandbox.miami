@@ -38,7 +38,11 @@ footer { position: fixed; z-index: 3; bottom: 24px; left: 30px; right: 28px; dis
 .legend { display: flex; gap: 16px; font-size: 9px; color: #8ba1ac; }
 .legend span { display: flex; align-items: center; gap: 6px; }
 .legend i { height: 5px; width: 5px; border-radius: 50%; }
-.negative { background: #78bfd9; }.positive { background: #db9f63; }.particle { background: #efe1bb; }
+.negative { background: #78bfd9; }.positive { background: #db9f63; }
+.band-quiet { background: #f4e5c4; }.band-low { background: #51cceb; }.band-high { background: #ee80a4; }
+.particle-key { display: flex; gap: 17px; margin-top: 12px; font-size: 10px; color: #afc2ca; }
+.particle-key span { display: flex; align-items: center; gap: 6px; }
+.particle-key i { width: 5px; height: 5px; border-radius: 50%; }
 .navigation { margin-left: auto; font-size: 10px; color: var(--muted); }
 .scene-label { position: fixed; z-index: 2; pointer-events: none; font: 9px ui-monospace, monospace; color: #a1b3b7; letter-spacing: 1.5px; transform: translate(-50%, 0); white-space: nowrap; text-shadow: 0 1px 6px #000; }
 .scene-label span { display: block; margin-top: 5px; color: var(--amber); font-size: 10px; letter-spacing: 0; }

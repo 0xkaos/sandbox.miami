@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WaveChamber, ParticleCloud, configure, insideChamber, COURANT, SOUND_SPEED } from '../public/threejs/acoustic_chamber/physics.mjs';
+import { WaveChamber, ParticleCloud, configure, insideChamber, COURANT, SOUND_SPEED, PARTICLE_BANDS } from '../public/threejs/acoustic_chamber/physics.mjs';
 
 function maximum(values) { return values.reduce((max, value) => Math.max(max, Math.abs(value)), 0); }
 function exteriorEnergy(field) {
@@ -89,7 +89,7 @@ test('geometry and frequency produce different fields', () => {
 
 test('particles descend a known quiet-node potential, remain contained, and preserve count', () => {
     for (const shape of ['box', 'cylinder', 'taper']) {
-        const field = new WaveChamber({ resolution: 32, shape, count: 1000 });
+        const field = new WaveChamber({ resolution: 32, shape, count: 1000, layers: 'nodes' });
         // Independent quadratic potential: its quiet node is the central x=0 plane.
         for (const i of field.active) { const x = field.position(...field.coordinates(i))[0]; field.meanSquare[i] = 0.01 * x * x; }
         field.updateGradient();
@@ -113,4 +113,47 @@ test('seeded redistribution is reproducible and zero response holds particles st
     assert.deepEqual(a.positions, b.positions);
     const c = new ParticleCloud(field, 1000, field.config.seed + 1);
     assert.notDeepEqual(a.positions, c.positions);
+});
+
+test('three populations converge on distinct energy contours from both directions', () => {
+    const field = new WaveChamber({ resolution: 32, count: 1200, layers: 'bands' });
+    // A quadratic well has known contour locations on either side of its quiet plane.
+    for (const i of field.active) { const x = field.position(...field.coordinates(i))[0]; field.meanSquare[i] = 0.01 * x * x; }
+    field.updateGradient();
+    const cloud = new ParticleCloud(field);
+    const errors = () => {
+        const sum = [0, 0, 0];
+        for (let i = 0; i < cloud.count; i++) {
+            const band = i % 3, targetX = Math.sqrt(PARTICLE_BANDS[band].energy * field.meanEnergy / 0.01);
+            sum[band] += (Math.abs(cloud.positions[i * 3]) - targetX) ** 2;
+        }
+        return sum;
+    };
+    const initial = errors();
+    for (let frame = 0; frame < 900; frame++) cloud.advance(1 / 30);
+    errors().forEach((error, band) => assert.ok(error < initial[band] * 0.1, `population ${band} approaches its target contour`));
+    for (let i = 0; i < cloud.count; i++) assert.deepEqual([...cloud.colors.subarray(i * 3, i * 3 + 3)], PARTICLE_BANDS[i % 3].color);
+    // Move the quiet plane; all populations must follow instead of remaining on a static shell.
+    for (const i of field.active) { const x = field.position(...field.coordinates(i))[0]; field.meanSquare[i] = 0.01 * (x - 0.4) ** 2; }
+    field.updateGradient();
+    const initialPositions = cloud.positions.slice();
+    for (let frame = 0; frame < 300; frame++) cloud.advance(1 / 30);
+    for (let band = 0; band < 3; band++) {
+        let displacement = 0;
+        for (let i = band; i < cloud.count; i += 3) displacement += Math.abs(cloud.positions[i * 3] - initialPositions[i * 3]);
+        assert.ok(displacement / (cloud.count / 3) > 0.1, `population ${band} follows a changing field`);
+    }
+});
+
+test('quiet-node mode changes colors with local energy and preserves positions when paused', () => {
+    const field = new WaveChamber({ resolution: 32, count: 1000, layers: 'bands' });
+    const cloud = new ParticleCloud(field), initial = cloud.positions.slice();
+    field.tune({ layers: 'nodes' });
+    field.meanEnergy = 1;
+    for (const [energy, band] of [[0.01, 0], [0.2, 1], [0.8, 2]]) {
+        field.meanSquare.fill(energy);
+        cloud.advance(0);
+        assert.deepEqual(cloud.positions, initial);
+        assert.deepEqual([...cloud.colors.subarray(0, 3)], PARTICLE_BANDS[band].color);
+    }
 });

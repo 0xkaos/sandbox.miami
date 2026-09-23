@@ -62,17 +62,22 @@ void main() {
 export const particleVertex = `
 attribute vec3 color;
 varying vec3 vColor;
+varying float vCoverage;
 uniform float uPixelRatio;
+uniform float uSize;
 void main() {
   vColor = color;
   vec4 view = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * view;
-  gl_PointSize = clamp(14.0 / max(1.5, -view.z), 1.3, 3.2) * uPixelRatio;
+  float size = clamp(14.0 / max(1.5, -view.z), 1.3, 3.2) * uPixelRatio * uSize;
+  gl_PointSize = max(1.0, size);
+  vCoverage = min(1.0, size * size);
 }`;
 export const particleFragment = `
 varying vec3 vColor;
+varying float vCoverage;
 void main() {
   float r = length(gl_PointCoord - 0.5) * 2.0;
   if (r > 1.0) discard;
-  gl_FragColor = vec4(vColor, (1.0 - smoothstep(0.3, 1.0, r)) * 0.8);
+  gl_FragColor = vec4(vColor, (1.0 - smoothstep(0.3, 1.0, r)) * 0.8 * vCoverage);
 }`;
