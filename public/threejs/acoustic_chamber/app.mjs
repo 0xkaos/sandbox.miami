@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
-import { DEFAULTS, configure, SOUND_SPEED } from './physics.mjs?v=3';
+import { DEFAULTS, configure, SOUND_SPEED } from './physics.mjs?v=4';
 import { volumeVertex, volumeFragment, sliceFragment, particleVertex, particleFragment } from './field-shaders.mjs?v=2';
 
 const $ = id => document.getElementById(id);
@@ -24,21 +24,16 @@ function boot() {
     controls.dampingFactor = 0.065;
     controls.minDistance = 1;
     controls.maxDistance = 22;
-    scene.add(new THREE.HemisphereLight(0xc2e2ec, 0x172025, 2.2));
-    const key = new THREE.DirectionalLight(0xffd6aa, 3);
-    key.position.set(1, 5, 4); scene.add(key);
-    const fill = new THREE.DirectionalLight(0x90bdcd, 1.2);
-    fill.position.set(-5, 2, -4); scene.add(fill);
     const chamber = new THREE.Group(); scene.add(chamber);
     const grid = new THREE.GridHelper(18, 72, 0x32434a, 0x1d2b32);
     grid.material.transparent = true; grid.material.opacity = 0.28; grid.material.depthWrite = false;
     scene.add(grid);
 
-    let config = configure(DEFAULTS), meta, fieldTexture, volume, slice, points, hornFace;
-    let generation = 0, ready = false, inFlight = false, refreshPending = false, paused = false, acousticTime = 0;
+    let config = configure(DEFAULTS), meta, fieldTexture, volume, slice, points, horn;
+    let generation = 0, ready = false, inFlight = false, refreshPending = false, paused = false;
     let lastSubmit = performance.now(), pendingRebuild, pendingCount, loadTimeout;
-    let panelHidden = innerWidth < 760, sourcePulseTime = 0;
-    const worker = new Worker(new URL('./simulation.mjs?v=3', import.meta.url), { type: 'module' });
+    let panelHidden = innerWidth < 760;
+    const worker = new Worker(new URL('./simulation.mjs?v=4', import.meta.url), { type: 'module' });
 
     function fail(message) {
         ready = false; inFlight = false;
@@ -79,9 +74,6 @@ function boot() {
             ? `Perfectly reflecting walls. Gentle loss in the medium still applies.${config.opening ? ' Sound also escapes through the outlet.' : ''}`
             : `About ${retained}% pressure amplitude after two head-on reflections, before loss in the medium.`;
         $('resolutionHint').textContent = `Up to ${config.maxFrequency} Hz at this size and detail. Higher detail resolves shorter wavelengths.`;
-        $('sourceLabel').replaceChildren(document.createTextNode('HORN'));
-        const frequency = document.createElement('span'); frequency.textContent = `${Math.round(config.frequency)} Hz`; $('sourceLabel').append(frequency);
-        $('portLabel').textContent = config.opening ? `OPEN · Ø ${config.openingSize.toFixed(2)} m` : 'CLOSED WALL';
     }
 
     function disposeObject(object) {
@@ -143,22 +135,25 @@ function boot() {
         cap(l / 2, rightHeight, config.opening ? config.openingSize / 2 : 0);
 
         const hornLength = Math.min(h, d) * 0.32, mouth = meta.hornRadius;
-        const profile = [];
-        for (let i = 0; i <= 22; i++) {
-            const t = i / 22;
-            profile.push(new THREE.Vector2(mouth * (0.18 + 0.82 * t ** 2.1), -hornLength + hornLength * t));
+        const hornLines = [];
+        function hornPoint(t, angle) {
+            const radius = mouth * (0.18 + 0.82 * t ** 2.1);
+            return [-l / 2 - hornLength * (1 - t), radius * Math.cos(angle), radius * Math.sin(angle)];
         }
-        const hornGeometry = new THREE.LatheGeometry(profile, 64);
-        hornGeometry.rotateZ(-Math.PI / 2); hornGeometry.translate(-l / 2, 0, 0);
-        const horn = new THREE.Mesh(hornGeometry, new THREE.MeshStandardMaterial({ color: 0xa27146, metalness: 0.62, roughness: 0.36, side: THREE.DoubleSide }));
+        // Sparse ribs and three rings keep the flare legible without a solid surface.
+        for (let rib = 0; rib < 8; rib++) for (let step = 0; step < 16; step++) {
+            const angle = rib * Math.PI / 4;
+            hornLines.push(...hornPoint(step / 16, angle), ...hornPoint((step + 1) / 16, angle));
+        }
+        for (const t of [0, 0.55, 1]) for (let step = 0; step < 64; step++) {
+            hornLines.push(...hornPoint(t, step * Math.PI / 32), ...hornPoint(t, (step + 1) * Math.PI / 32));
+        }
+        const hornGeometry = new THREE.BufferGeometry();
+        hornGeometry.setAttribute('position', new THREE.Float32BufferAttribute(hornLines, 3));
+        horn = new THREE.LineSegments(hornGeometry, new THREE.LineBasicMaterial({ color: 0xc39764, transparent: true, opacity: 0.7, depthWrite: false }));
+        horn.name = 'horn'; horn.renderOrder = 2;
+        horn.visible = $('showHorn').checked;
         chamber.add(horn);
-        const rimGeometry = new THREE.TorusGeometry(mouth, mouth * 0.035, 8, 64);
-        rimGeometry.rotateY(Math.PI / 2); rimGeometry.translate(-l / 2 + 0.004, 0, 0);
-        chamber.add(new THREE.Mesh(rimGeometry, new THREE.MeshStandardMaterial({ color: 0xc39764, roughness: 0.3, metalness: 0.6 })));
-        const diaphragmGeometry = new THREE.CircleGeometry(mouth * 0.18, 40);
-        diaphragmGeometry.rotateY(Math.PI / 2); diaphragmGeometry.translate(-l / 2 - hornLength, 0, 0);
-        hornFace = new THREE.Mesh(diaphragmGeometry, new THREE.MeshBasicMaterial({ color: 0xe2b878, side: THREE.DoubleSide }));
-        chamber.add(hornFace);
         if (config.opening) {
             const rim = new THREE.TorusGeometry(config.openingSize / 2, 0.009, 8, 64);
             rim.rotateY(Math.PI / 2); rim.translate(l / 2 + 0.005, 0, 0);
@@ -261,7 +256,6 @@ function boot() {
         if (data.type === 'ready') {
             clearTimeout(loadTimeout);
             meta = data.meta;
-            acousticTime = sourcePulseTime = 0;
             buildChamber(); buildField();
             updateLabels(); ready = true;
             notice(); requestFrame(0);
@@ -270,7 +264,6 @@ function boot() {
             fieldTexture.image.data = data.volume;
             fieldTexture.needsUpdate = true;
             updateParticles(data.positions, data.colors);
-            acousticTime = data.time;
             if (refreshPending) requestFrame(0);
         }
     };
@@ -288,11 +281,12 @@ function boot() {
     for (const id of ['frequency', 'amplitude', 'reflection', 'mobility', 'slow']) $(id).addEventListener('input', tune);
     $('drive').addEventListener('change', () => { tune(); if (config.drive === 'burst') sendBurst(); });
     function sendBurst() {
-        $('drive').value = 'burst'; config.drive = 'burst'; sourcePulseTime = acousticTime;
+        $('drive').value = 'burst'; config.drive = 'burst';
         worker.postMessage({ type: 'burst', generation });
         if (paused) { paused = false; updatePause(); }
     }
     $('burst').addEventListener('click', sendBurst);
+    $('showHorn').addEventListener('change', () => { if (horn) horn.visible = $('showHorn').checked; });
     function reseed() {
         clearTimeout(pendingCount);
         config.count = +$('count').value; config.seed++;
@@ -323,25 +317,11 @@ function boot() {
         worker.terminate(); clearTimeout(pendingRebuild); clearTimeout(pendingCount); clearTimeout(loadTimeout);
     });
 
-    const labelPosition = new THREE.Vector3();
-    function positionLabel(element, x, y, z) {
-        labelPosition.set(x, y, z).project(camera);
-        const sx = (labelPosition.x + 1) * innerWidth / 2, sy = (1 - labelPosition.y) * innerHeight / 2;
-        element.style.left = `${sx}px`; element.style.top = `${sy}px`;
-        element.style.opacity = labelPosition.z < 1 && sx > 40 && sx < innerWidth - (panelHidden ? 40 : 330) && sy > 75 && sy < innerHeight - 80 ? '0.8' : '0';
-    }
     function render(now) {
         requestAnimationFrame(render);
         if (document.hidden) return;
         controls.update();
         if (!paused && now - lastSubmit > 1000 / 30) requestFrame(Math.min((now - lastSubmit) / 1000, 0.05));
-        positionLabel($('sourceLabel'), -config.length / 2 - 0.12, -(meta?.hornRadius ?? 0.4), 0);
-        positionLabel($('portLabel'), config.length / 2 + 0.06, -config.height * (config.shape === 'taper' ? 0.34 : 0.53), 0);
-        if (hornFace) {
-            const emitting = config.drive === 'continuous' || acousticTime - sourcePulseTime < 3 / config.frequency;
-            const pulse = emitting ? 0.4 + 0.6 * Math.abs(Math.sin(acousticTime * config.frequency * Math.PI * 2)) : 0.25;
-            hornFace.material.color.setRGB(0.75 * pulse, 0.45 * pulse, 0.19 * pulse);
-        }
         renderer.render(scene, camera);
     }
     panel(); resetView(); rebuild(); requestAnimationFrame(render);

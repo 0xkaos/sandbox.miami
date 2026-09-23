@@ -6,14 +6,12 @@
   <meta name="theme-color" content="#090e13">
   <meta name="description" content="A three-dimensional acoustic chamber: reflected pressure waves, an adjustable outlet, and particles gathering at interference nodes.">
   <title>Resonant Chamber — Spatial Cymatics</title>
-  <link rel="stylesheet" href="./style.css?v=2">
+  <link rel="stylesheet" href="./style.css?v=4">
   <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 </head>
 <body>
   <div id="scene" aria-label="Interactive three-dimensional acoustic chamber"></div>
   <header><a href="/" aria-label="Back to Sandbox Miami">← Sandbox Miami</a><h1>Resonant <span>Chamber</span></h1><button id="panelToggle" aria-controls="panel" aria-expanded="true">Hide controls</button></header>
-  <div class="scene-label" id="sourceLabel">HORN <span>240 Hz</span></div>
-  <div class="scene-label" id="portLabel">CLOSED WALL</div>
   <div id="notice" role="status">Building the acoustic field…</div>
   <aside id="panel" aria-label="Chamber controls">
     <div class="panel-intro"><p class="eyebrow">Spatial cymatics</p><p>Sound fills the chamber.<br>Particles find the quiet spaces.</p></div>
@@ -28,6 +26,7 @@
     </section>
     <section>
       <h2>Horn</h2>
+      <label class="check"><input id="showHorn" type="checkbox" checked> Show horn wireframe</label>
       <label for="frequency">Frequency <output id="frequencyValue">240 Hz</output></label><input id="frequency" type="range" min="40" max="420" step="1" value="240">
       <p class="hint" id="wavelength">Wavelength 1.43 m</p>
       <label for="amplitude">Amplitude <output id="amplitudeValue">100%</output></label><input id="amplitude" type="range" min="0" max="200" step="5" value="100">
@@ -42,7 +41,7 @@
     </section>
     <section>
       <h2>Particles</h2>
-      <label for="count">Count <output id="countValue">48,000</output></label><input id="count" type="range" min="1000" max="120000" step="1000" value="48000">
+      <label for="count">Count <output id="countValue">48,000</output></label><input id="count" type="range" min="1000" max="500000" step="1000" value="48000">
       <label for="particleSize">Point size <output id="particleSizeValue">70%</output></label><input id="particleSize" type="range" min="35" max="120" step="5" value="70">
       <label for="layers">Particle layers</label><select id="layers"><option value="bands">Three energy bands</option><option value="nodes">Quiet nodes · color by energy</option></select>
       <div class="particle-key" aria-label="Particle pressure-energy bands"><span><i class="band-quiet"></i>Quiet</span><span><i class="band-low"></i>Low</span><span><i class="band-high"></i>Higher</span></div>
@@ -64,6 +63,6 @@
   <footer><div class="transport"><button id="pause" aria-pressed="false">Pause</button><button id="clear">Restart field</button></div><div class="legend"><span><i class="negative"></i>Rarefaction</span><span><i class="positive"></i>Compression</span><span title="Particle bands: pearl = quiet, cyan = low, rose = higher pressure energy"><i class="band-quiet"></i><i class="band-low"></i><i class="band-high"></i>Particle bands</span></div><span class="navigation">Drag to orbit · Scroll to zoom</span></footer>
   <div id="unsupported" hidden><h2>This sketch needs WebGL 2.</h2><p>Try a browser with hardware acceleration enabled.</p><a href="/">Back to the sketches</a></div>
   <noscript>JavaScript is required to run the acoustic field locally.</noscript>
-  <script type="module" src="./app.mjs?v=3"></script>
+  <script type="module" src="./app.mjs?v=4"></script>
 </body>
 </html>

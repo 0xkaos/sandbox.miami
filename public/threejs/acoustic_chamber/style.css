@@ -44,8 +44,6 @@ footer { position: fixed; z-index: 3; bottom: 24px; left: 30px; right: 28px; dis
 .particle-key span { display: flex; align-items: center; gap: 6px; }
 .particle-key i { width: 5px; height: 5px; border-radius: 50%; }
 .navigation { margin-left: auto; font-size: 10px; color: var(--muted); }
-.scene-label { position: fixed; z-index: 2; pointer-events: none; font: 9px ui-monospace, monospace; color: #a1b3b7; letter-spacing: 1.5px; transform: translate(-50%, 0); white-space: nowrap; text-shadow: 0 1px 6px #000; }
-.scene-label span { display: block; margin-top: 5px; color: var(--amber); font-size: 10px; letter-spacing: 0; }
 #notice { position: fixed; z-index: 6; top: 85px; left: 30px; max-width: min(420px, calc(100% - 60px)); color: var(--amber); background: #101b24ee; border: 1px solid var(--line); border-radius: 5px; padding: 12px 15px; font-size: 12px; line-height: 1.6; }
 #unsupported { position: fixed; z-index: 10; inset: 0; display: grid; align-content: center; justify-content: center; text-align: center; background: #090e13; padding: 30px; }
 #unsupported h2 { font-size: 24px; }#unsupported p { color: var(--muted); }#unsupported a { color: var(--cyan); }
@@ -57,5 +55,4 @@ footer { position: fixed; z-index: 3; bottom: 24px; left: 30px; right: 28px; dis
   footer { left: 16px; right: 16px; bottom: 16px; gap: 10px; }
   .legend { margin-left: auto; gap: 8px; }.legend span { font-size: 0; }.legend i { width: 6px; height: 6px; }
   .navigation { display: none; }#notice { top: 72px; left: 18px; }
-  .scene-label { font-size: 8px; }
 }

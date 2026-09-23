@@ -22,7 +22,7 @@ export function configure(input = {}) {
     c.reflection = numeric(c.reflection, 0.38, 0, 1);
     c.opening = Boolean(c.opening);
     c.openingSize = numeric(c.openingSize, 1.4, 0.15, Math.min(c.height * (c.shape === 'taper' ? 0.58 : 0.92), c.depth * 0.92));
-    c.count = Math.round(numeric(c.count, 48000, 1000, 120000));
+    c.count = Math.round(numeric(c.count, 48000, 1000, 500000));
     c.layers = c.layers === 'nodes' ? 'nodes' : 'bands';
     c.mobility = numeric(c.mobility, 1, 0, 3);
     c.drive = c.drive === 'burst' ? 'burst' : 'continuous';
