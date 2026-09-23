@@ -1,5 +1,12 @@
 [
   {
+    "path": "/threejs/acoustic_chamber/",
+    "title": "Resonant Chamber — Spatial Cymatics",
+    "description": "A three-dimensional acoustic chamber: reflected pressure waves, an adjustable outlet, and particles gathering at interference nodes.",
+    "category": "threejs",
+    "createdAt": "2026-09-23T03:26:37.449Z"
+  },
+  {
     "path": "/threejs/gaze_lab/",
     "title": "Gaze Field — Webcam Eye Tracking",
     "description": "Webcam gaze tracking with guided calibration, live gaze trails, and an independent accuracy check.",

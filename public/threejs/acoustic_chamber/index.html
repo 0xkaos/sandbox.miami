@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090e13">
+  <meta name="description" content="A three-dimensional acoustic chamber: reflected pressure waves, an adjustable outlet, and particles gathering at interference nodes.">
+  <title>Resonant Chamber — Spatial Cymatics</title>
+  <link rel="stylesheet" href="./style.css?v=1">
+  <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+</head>
+<body>
+  <div id="scene" aria-label="Interactive three-dimensional acoustic chamber"></div>
+  <header><a href="/" aria-label="Back to Sandbox Miami">← Sandbox Miami</a><h1>Resonant <span>Chamber</span></h1><button id="panelToggle" aria-controls="panel" aria-expanded="true">Hide controls</button></header>
+  <div class="scene-label" id="sourceLabel">HORN <span>240 Hz</span></div>
+  <div class="scene-label" id="portLabel">CLOSED WALL</div>
+  <div id="notice" role="status">Building the acoustic field…</div>
+  <aside id="panel" aria-label="Chamber controls">
+    <div class="panel-intro"><p class="eyebrow">Spatial cymatics</p><p>Sound fills the chamber.<br>Particles find the quiet spaces.</p></div>
+    <section>
+      <h2>Chamber</h2>
+      <label for="shape">Shape</label><select id="shape"><option value="box">Rectangular</option><option value="cylinder">Elliptical cylinder</option><option value="taper">Tapered chamber</option></select>
+      <label for="length">Length <output id="lengthValue">3.6 m</output></label><input id="length" type="range" min="1.6" max="6" step="0.1" value="3.6">
+      <label for="height">Height <output id="heightValue">2.2 m</output></label><input id="height" type="range" min="0.8" max="4" step="0.1" value="2.2">
+      <label for="depth">Depth <output id="depthValue">2.6 m</output></label><input id="depth" type="range" min="0.8" max="4" step="0.1" value="2.6">
+      <label for="reflection">Wall return <output id="reflectionValue">38%</output></label><input id="reflection" type="range" min="0" max="90" step="1" value="38">
+      <p class="hint" id="decayHint">About 14% pressure amplitude after two reflections.</p>
+    </section>
+    <section>
+      <h2>Horn</h2>
+      <label for="frequency">Frequency <output id="frequencyValue">240 Hz</output></label><input id="frequency" type="range" min="40" max="420" step="1" value="240">
+      <p class="hint" id="wavelength">Wavelength 1.43 m</p>
+      <label for="amplitude">Amplitude <output id="amplitudeValue">100%</output></label><input id="amplitude" type="range" min="0" max="200" step="5" value="100">
+      <label for="drive">Excitation</label><select id="drive"><option value="continuous">Continuous tone</option><option value="burst">Three-cycle burst</option></select>
+      <button id="burst" class="wide">Send a burst</button>
+    </section>
+    <section>
+      <h2>Opposite wall</h2>
+      <label class="check"><input id="opening" type="checkbox"> Open the outlet</label>
+      <label for="openingSize">Opening diameter <output id="openingSizeValue">1.40 m</output></label><input id="openingSize" type="range" min="0.15" max="2" step="0.05" value="1.4" disabled>
+      <p class="hint">An open outlet lets sound escape and changes the returning waves.</p>
+    </section>
+    <section>
+      <h2>Particles</h2>
+      <label for="count">Count <output id="countValue">12,000</output></label><input id="count" type="range" min="1000" max="30000" step="1000" value="12000">
+      <label for="mobility">Response <output id="mobilityValue">100%</output></label><input id="mobility" type="range" min="0" max="300" step="10" value="100">
+      <button id="reseed" class="wide">Redistribute particles</button>
+    </section>
+    <section>
+      <h2>View</h2>
+      <label for="display">Field display</label><select id="display"><option value="volume">Waves + particles</option><option value="particles">Particles only</option><option value="slice">Pressure section + particles</option></select>
+      <label for="opacity">Wave visibility <output id="opacityValue">40%</output></label><input id="opacity" type="range" min="0" max="100" step="5" value="40">
+      <label for="slow">Slow motion</label><select id="slow"><option value="200">200× slower</option><option value="100" selected>100× slower</option><option value="50">50× slower</option></select>
+      <label for="resolution">Field detail</label><select id="resolution"><option value="32">Light</option><option value="40" selected>Standard</option><option value="56">Fine</option></select>
+      <p class="hint" id="resolutionHint">Frequency range follows the chamber size and field detail.</p>
+      <button id="resetView" class="wide">Reset view</button>
+    </section>
+    <details><summary>About this model</summary><p>A 3D wave equation carries pressure through the chamber, reflects it from lossy walls, and lets it spread through the outlet into an absorbing exterior region. Blue is rarefaction; amber is compression.</p><p>Particles drift toward minima of time-averaged pressure energy. These are quiet pressure nodes, not permanently low-density air. Their motion is exaggerated so patterns develop in seconds.</p><p>This is a qualitative acoustic study, not a calibrated loudspeaker design tool. It omits gravity, particle collisions, elastic walls, and the full acoustic radiation force. Dimensions and frequencies are physical; pressure and particle response use relative units.</p><p>The waves run in slow motion. Burst mode makes the first arrival, reflections, and decay easier to see. Particle redistribution is useful when comparing configurations.</p></details>
+  </aside>
+  <footer><div class="transport"><button id="pause" aria-pressed="false">Pause</button><button id="clear">Restart field</button></div><div class="legend"><span><i class="negative"></i>Rarefaction</span><span><i class="positive"></i>Compression</span><span><i class="particle"></i>Particles</span></div><span class="navigation">Drag to orbit · Scroll to zoom</span></footer>
+  <div id="unsupported" hidden><h2>This sketch needs WebGL 2.</h2><p>Try a browser with hardware acceleration enabled.</p><a href="/">Back to the sketches</a></div>
+  <noscript>JavaScript is required to run the acoustic field locally.</noscript>
+  <script type="module" src="./app.mjs?v=1"></script>
+</body>
+</html>
