@@ -19,7 +19,7 @@ export function configure(input = {}) {
     c.depth = numeric(c.depth, 2.6, 0.8, 4);
     c.resolution = [32, 40, 56].includes(Number(c.resolution)) ? Number(c.resolution) : 40;
     c.amplitude = numeric(c.amplitude, 1, 0, 2);
-    c.reflection = numeric(c.reflection, 0.38, 0, 0.9);
+    c.reflection = numeric(c.reflection, 0.38, 0, 1);
     c.opening = Boolean(c.opening);
     c.openingSize = numeric(c.openingSize, 1.4, 0.15, Math.min(c.height * (c.shape === 'taper' ? 0.58 : 0.92), c.depth * 0.92));
     c.count = Math.round(numeric(c.count, 48000, 1000, 120000));
@@ -111,6 +111,7 @@ export class WaveChamber {
     position(x, y, z) { return [this.min[0] + (x + 0.5) * this.config.cell, this.min[1] + (y + 0.5) * this.config.cell, this.min[2] + (z + 0.5) * this.config.cell]; }
     updateDamping() {
         // A locally reacting wall: admittance beta=(1-R)/(1+R).
+        // R=1 gives beta=0: perfectly reflecting walls, with bulk loss retained.
         // Pressure damping is centered in time, keeping loss passive and stable.
         const beta = (1 - this.config.reflection) / (1 + this.config.reflection);
         for (const i of this.active) {

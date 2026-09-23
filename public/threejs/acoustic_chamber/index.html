@@ -23,8 +23,8 @@
       <label for="length">Length <output id="lengthValue">3.6 m</output></label><input id="length" type="range" min="1.6" max="6" step="0.1" value="3.6">
       <label for="height">Height <output id="heightValue">2.2 m</output></label><input id="height" type="range" min="0.8" max="4" step="0.1" value="2.2">
       <label for="depth">Depth <output id="depthValue">2.6 m</output></label><input id="depth" type="range" min="0.8" max="4" step="0.1" value="2.6">
-      <label for="reflection">Wall return <output id="reflectionValue">38%</output></label><input id="reflection" type="range" min="0" max="90" step="1" value="38">
-      <p class="hint" id="decayHint">About 14% pressure amplitude after two reflections.</p>
+      <label for="reflection">Wall return <output id="reflectionValue">38%</output></label><input id="reflection" type="range" min="0" max="100" step="0.1" value="38">
+      <p class="hint" id="decayHint">About 14.4% pressure amplitude after two head-on reflections, before loss in the medium.</p>
     </section>
     <section>
       <h2>Horn</h2>
@@ -64,6 +64,6 @@
   <footer><div class="transport"><button id="pause" aria-pressed="false">Pause</button><button id="clear">Restart field</button></div><div class="legend"><span><i class="negative"></i>Rarefaction</span><span><i class="positive"></i>Compression</span><span title="Particle bands: pearl = quiet, cyan = low, rose = higher pressure energy"><i class="band-quiet"></i><i class="band-low"></i><i class="band-high"></i>Particle bands</span></div><span class="navigation">Drag to orbit · Scroll to zoom</span></footer>
   <div id="unsupported" hidden><h2>This sketch needs WebGL 2.</h2><p>Try a browser with hardware acceleration enabled.</p><a href="/">Back to the sketches</a></div>
   <noscript>JavaScript is required to run the acoustic field locally.</noscript>
-  <script type="module" src="./app.mjs?v=2"></script>
+  <script type="module" src="./app.mjs?v=3"></script>
 </body>
 </html>

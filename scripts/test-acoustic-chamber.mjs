@@ -60,15 +60,52 @@ test('burst ends and decays; higher wall return retains more sound', () => {
 });
 
 test('all chamber shapes remain finite under maximum drive and reflection', () => {
-    for (const shape of ['box', 'cylinder', 'taper']) {
-        const field = new WaveChamber({ resolution: 32, shape, amplitude: 2, reflection: 0.9, opening: true, frequency: 99999 });
-        field.step(800); field.updateGradient();
+    for (const shape of ['box', 'cylinder', 'taper']) for (const opening of [false, true]) {
+        const field = new WaveChamber({ resolution: 32, shape, amplitude: 2, reflection: 1, opening, frequency: 99999 });
+        assert.equal(field.config.reflection, 1);
+        field.step(2400); field.updateGradient();
         assert.ok(field.pressure.every(Number.isFinite));
-        assert.ok(maximum(field.pressure) < 15, `${shape}: pressure stays bounded`);
+        // Continuous resonant forcing may physically increase amplitude over time.
+        // A magnitude cap would hide that behavior instead of checking stability.
         assert.ok(field.meanEnergy > 0);
         assert.ok(field.meanSquare.every(value => Number.isFinite(value) && value >= 0));
         assert.ok(field.gradient.every(axis => axis.every(Number.isFinite)));
     }
+});
+
+test('100% walls retain a burst much longer while the medium still dissipates energy', () => {
+    const fields = [0.9, 0.99, 1].map(reflection => new WaveChamber({ resolution: 32, reflection, drive: 'burst' }));
+    const initial = fields.map(field => { field.step(150); return field.energy(); });
+    fields.forEach(field => field.step(1800));
+    const late = fields.map(field => field.energy());
+    assert.ok(late[2] > late[1] * 3);
+    assert.ok(late[1] > late[0] * 100);
+    assert.ok(late[2] > initial[2] * 0.25, 'the burst persists after many reflections');
+    assert.ok(late[2] < initial[2] * 0.8, '100% wall return retains the existing bulk loss');
+    const hard = fields[2];
+    const damping = hard.damping[hard.interior[0]];
+    assert.ok(damping > 0);
+    assert.ok(hard.interior.every(i => hard.damping[i] === damping), 'wall cells add no loss at 100%');
+    hard.tune({ reflection: 0.995 });
+    assert.equal(hard.config.reflection, 0.995);
+    assert.ok(hard.interior.some(i => hard.wallFaces[i] && hard.damping[i] > damping), 'live tuning restores wall loss');
+});
+
+test('continuous forcing at a closed-chamber resonance stays finite at 100% wall return', () => {
+    const field = new WaveChamber({ resolution: 32, reflection: 1, amplitude: 2 });
+    // The first axial eigenfrequency of this discrete Neumann grid.
+    const frequency = Math.asin(COURANT * Math.sin(Math.PI / (2 * field.interiorX))) / (Math.PI * field.dt);
+    field.tune({ frequency });
+    field.step(500);
+    const early = field.energy();
+    field.step(7500); field.updateGradient();
+    assert.ok(field.pressure.every(Number.isFinite));
+    assert.ok(field.energy() > early, 'resonant input can accumulate instead of being clamped');
+    assert.ok(Number.isFinite(field.meanEnergy));
+    const particles = new ParticleCloud(field, 1200);
+    particles.advance(0.05);
+    assert.ok(particles.positions.every(Number.isFinite));
+    assert.ok(particles.velocities.every(Number.isFinite));
 });
 
 test('geometry and frequency produce different fields', () => {

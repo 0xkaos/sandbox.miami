@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
-import { DEFAULTS, configure, SOUND_SPEED } from './physics.mjs?v=2';
+import { DEFAULTS, configure, SOUND_SPEED } from './physics.mjs?v=3';
 import { volumeVertex, volumeFragment, sliceFragment, particleVertex, particleFragment } from './field-shaders.mjs?v=2';
 
 const $ = id => document.getElementById(id);
@@ -38,7 +38,7 @@ function boot() {
     let generation = 0, ready = false, inFlight = false, refreshPending = false, paused = false, acousticTime = 0;
     let lastSubmit = performance.now(), pendingRebuild, pendingCount, loadTimeout;
     let panelHidden = innerWidth < 760, sourcePulseTime = 0;
-    const worker = new Worker(new URL('./simulation.mjs?v=2', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./simulation.mjs?v=3', import.meta.url), { type: 'module' });
 
     function fail(message) {
         ready = false; inFlight = false;
@@ -74,7 +74,10 @@ function boot() {
         $('frequency').max = config.maxFrequency;
         $('frequency').value = config.frequency;
         $('wavelength').textContent = `Wavelength ${(SOUND_SPEED / config.frequency).toFixed(2)} m`;
-        $('decayHint').textContent = `About ${Math.round(config.reflection ** 2 * 100)}% pressure amplitude after two reflections.`;
+        const retained = Number((config.reflection ** 2 * 100).toFixed(1));
+        $('decayHint').textContent = config.reflection === 1
+            ? `Perfectly reflecting walls. Gentle loss in the medium still applies.${config.opening ? ' Sound also escapes through the outlet.' : ''}`
+            : `About ${retained}% pressure amplitude after two head-on reflections, before loss in the medium.`;
         $('resolutionHint').textContent = `Up to ${config.maxFrequency} Hz at this size and detail. Higher detail resolves shorter wavelengths.`;
         $('sourceLabel').replaceChildren(document.createTextNode('HORN'));
         const frequency = document.createElement('span'); frequency.textContent = `${Math.round(config.frequency)} Hz`; $('sourceLabel').append(frequency);
