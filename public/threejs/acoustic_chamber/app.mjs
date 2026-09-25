@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
-import { DEFAULTS, configure, SOUND_SPEED } from './physics.mjs?v=4';
+import { DEFAULTS, configure, SOUND_SPEED } from './physics.mjs?v=5';
 import { volumeVertex, volumeFragment, sliceFragment, particleVertex, particleFragment } from './field-shaders.mjs?v=2';
 
 const $ = id => document.getElementById(id);
@@ -33,7 +33,7 @@ function boot() {
     let generation = 0, ready = false, inFlight = false, refreshPending = false, paused = false;
     let lastSubmit = performance.now(), pendingRebuild, pendingCount, loadTimeout;
     let panelHidden = innerWidth < 760;
-    const worker = new Worker(new URL('./simulation.mjs?v=4', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./simulation.mjs?v=5', import.meta.url), { type: 'module' });
 
     function fail(message) {
         ready = false; inFlight = false;
@@ -45,6 +45,8 @@ function boot() {
     function readControls() {
         return configure({ shape: $('shape').value, length: +$('length').value, height: +$('height').value, depth: +$('depth').value,
             frequency: +$('frequency').value, amplitude: +$('amplitude').value / 100, reflection: +$('reflection').value / 100,
+            harmonics: $('harmonics').checked, harmonic2: +$('harmonic2').value / 100,
+            harmonic3: +$('harmonic3').value / 100, harmonic4: +$('harmonic4').value / 100,
             opening: $('opening').checked, openingSize: +$('openingSize').value, count: +$('count').value, layers: $('layers').value,
             mobility: +$('mobility').value / 100, drive: $('drive').value, resolution: +$('resolution').value,
             slow: +$('slow').value, seed: config.seed });
@@ -53,6 +55,14 @@ function boot() {
     function updateLabels() {
         for (const id of ['length', 'height', 'depth']) $(`${id}Value`).textContent = `${Number($(id).value).toFixed(1)} m`;
         $('frequencyValue').textContent = `${Math.round(config.frequency)} Hz`;
+        $('frequencyLabel').textContent = config.harmonics ? 'Fundamental' : 'Frequency';
+        $('harmonicControls').hidden = !config.harmonics;
+        for (let n = 2; n <= 4; n++) {
+            $(`harmonic${n}Frequency`).textContent = `${n}× · ${Math.round(config.frequency * n)} Hz`;
+            $(`harmonic${n}Value`).textContent = `${$(`harmonic${n}`).value}%`;
+        }
+        const frequencies = config.partials.map(partial => Math.round(partial.multiple * config.frequency));
+        $('harmonicHint').textContent = `Active: ${frequencies.join(' + ')} Hz. Fundamental limited to ${config.maxFundamental} Hz so every enabled harmonic fits.`;
         $('amplitudeValue').textContent = `${$('amplitude').value}%`;
         $('reflectionValue').textContent = `${$('reflection').value}%`;
         $('mobilityValue').textContent = `${$('mobility').value}%`;
@@ -66,7 +76,7 @@ function boot() {
         $('openingSize').disabled = !config.opening;
         $('openingSize').max = Math.min(config.height * (config.shape === 'taper' ? 0.58 : 0.92), config.depth * 0.92).toFixed(2);
         $('openingSize').value = config.openingSize;
-        $('frequency').max = config.maxFrequency;
+        $('frequency').max = config.maxFundamental;
         $('frequency').value = config.frequency;
         $('wavelength').textContent = `Wavelength ${(SOUND_SPEED / config.frequency).toFixed(2)} m`;
         const retained = Number((config.reflection ** 2 * 100).toFixed(1));
@@ -271,6 +281,7 @@ function boot() {
     function tune() {
         config = readControls(); updateLabels();
         worker.postMessage({ type: 'tune', generation, changes: { frequency: config.frequency, amplitude: config.amplitude,
+            harmonics: config.harmonics, harmonic2: config.harmonic2, harmonic3: config.harmonic3, harmonic4: config.harmonic4,
             reflection: config.reflection, mobility: config.mobility, drive: config.drive, slow: config.slow, layers: config.layers } });
     }
     for (const id of ['length', 'height', 'depth', 'openingSize']) $(id).addEventListener('input', () => {
@@ -278,7 +289,8 @@ function boot() {
         clearTimeout(pendingRebuild); pendingRebuild = setTimeout(rebuild, 180);
     });
     for (const id of ['shape', 'opening', 'resolution']) $(id).addEventListener('change', rebuild);
-    for (const id of ['frequency', 'amplitude', 'reflection', 'mobility', 'slow']) $(id).addEventListener('input', tune);
+    for (const id of ['frequency', 'amplitude', 'reflection', 'mobility', 'slow', 'harmonic2', 'harmonic3', 'harmonic4']) $(id).addEventListener('input', tune);
+    $('harmonics').addEventListener('change', tune);
     $('drive').addEventListener('change', () => { tune(); if (config.drive === 'burst') sendBurst(); });
     function sendBurst() {
         $('drive').value = 'burst'; config.drive = 'burst';

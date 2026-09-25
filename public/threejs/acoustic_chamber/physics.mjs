@@ -2,6 +2,7 @@ export const SOUND_SPEED = 343;
 export const COURANT = 0.48; // Below the 3D six-neighbor limit, 1 / sqrt(3).
 export const DEFAULTS = Object.freeze({ shape: 'box', length: 3.6, height: 2.2, depth: 2.6,
     resolution: 40, frequency: 240, amplitude: 1, reflection: 0.38, opening: false,
+    harmonics: false, harmonic2: 0.5, harmonic3: 0.3, harmonic4: 0.15,
     openingSize: 1.4, count: 48000, layers: 'bands', mobility: 1, drive: 'continuous', slow: 100, seed: 1847 });
 export const PARTICLE_BANDS = Object.freeze([
     { energy: 0, color: [244, 229, 196] },
@@ -30,7 +31,13 @@ export function configure(input = {}) {
     c.seed = Number(c.seed) >>> 0;
     c.cell = Math.max(c.length, c.height, c.depth) / c.resolution;
     c.maxFrequency = Math.floor(SOUND_SPEED / (c.cell * 9));
-    c.frequency = numeric(c.frequency, 240, 40, c.maxFrequency);
+    c.harmonics = Boolean(c.harmonics);
+    for (let n = 2; n <= 4; n++) c[`harmonic${n}`] = numeric(c[`harmonic${n}`], DEFAULTS[`harmonic${n}`], 0, 1);
+    const levels = c.harmonics ? [1, c.harmonic2, c.harmonic3, c.harmonic4] : [1];
+    const total = levels.reduce((sum, level) => sum + level, 0);
+    c.partials = levels.map((level, index) => ({ multiple: index + 1, gain: level / total })).filter(partial => partial.gain > 0);
+    c.maxFundamental = Math.floor(c.maxFrequency / c.partials.at(-1).multiple);
+    c.frequency = numeric(c.frequency, 240, 40, c.maxFundamental);
     return c;
 }
 
@@ -132,19 +139,25 @@ export class WaveChamber {
     burst() { this.config.drive = 'burst'; this.burstStart = this.time; }
     sourceSignal() {
         const c = this.config, omega = 2 * Math.PI * c.frequency;
-        let envelope, derivative;
+        let envelope, derivative, phase = this.phase;
         if (c.drive === 'burst') {
             const age = this.time - this.burstStart, duration = 3 / c.frequency;
             if (age < 0 || age >= duration) return 0;
             envelope = Math.sin(Math.PI * age / duration) ** 2;
             derivative = Math.PI / duration * Math.sin(2 * Math.PI * age / duration);
-            const phase = omega * age;
-            return c.amplitude * COURANT * this.dt * (derivative * Math.sin(phase) + envelope * omega * Math.cos(phase));
+            phase = omega * age;
+        } else {
+            const ramp = 2 / c.frequency;
+            envelope = 1 - Math.exp(-((this.time / ramp) ** 2));
+            derivative = 2 * this.time / (ramp * ramp) * Math.exp(-((this.time / ramp) ** 2));
         }
-        const ramp = 2 / c.frequency;
-        envelope = 1 - Math.exp(-((this.time / ramp) ** 2));
-        derivative = 2 * this.time / (ramp * ramp) * Math.exp(-((this.time / ramp) ** 2));
-        return c.amplitude * COURANT * this.dt * (derivative * Math.sin(this.phase) + envelope * omega * Math.cos(this.phase));
+        // Mix the velocity-source derivatives once per step. All partials share
+        // the existing field, so the grid and particle workload do not multiply.
+        let signal = 0;
+        for (const { multiple, gain } of c.partials) {
+            signal += gain * (derivative * Math.sin(multiple * phase) + envelope * multiple * omega * Math.cos(multiple * phase));
+        }
+        return c.amplitude * COURANT * this.dt * signal;
     }
     step(count = 1) {
         const lambda2 = COURANT * COURANT, alpha = 1 - Math.exp(-this.dt * this.config.frequency / 2);

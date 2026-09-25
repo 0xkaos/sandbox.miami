@@ -194,3 +194,60 @@ test('quiet-node mode changes colors with local energy and preserves positions w
         assert.deepEqual([...cloud.colors.subarray(0, 3)], PARTICLE_BANDS[band].color);
     }
 });
+
+test('every active harmonic stays inside the grid frequency limit', () => {
+    for (const length of [1.6, 3.6, 6]) for (const resolution of [32, 40, 56]) {
+        const c = configure({ length, resolution, frequency: 99999, harmonics: true });
+        assert.equal(c.partials.length, 4);
+        assert.ok(Math.abs(c.partials.reduce((sum, partial) => sum + partial.gain, 0) - 1) < 1e-12);
+        for (const partial of c.partials) assert.ok(SOUND_SPEED / (partial.multiple * c.frequency) >= c.cell * 9);
+    }
+    const two = configure({ frequency: 99999, harmonics: true, harmonic3: 0, harmonic4: 0 });
+    assert.deepEqual(two.partials.map(partial => partial.multiple), [1, 2]);
+    assert.equal(two.maxFundamental, Math.floor(two.maxFrequency / 2));
+    const one = configure({ frequency: 240, harmonics: true, harmonic2: 0, harmonic3: 0, harmonic4: 0 });
+    assert.equal(one.frequency, 240);
+    assert.equal(one.maxFundamental, one.maxFrequency);
+});
+
+test('muting every overtone exactly preserves the single-tone field', () => {
+    for (const drive of ['continuous', 'burst']) {
+        const single = new WaveChamber({ resolution: 32, frequency: 100, drive });
+        const muted = new WaveChamber({ resolution: 32, frequency: 100, drive, harmonics: true, harmonic2: 0, harmonic3: 0, harmonic4: 0 });
+        single.step(350); muted.step(350);
+        assert.deepEqual(muted.pressure, single.pressure);
+        assert.deepEqual(muted.meanSquare, single.meanSquare);
+    }
+});
+
+test('the mixed wave field equals the sum of independently driven harmonic fields', () => {
+    const fundamental = 80, levels = [1, 0.5, 0.3, 0.15], total = levels.reduce((sum, level) => sum + level, 0);
+    const mixed = new WaveChamber({ resolution: 32, frequency: fundamental, harmonics: true });
+    const separate = levels.map((level, i) => new WaveChamber({ resolution: 32, frequency: fundamental * (i + 1), amplitude: level / total }));
+    // Begin after the source ramp, so all independent single-tone references have
+    // the same envelope. Pressure is linear; time-averaged energy is not.
+    for (const field of [mixed, ...separate]) { field.time = 1; field.step(300); }
+    let error = 0, reference = 0;
+    for (const i of mixed.active) {
+        const expected = separate.reduce((sum, field) => sum + field.pressure[i], 0);
+        error += (mixed.pressure[i] - expected) ** 2;
+        reference += expected ** 2;
+    }
+    assert.ok(Math.sqrt(error / reference) < 0.00001, 'all four frequencies propagate through the same linear field');
+    assert.equal(mixed.size, separate[0].size, 'harmonics allocate no additional grid cells');
+    const pressure = mixed.pressure, time = mixed.time;
+    mixed.tune({ harmonics: false });
+    assert.equal(mixed.pressure, pressure);
+    assert.equal(mixed.time, time, 'live mode changes preserve the running field');
+});
+
+test('a harmonic burst ends after three fundamental cycles and decays', () => {
+    const field = new WaveChamber({ resolution: 32, frequency: 80, drive: 'burst', harmonics: true, harmonic2: 1, harmonic3: 1, harmonic4: 1 });
+    field.step(Math.ceil(3 / (field.config.frequency * field.dt)) + 1);
+    const initial = field.energy();
+    assert.ok(initial > 0.1);
+    assert.equal(field.sourceSignal(), 0);
+    field.step(1000);
+    assert.ok(field.pressure.every(Number.isFinite));
+    assert.ok(field.energy() < initial * 0.001);
+});

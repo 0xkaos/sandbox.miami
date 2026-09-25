@@ -27,8 +27,16 @@
     <section>
       <h2>Horn</h2>
       <label class="check"><input id="showHorn" type="checkbox" checked> Show horn wireframe</label>
-      <label for="frequency">Frequency <output id="frequencyValue">240 Hz</output></label><input id="frequency" type="range" min="40" max="420" step="1" value="240">
+      <label for="frequency"><span id="frequencyLabel">Frequency</span> <output id="frequencyValue">240 Hz</output></label><input id="frequency" type="range" min="40" max="420" step="1" value="240">
       <p class="hint" id="wavelength">Wavelength 1.43 m</p>
+      <label class="check"><input id="harmonics" type="checkbox" aria-controls="harmonicControls"> Multiple frequencies</label>
+      <div id="harmonicControls" hidden>
+        <label for="harmonic2"><span id="harmonic2Frequency">2×</span><output id="harmonic2Value">50%</output></label><input id="harmonic2" type="range" min="0" max="100" step="5" value="50">
+        <label for="harmonic3"><span id="harmonic3Frequency">3×</span><output id="harmonic3Value">30%</output></label><input id="harmonic3" type="range" min="0" max="100" step="5" value="30">
+        <label for="harmonic4"><span id="harmonic4Frequency">4×</span><output id="harmonic4Value">15%</output></label><input id="harmonic4" type="range" min="0" max="100" step="5" value="15">
+        <p class="hint">Overtone levels are relative to the fundamental. The combined drive is normalized; 0% removes a tone.</p>
+        <p class="hint" id="harmonicHint"></p>
+      </div>
       <label for="amplitude">Amplitude <output id="amplitudeValue">100%</output></label><input id="amplitude" type="range" min="0" max="200" step="5" value="100">
       <label for="drive">Excitation</label><select id="drive"><option value="continuous">Continuous tone</option><option value="burst">Three-cycle burst</option></select>
       <button id="burst" class="wide">Send a burst</button>
@@ -63,6 +71,6 @@
   <footer><div class="transport"><button id="pause" aria-pressed="false">Pause</button><button id="clear">Restart field</button></div><div class="legend"><span><i class="negative"></i>Rarefaction</span><span><i class="positive"></i>Compression</span><span title="Particle bands: pearl = quiet, cyan = low, rose = higher pressure energy"><i class="band-quiet"></i><i class="band-low"></i><i class="band-high"></i>Particle bands</span></div><span class="navigation">Drag to orbit · Scroll to zoom</span></footer>
   <div id="unsupported" hidden><h2>This sketch needs WebGL 2.</h2><p>Try a browser with hardware acceleration enabled.</p><a href="/">Back to the sketches</a></div>
   <noscript>JavaScript is required to run the acoustic field locally.</noscript>
-  <script type="module" src="./app.mjs?v=4"></script>
+  <script type="module" src="./app.mjs?v=5"></script>
 </body>
 </html>
