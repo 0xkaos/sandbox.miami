@@ -2,7 +2,9 @@ export const vertexShader = `
 out vec3 vWorld;
 void main() { vWorld = (modelMatrix * vec4(position,1.)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vWorld,1.); }
 `;
-export const fragmentShader = `
+export function createMistFragment(steps = 176) {
+    const samples = Number.isFinite(steps) ? Math.max(64, Math.min(256, Math.round(steps))) : 176;
+    return `
 precision highp float;
 precision highp sampler3D;
 uniform sampler3D uField;
@@ -19,9 +21,9 @@ void main() {
     vec3 lo = min(t0,t1), hi = max(t0,t1);
     float nearT = max(0.,max(lo.x,max(lo.y,lo.z))), farT = min(hi.x,min(hi.y,hi.z));
     if (farT<=nearT) discard;
-    float stepSize = (farT-nearT)/176.;
+    float stepSize = (farT-nearT)/${samples}.;
     vec4 accumulated = vec4(0.);
-    for (int i=0; i<176; i++) {
+    for (int i=0; i<${samples}; i++) {
         vec3 p = uEye + rd*(nearT+(float(i)+.5)*stepSize);
         if (uCutAxis>=0 && p[uCutAxis]>uCut) continue;
         vec2 sampleValue = texture(uField,(p-uMin)/(uMax-uMin)).rg;
@@ -43,3 +45,5 @@ void main() {
     outColor = linearToOutputTexel(outColor);
 }
 `;
+}
+export const fragmentShader = createMistFragment();

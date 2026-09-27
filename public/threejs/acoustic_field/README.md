@@ -2,6 +2,8 @@
 
 Open `/threejs/acoustic_field/`. The example is a real captured harmonic field, so no live simulation or cloud connection is needed to explore the renderer. Three.js and OrbitControls are reused from the chamber's local vendor directory; see its [dependency notices](../acoustic_chamber/THIRD_PARTY.md).
 
+For an evolving mist field without particles, open [Living Mist](../acoustic_mist/README.md) at `/threejs/acoustic_mist/`. Its captures open here with the mist view and camera preserved.
+
 ## Capture and render
 
 In **Resonant Chamber**, give a field an optional name and choose **Capture & render**. The simulation pauses, copies the full-precision field inside its worker, saves it in IndexedDB, and opens Field Studio. The renderer uses the averaged squared-pressure field, not the display's quantized texture or a reconstruction from particle positions.

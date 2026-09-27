@@ -1,0 +1,4 @@
+@import url('../acoustic_field/style.css?v=1');
+#panel > section:first-child { padding-top: 0; }
+#capture { color: var(--cyan); }
+@media (max-width: 760px) { footer .transport { gap: 5px; } }

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090e13">
+  <meta name="description" content="Live acoustic interference rendered as three soft, colored energy shells. Shape the chamber, mix harmonics, and watch the mist evolve.">
+  <title>Living Mist — Acoustic Interference</title>
+  <link rel="stylesheet" href="./style.css?v=1">
+  <script type="importmap">{"imports":{"three":"../acoustic_chamber/vendor/three.module.js"}}</script>
+</head>
+<body>
+  <div id="scene" aria-label="Live three-dimensional acoustic energy mist"></div>
+  <header><a href="/" aria-label="Back to Sandbox Miami">← Sandbox Miami</a><h1>Living <span>Mist</span></h1><button id="panelToggle" aria-controls="panel" aria-expanded="true">Hide controls</button></header>
+  <div id="notice" role="status">Starting the wave field…</div>
+  <aside id="panel" aria-label="Live mist controls">
+    <section>
+      <h2>Sound</h2>
+      <label for="frequency"><span id="frequencyLabel">Fundamental</span><output id="frequencyValue"></output></label><input id="frequency" type="range" min="40" max="148" step="1" value="138">
+      <label for="amplitude">Amplitude <output id="amplitudeValue"></output></label><input id="amplitude" type="range" min="0" max="200" step="5" value="100">
+      <label class="check"><input id="harmonics" type="checkbox" checked aria-controls="harmonicControls"> Multiple frequencies</label>
+      <div id="harmonicControls">
+        <label for="harmonic2"><span id="harmonic2Frequency">2×</span><output id="harmonic2Value"></output></label><input id="harmonic2" type="range" min="0" max="100" step="5" value="50">
+        <label for="harmonic3"><span id="harmonic3Frequency">3×</span><output id="harmonic3Value"></output></label><input id="harmonic3" type="range" min="0" max="100" step="5" value="30">
+        <label for="harmonic4"><span id="harmonic4Frequency">4×</span><output id="harmonic4Value"></output></label><input id="harmonic4" type="range" min="0" max="100" step="5" value="15">
+      </div>
+      <p class="hint" id="frequencyHint"></p>
+      <label for="drive">Excitation</label><select id="drive"><option value="continuous">Continuous tone</option><option value="burst">Three-cycle burst</option></select>
+      <button id="burst" class="wide">Send a burst</button>
+    </section>
+    <section>
+      <h2>Mist</h2>
+      <label for="bandWidth">Band softness <output id="bandWidthValue"></output></label><input id="bandWidth" type="range" min="0.01" max="0.3" step="0.005" value="0.045">
+      <label for="density">Density <output id="densityValue"></output></label><input id="density" type="range" min="0.2" max="10" step="0.1" value="2.5">
+      <label for="opacity">Opacity <output id="opacityValue"></output></label><input id="opacity" type="range" min="0.05" max="1" step="0.05" value="0.85">
+      <label for="smoothing">Field smoothing <output id="smoothingValue"></output></label><input id="smoothing" type="range" min="0" max="4" step="1" value="1">
+      <label for="quality">Render quality</label><select id="quality"><option value="light">Light</option><option value="balanced" selected>Balanced</option><option value="fine">Fine</option></select>
+      <p class="hint">Mist fades as the field loses energy. Rendering quality affects appearance; field detail below controls the simulation.</p>
+    </section>
+    <section>
+      <h2>Energy layers</h2>
+      <div class="layer-heading"><label class="check"><input id="enabled0" type="checkbox" checked> Pearl</label><input id="color0" type="color" value="#f4e5c4" aria-label="Pearl layer color"></div>
+      <label for="level0">Energy <output id="level0Value"></output></label><input id="level0" type="range" min="0.01" max="3" step="0.01" value="0.06">
+      <div class="layer-heading"><label class="check"><input id="enabled1" type="checkbox" checked> Cyan</label><input id="color1" type="color" value="#51cceb" aria-label="Cyan layer color"></div>
+      <label for="level1">Energy <output id="level1Value"></output></label><input id="level1" type="range" min="0.01" max="3" step="0.01" value="0.18">
+      <div class="layer-heading"><label class="check"><input id="enabled2" type="checkbox" checked> Rose</label><input id="color2" type="color" value="#ee80a4" aria-label="Rose layer color"></div>
+      <label for="level2">Energy <output id="level2Value"></output></label><input id="level2" type="range" min="0.01" max="3" step="0.01" value="0.55">
+      <p class="hint">Each layer follows a level relative to the chamber's mean pressure energy.</p>
+    </section>
+    <section>
+      <h2>Chamber</h2>
+      <label for="shape">Shape</label><select id="shape"><option value="box">Rectangular</option><option value="cylinder">Elliptical cylinder</option><option value="taper">Tapered chamber</option></select>
+      <label for="length">Length <output id="lengthValue"></output></label><input id="length" type="range" min="1.6" max="6" step="0.1" value="3.6">
+      <label for="height">Height <output id="heightValue"></output></label><input id="height" type="range" min="0.8" max="4" step="0.1" value="2.2">
+      <label for="depth">Depth <output id="depthValue"></output></label><input id="depth" type="range" min="0.8" max="4" step="0.1" value="2.6">
+      <label for="reflection">Wall return <output id="reflectionValue"></output></label><input id="reflection" type="range" min="0" max="100" step="0.1" value="96">
+      <p class="hint" id="decayHint"></p>
+      <label class="check"><input id="opening" type="checkbox"> Open the opposite outlet</label>
+      <label for="openingSize">Opening diameter <output id="openingSizeValue"></output></label><input id="openingSize" type="range" min="0.15" max="2" step="0.05" value="1.4" disabled>
+      <label for="resolution">Field detail</label><select id="resolution"><option value="32">Light</option><option value="40">Standard</option><option value="56" selected>Fine</option></select>
+      <p class="hint">Changing the shape, dimensions, outlet, or field detail restarts the waves.</p>
+    </section>
+    <section>
+      <h2>View</h2>
+      <label for="slow">Wave motion</label><select id="slow"><option value="200">200× slower</option><option value="100">100× slower</option><option value="50" selected>50× slower</option><option value="40">40× slower</option></select>
+      <label for="cutAxis">Cutaway</label><select id="cutAxis"><option value="-1">Whole field</option><option value="0">Cut along X</option><option value="1">Cut along Y</option><option value="2">Cut along Z</option></select>
+      <label for="cut">Keep <output id="cutValue"></output></label><input id="cut" type="range" min="5" max="100" step="1" value="65" disabled>
+      <label class="check"><input id="outline" type="checkbox" checked> Chamber outline</label>
+      <label class="check"><input id="showHorn" type="checkbox" checked> Horn wireframe</label>
+      <label class="check"><input id="rotate" type="checkbox"> Slow orbit</label>
+      <button id="resetView" class="wide">Reset view</button>
+    </section>
+    <section>
+      <h2>Capture a moment</h2>
+      <label for="snapshotName">Name <span>optional</span></label><input id="snapshotName" type="text" maxlength="120" placeholder="A living field">
+      <p class="hint">Capture pauses the waves and opens this view in Field Studio. Save to R2 there, or explore the same field as curves and membranes.</p>
+      <a class="studio-link" href="../acoustic_field/">Open Field Studio →</a>
+    </section>
+    <details><summary>About this model</summary><p>The chamber's three-dimensional wave equation runs continuously in a worker. Mist follows bands of time-averaged squared pressure directly, without simulating particles.</p><p>This is a live visualization with sound propagation slowed for visibility. It is silent and does not simulate audio at playback speed. The three colors describe neighboring energy levels, not permanent differences in air density.</p><p>Walls can return 0–100% of pressure amplitude. Gentle loss in the medium remains at 100%; the open outlet lets energy escape. Brightness follows field strength relative to its peak since restart, so bursts and reduced amplitude can fade.</p></details>
+  </aside>
+  <footer><div class="transport"><button id="pause" aria-pressed="false">Pause</button><button id="restart">Restart field</button><button id="capture" disabled>Capture in Studio</button></div><span id="clock" class="navigation"></span></footer>
+  <div id="unsupported" hidden><h2>This sketch needs WebGL 2.</h2><p>Try a browser with hardware acceleration enabled.</p><a href="/">Back to the sketches</a></div>
+  <noscript>JavaScript is required to run the live acoustic field.</noscript>
+  <script type="module" src="./app.mjs?v=1"></script>
+</body>
+</html>

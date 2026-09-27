@@ -1,5 +1,12 @@
 [
   {
+    "path": "/threejs/acoustic_mist/",
+    "title": "Living Mist — Acoustic Interference",
+    "description": "Live acoustic interference rendered as three soft, colored energy shells. Shape the chamber, mix harmonics, and watch the mist evolve.",
+    "category": "threejs",
+    "createdAt": "2026-09-27T06:57:10.196Z"
+  },
+  {
     "path": "/threejs/acoustic_field/",
     "title": "Field Studio — Acoustic Shells",
     "description": "Sculpt saved acoustic fields into contour curves, flowing strands, layered membranes, and luminous mist.",
