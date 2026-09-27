@@ -16,6 +16,8 @@ button:hover { background: #21343d; border-color: #6a9198; }
 button:disabled { opacity: .4; cursor: default; }
 button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
 select { width: 100%; padding: 8px 10px; }
+input[type=text] { width: 100%; color: #d6e1e4; background: #101922; border: 1px solid var(--line); border-radius: 4px; padding: 9px; font-size: 12px; }
+.studio-link { display: inline-block; margin-top: 14px; font-size: 11px; color: var(--cyan); }
 #panel { position: fixed; z-index: 4; right: 28px; top: 85px; bottom: 83px; width: 282px; padding: 20px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #354851 transparent; border: 1px solid var(--line); border-radius: 8px; background: #101922ed; backdrop-filter: blur(14px); }
 .panel-intro { padding: 0 0 15px; border-bottom: 1px solid var(--line); }
 .eyebrow { font-size: 9px; letter-spacing: 1.8px; text-transform: uppercase; color: var(--cyan); margin: 0 0 10px; }

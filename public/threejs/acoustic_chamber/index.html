@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#090e13">
   <meta name="description" content="A three-dimensional acoustic chamber: reflected pressure waves, an adjustable outlet, and particles gathering at interference nodes.">
   <title>Resonant Chamber — Spatial Cymatics</title>
-  <link rel="stylesheet" href="./style.css?v=4">
+  <link rel="stylesheet" href="./style.css?v=5">
   <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 </head>
 <body>
@@ -15,6 +15,13 @@
   <div id="notice" role="status">Building the acoustic field…</div>
   <aside id="panel" aria-label="Chamber controls">
     <div class="panel-intro"><p class="eyebrow">Spatial cymatics</p><p>Sound fills the chamber.<br>Particles find the quiet spaces.</p></div>
+    <section>
+      <h2>Capture a field</h2>
+      <label for="snapshotName">Name <span>optional</span></label><input id="snapshotName" type="text" maxlength="120" placeholder="A chamber study">
+      <button id="capture" class="wide" disabled>Capture &amp; render</button>
+      <p class="hint">Pauses here and saves the field in this browser. Explore its curves, surfaces, and mist in Field Studio, then save to R2 there.</p>
+      <a class="studio-link" href="../acoustic_field/">Open Field Studio →</a>
+    </section>
     <section>
       <h2>Chamber</h2>
       <label for="shape">Shape</label><select id="shape"><option value="box">Rectangular</option><option value="cylinder">Elliptical cylinder</option><option value="taper">Tapered chamber</option></select>
@@ -71,6 +78,6 @@
   <footer><div class="transport"><button id="pause" aria-pressed="false">Pause</button><button id="clear">Restart field</button></div><div class="legend"><span><i class="negative"></i>Rarefaction</span><span><i class="positive"></i>Compression</span><span title="Particle bands: pearl = quiet, cyan = low, rose = higher pressure energy"><i class="band-quiet"></i><i class="band-low"></i><i class="band-high"></i>Particle bands</span></div><span class="navigation">Drag to orbit · Scroll to zoom</span></footer>
   <div id="unsupported" hidden><h2>This sketch needs WebGL 2.</h2><p>Try a browser with hardware acceleration enabled.</p><a href="/">Back to the sketches</a></div>
   <noscript>JavaScript is required to run the acoustic field locally.</noscript>
-  <script type="module" src="./app.mjs?v=5"></script>
+  <script type="module" src="./app.mjs?v=6"></script>
 </body>
 </html>

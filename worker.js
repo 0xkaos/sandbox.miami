@@ -1,3 +1,5 @@
+import { handleAcousticStates } from './lib/acoustic-states.mjs';
+
 const SP500_SNAPSHOT_KEY = 'sp500-impact/latest.json';
 const SP500_HOLDINGS_KEY = 'sp500-impact/spy-holdings.json';
 const SP500_CONSTITUENTS_KEY = 'sp500-impact/sp500-constituents.json';
@@ -959,6 +961,8 @@ export class StylusSession {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname.replace(/\/$/, '') === '/api/acoustic-states') return handleAcousticStates(request, env);
 
     // API Endpoint: /api/sp500-impact/diagnostics
     if (url.pathname === '/api/sp500-impact/diagnostics') {

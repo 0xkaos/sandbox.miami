@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
 import { DEFAULTS, configure, SOUND_SPEED } from './physics.mjs?v=5';
 import { volumeVertex, volumeFragment, sliceFragment, particleVertex, particleFragment } from './field-shaders.mjs?v=2';
+import { saveLocal, downloadSnapshot } from './snapshot-store.mjs';
 
 const $ = id => document.getElementById(id);
 function notice(message = '') { $('notice').textContent = message; $('notice').hidden = !message; }
@@ -33,10 +34,11 @@ function boot() {
     let generation = 0, ready = false, inFlight = false, refreshPending = false, paused = false;
     let lastSubmit = performance.now(), pendingRebuild, pendingCount, loadTimeout;
     let panelHidden = innerWidth < 760;
-    const worker = new Worker(new URL('./simulation.mjs?v=5', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./simulation.mjs?v=6', import.meta.url), { type: 'module' });
 
     function fail(message) {
         ready = false; inFlight = false;
+        $('capture').disabled = true;
         clearTimeout(loadTimeout);
         notice(`The simulation stopped. ${message} Reload the page to try again.`);
     }
@@ -251,23 +253,24 @@ function boot() {
         worker.postMessage({ type: 'step', generation, seconds });
     }
     function rebuild() {
-        clearTimeout(pendingRebuild);
+        clearTimeout(pendingRebuild); pendingRebuild = null;
         config = readControls(); updateLabels();
         ready = false; inFlight = false; refreshPending = false; generation++;
+        $('capture').disabled = true;
         if (points) points.visible = false;
         notice('Rebuilding the chamber…');
         clearTimeout(loadTimeout);
         loadTimeout = setTimeout(() => fail('The worker did not respond.'), 15000);
         worker.postMessage({ type: 'configure', generation, config });
     }
-    worker.onmessage = ({ data }) => {
+    worker.onmessage = async ({ data }) => {
         if (data.generation !== generation) return;
         if (data.type === 'error') { fail(data.message); return; }
         if (data.type === 'ready') {
             clearTimeout(loadTimeout);
             meta = data.meta;
             buildChamber(); buildField();
-            updateLabels(); ready = true;
+            updateLabels(); ready = true; $('capture').disabled = false;
             notice(); requestFrame(0);
         } else if (data.type === 'frame') {
             inFlight = false;
@@ -275,6 +278,15 @@ function boot() {
             fieldTexture.needsUpdate = true;
             updateParticles(data.positions, data.colors);
             if (refreshPending) requestFrame(0);
+        } else if (data.type === 'snapshot') {
+            try {
+                const id = await saveLocal(data.snapshot);
+                location.href = `../acoustic_field/?local=${encodeURIComponent(id)}`;
+            } catch (error) {
+                downloadSnapshot(data.snapshot);
+                notice(`${error.message} A snapshot file has been downloaded; import it in Field Studio.`);
+                $('capture').disabled = false;
+            }
         }
     };
 
@@ -286,6 +298,7 @@ function boot() {
     }
     for (const id of ['length', 'height', 'depth', 'openingSize']) $(id).addEventListener('input', () => {
         config = readControls(); updateLabels();
+        $('capture').disabled = true;
         clearTimeout(pendingRebuild); pendingRebuild = setTimeout(rebuild, 180);
     });
     for (const id of ['shape', 'opening', 'resolution']) $(id).addEventListener('change', rebuild);
@@ -321,6 +334,13 @@ function boot() {
         $('pause').setAttribute('aria-pressed', String(paused)); lastSubmit = performance.now();
     }
     $('pause').addEventListener('click', () => { paused = !paused; updatePause(); });
+    $('capture').addEventListener('click', () => {
+        if (!ready) return;
+        paused = true; updatePause(); $('capture').disabled = true;
+        notice('Saving the field…');
+        const name = $('snapshotName').value.trim() || `${Math.round(config.frequency)} Hz · ${config.shape}`;
+        worker.postMessage({ type: 'capture', generation, name });
+    });
     $('clear').addEventListener('click', rebuild);
     window.addEventListener('resize', resize);
     document.addEventListener('visibilitychange', () => { lastSubmit = performance.now(); });

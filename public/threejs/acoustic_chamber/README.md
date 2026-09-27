@@ -1,8 +1,10 @@
 # Resonant Chamber
 
-Open `/threejs/acoustic_chamber/` for a silent, interactive study of three-dimensional acoustic interference and spatial cymatics. Everything runs locally in the browser; WebGL 2 is required. There are no external runtime requests.
+Open `/threejs/acoustic_chamber/` for a silent, interactive study of three-dimensional acoustic interference and spatial cymatics. The simulation runs locally in the browser; WebGL 2 is required.
 
 ## Exploring
+
+- **Capture & render** pauses and saves a full-precision field in this browser, then opens [Field Studio](../acoustic_field/README.md). The studio offers contour curves, strands along shells, surface membranes, and volume mist, plus downloadable snapshots and optional R2 saves. Captures preserve the scalar field and settings, not a resumable solver or the visible particle cloud.
 
 - Drag to orbit and scroll or pinch to zoom. Hide the controls for an unobstructed view.
 - The horn is a sparse wireframe. **Show horn wireframe** toggles its visibility while sound emission continues. There are no floating scene labels.

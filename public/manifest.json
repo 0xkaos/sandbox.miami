@@ -1,5 +1,12 @@
 [
   {
+    "path": "/threejs/acoustic_field/",
+    "title": "Field Studio — Acoustic Shells",
+    "description": "Sculpt saved acoustic fields into contour curves, flowing strands, layered membranes, and luminous mist.",
+    "category": "threejs",
+    "createdAt": "2026-09-27T06:35:50.944Z"
+  },
+  {
     "path": "/threejs/acoustic_chamber/",
     "title": "Resonant Chamber — Spatial Cymatics",
     "description": "A three-dimensional acoustic chamber: reflected pressure waves, an adjustable outlet, and particles gathering at interference nodes.",

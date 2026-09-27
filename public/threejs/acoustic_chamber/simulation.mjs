@@ -1,4 +1,5 @@
 import { WaveChamber, ParticleCloud } from './physics.mjs?v=5';
+import { captureField } from './snapshot.mjs';
 let field, particles, generation = 0, remainder = 0;
 self.onmessage = ({ data }) => {
     try {
@@ -12,6 +13,10 @@ self.onmessage = ({ data }) => {
         else if (data.type === 'tune') field.tune(data.changes);
         else if (data.type === 'burst') field.burst();
         else if (data.type === 'particles') particles = new ParticleCloud(field, data.count, data.seed);
+        else if (data.type === 'capture') {
+            const snapshot = captureField(field, data.name);
+            self.postMessage({ type: 'snapshot', generation, snapshot }, [snapshot.energy.buffer, snapshot.pressure.buffer, snapshot.mask.buffer]);
+        }
         else if (data.type === 'step') {
             const start = performance.now();
             remainder += Math.min(data.seconds, 0.05) / field.config.slow;

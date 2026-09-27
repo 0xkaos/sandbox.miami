@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090e13">
+  <meta name="description" content="Sculpt saved acoustic fields into contour curves, flowing strands, layered membranes, and luminous mist.">
+  <title>Field Studio — Acoustic Shells</title>
+  <link rel="stylesheet" href="./style.css?v=1">
+  <script type="importmap">{"imports":{"three":"../acoustic_chamber/vendor/three.module.js"}}</script>
+</head>
+<body>
+  <div id="scene" aria-label="Three-dimensional rendering of a captured acoustic field"></div>
+  <header><a href="../acoustic_chamber/">← Chamber</a><h1>Field <span>Studio</span></h1><button id="panelToggle" aria-controls="panel" aria-expanded="true">Hide controls</button></header>
+  <div id="notice" role="status">Opening the field…</div>
+  <aside id="panel" aria-label="Field rendering controls">
+    <label for="name">Field name</label><input id="name" type="text" maxlength="120" value="Chamber study">
+    <p id="fieldInfo" class="hint"></p>
+    <section>
+      <label for="mode">Render as</label><select id="mode"><option value="contours">Contour curves</option><option value="strands">Curves along shells</option><option value="surfaces">Surface membranes</option><option value="mist">Volume mist</option></select>
+      <p class="hint" id="modeHint"></p>
+      <div id="curveControls">
+        <label for="axis">Direction</label><select id="axis"><option value="0">Along length · X</option><option value="1" selected>Along height · Y</option><option value="2">Along depth · Z</option></select>
+        <div id="contourControls"><label for="slices">Slices <output id="slicesValue"></output></label><input id="slices" type="range" min="8" max="90" step="1" value="36"></div>
+        <div id="strandControls" hidden>
+          <label for="count">Strands per layer <output id="countValue"></output></label><input id="count" type="range" min="20" max="180" step="10" value="70">
+          <label for="steps">Strand length <output id="stepsValue"></output></label><input id="steps" type="range" min="25" max="180" step="5" value="100">
+          <label for="twist">Flow twist <output id="twistValue"></output></label><input id="twist" type="range" min="0" max="3" step="0.1" value="0.7">
+        </div>
+        <label for="radius">Curve thickness <output id="radiusValue"></output></label><input id="radius" type="range" min="0.001" max="0.018" step="0.001" value="0.004">
+      </div>
+      <div id="mistControls" hidden>
+        <label for="bandWidth">Band softness <output id="bandWidthValue"></output></label><input id="bandWidth" type="range" min="0.01" max="0.3" step="0.005" value="0.045">
+        <label for="density">Mist density <output id="densityValue"></output></label><input id="density" type="range" min="0.2" max="10" step="0.1" value="2.5">
+      </div>
+      <label for="opacity">Opacity <output id="opacityValue"></output></label><input id="opacity" type="range" min="0.05" max="1" step="0.05" value="0.8">
+    </section>
+    <section>
+      <h2>Energy layers</h2>
+      <div class="layer-heading"><label class="check"><input id="enabled0" type="checkbox" checked> Pearl</label><input id="color0" type="color" value="#f4e5c4" aria-label="Pearl layer color"></div>
+      <label for="level0">Energy <output id="level0Value"></output></label><input id="level0" type="range" min="0.01" max="3" step="0.01" value="0.06">
+      <div class="layer-heading"><label class="check"><input id="enabled1" type="checkbox" checked> Cyan</label><input id="color1" type="color" value="#51cceb" aria-label="Cyan layer color"></div>
+      <label for="level1">Energy <output id="level1Value"></output></label><input id="level1" type="range" min="0.01" max="3" step="0.01" value="0.18">
+      <div class="layer-heading"><label class="check"><input id="enabled2" type="checkbox" checked> Rose</label><input id="color2" type="color" value="#ee80a4" aria-label="Rose layer color"></div>
+      <label for="level2">Energy <output id="level2Value"></output></label><input id="level2" type="range" min="0.01" max="3" step="0.01" value="0.55">
+      <p class="hint">Levels are relative to mean chamber energy. The quiet layer uses a small positive level to form a surface around the minima.</p>
+      <label for="smoothing">Field smoothing <output id="smoothingValue"></output></label><input id="smoothing" type="range" min="0" max="4" step="1" value="1">
+    </section>
+    <section>
+      <h2>View</h2>
+      <label for="cutAxis">Cutaway</label><select id="cutAxis"><option value="-1">Whole field</option><option value="0">Cut along X</option><option value="1">Cut along Y</option><option value="2">Cut along Z</option></select>
+      <label for="cut">Keep <output id="cutValue"></output></label><input id="cut" type="range" min="5" max="100" step="1" value="65" disabled>
+      <label class="check"><input id="outline" type="checkbox"> Chamber outline</label>
+      <label class="check"><input id="rotate" type="checkbox"> Slow orbit</label>
+      <button id="resetView" class="wide">Reset view</button>
+    </section>
+    <section>
+      <h2>Saved fields</h2>
+      <label for="library">Open a capture</label><select id="library"><option value="demo">Example · harmonic chamber</option></select>
+      <div class="row"><button id="refresh">Refresh library</button><button id="import">Import file</button></div>
+      <input id="file" type="file" accept=".acfield,application/octet-stream" hidden>
+      <button id="more" class="wide" hidden>Load more R2 fields</button>
+      <p id="libraryHint" class="hint">Captures and view changes are saved in this browser. Save to R2 to open them on another device.</p>
+    </section>
+    <details><summary>About this view</summary><p>These views share a frozen, full-precision pressure-energy field from the chamber. Contours intersect it with planes. Strands follow an artistic tangent direction while staying on an energy surface. Membranes join equal-energy points; mist fills bands around those same levels.</p><p>Smoothing changes the preview only. The original energy, pressure, mask, and chamber settings remain in the saved snapshot. This captures a moment, not a resumable simulation. More particles do not increase the field's resolution.</p><p>Curve and surface extraction stops at the sampled chamber boundary. Cutaways expose the inside without adding caps.</p></details>
+  </aside>
+  <footer><div class="transport"><button id="cloudSave">Save to R2</button><button id="download">Download field</button><button id="copyLink" hidden>Copy link</button></div><span id="renderInfo" class="navigation"></span></footer>
+  <dialog id="saveDialog">
+    <form id="saveForm"><h2>Save field to R2</h2><p class="hint">Includes the original field and this view. Saved fields can be opened by link or from the library.</p>
+      <label for="password">Admin password</label><input id="password" type="password" autocomplete="current-password" required>
+      <p class="hint" id="saveMessage" role="status"></p><div class="row"><button type="button" id="cancelSave">Cancel</button><button type="submit" id="confirmSave">Save field</button></div>
+    </form>
+  </dialog>
+  <div id="unsupported" hidden><h2>This sketch needs WebGL 2.</h2><p>Try a browser with hardware acceleration enabled.</p><a href="../acoustic_chamber/">Back to the chamber</a></div>
+  <script type="module" src="./app.mjs?v=1"></script>
+</body>
+</html>
