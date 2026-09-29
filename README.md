@@ -1,6 +1,6 @@
 # sandbox.miami 🌴
 
-An interactive Three.js sandbox hosted on Cloudflare Pages. This project showcases 3D graphics capabilities with Three.js, featuring rotating geometric shapes, particle systems, and interactive controls.
+An interactive Three.js sandbox hosted on Cloudflare Workers with static assets. This project showcases 3D graphics capabilities with Three.js, featuring rotating geometric shapes, particle systems, and interactive controls.
 
 ## Features
 
@@ -15,11 +15,11 @@ An interactive Three.js sandbox hosted on Cloudflare Pages. This project showcas
 - ✨ Particle system background
 - 🎮 Orbit controls (click and drag to rotate, scroll to zoom)
 - 📱 Responsive design for mobile and desktop
-- ⚡ Hosted on Cloudflare Pages for fast global delivery
+- ⚡ Hosted on Cloudflare Workers for fast global delivery
 
 ## Live Demo
 
-Visit the live demo at: `https://sandbox-miami.pages.dev` (or your custom domain)
+Visit the live demo at: [sandbox.miami](https://sandbox.miami).
 
 ## Local Development
 
@@ -39,7 +39,29 @@ npm run dev
 
 The front page lists experiments newest first. The build uses each page's original Git addition date when available, follows renames, and records `createdAt` in `public/manifest.json`. Recorded dates stay stable through later edits, shallow deployment checkouts, and builds without Git history. A new page without history uses its file modification date on its first build.
 
-## Deployment to Cloudflare Pages
+## Production deployment: Cloudflare Workers
+
+The production site is [sandbox.miami](https://sandbox.miami), served by the `sandbox` Worker with static assets from `public`. Its fallback address is [sandbox.jonathon-russell.workers.dev](https://sandbox.jonathon-russell.workers.dev). `wrangler.toml` records the custom domain, Durable Object, and R2 bindings.
+
+In **Workers & Pages > sandbox > Settings > Build**, use `npm run build` as the build command and `npx wrangler deploy` as the deploy command. To deploy locally:
+
+```bash
+npx wrangler login
+npm run build
+npx wrangler deploy
+```
+
+The existing `npm run deploy` script targets the legacy Pages setup below; use the Worker commands above for production.
+
+### Deployment notes (2026-09-29)
+
+- A deployment stalled at **Initializing build environment** before cloning or running project commands. A retry succeeded without code changes; initialization still took about three minutes. Check the final failure line and [Workers Builds status](https://www.cloudflarestatus.com/) before treating this symptom as an application build error.
+- The successful log reported a dashboard/configuration mismatch because `sandbox.miami` was missing from local `routes`. The domain continued serving the atlas after that deploy. It is now declared in `wrangler.toml`, following [Cloudflare's custom-domain configuration](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/#set-up-a-custom-domain-in-your-wrangler-configuration-file). Review future configuration diffs rather than suppressing the warning. The asset directory and R2 preview bucket in the log match the intended local setup.
+- npm warned about unreviewed install scripts in `esbuild@0.25.4`, `sharp@0.33.5`, and `workerd@1.20251118.0`. Installation and deployment succeeded. When maintaining dependencies, review the scripts and record package-specific approvals using [npm's documented workflow](https://docs.npmjs.com/cli/v11/commands/npm-approve-scripts/); the log does not justify blanket approval or an urgent dependency upgrade.
+- The successful log ran `npx wrangler deploy` without a preceding `npm run build`. The committed manifests included the atlas, so this release worked; keep the build command above configured so future catalog changes are generated in CI.
+- **Skipping build output cache** is informational. This project serves committed static files and only generates the demo and MIDI manifests.
+
+## Legacy deployment: Cloudflare Pages
 
 ### Option 1: Via Git Integration (Recommended)
 
@@ -90,7 +112,7 @@ sandbox.miami/
 ## Technologies Used
 
 - **Three.js** (v0.160.0) - 3D graphics library
-- **Cloudflare Pages** - Static site hosting
+- **Cloudflare Workers** - Static assets and API hosting
 - **ES Modules** - Modern JavaScript module system
 - **OrbitControls** - Interactive camera controls
 
@@ -127,4 +149,4 @@ MIT License - Feel free to use this project for learning and experimentation.
 
 ---
 
-Built with ❤️ using Three.js and Cloudflare Pages
+Built with ❤️ using Three.js and Cloudflare Workers
