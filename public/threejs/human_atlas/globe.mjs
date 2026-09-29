@@ -42,17 +42,25 @@ function disposeGroup(group) {
   for (const child of [...group.children]) { child.geometry?.dispose(); if (Array.isArray(child.material)) child.material.forEach(m => m.dispose()); else child.material?.dispose(); group.remove(child); }
 }
 function routePoints(route) {
-  const points = [], steps = 24, n = route.points.length - 1;
-  for (let i = 0; i < n; i++) {
-    const a = latLonVector(...route.points[i]), b = latLonVector(...route.points[i + 1]);
-    const angle = a.angleTo(b), sin = Math.sin(angle);
-    for (let j = 0; j < steps; j++) {
-      const t = j / steps, global = (i + t) / n;
-      const p = angle < .0001 ? a.clone() : a.clone().multiplyScalar(Math.sin((1 - t) * angle) / sin).addScaledVector(b, Math.sin(t * angle) / sin);
-      points.push(p.normalize().multiplyScalar(1.015 + .13 * Math.sin(Math.PI * global)));
+  const controls = [latLonVector(...route.points[0])];
+  for (let i = 1; i < route.points.length; i++) {
+    const a = controls.at(-1), b = latLonVector(...route.points[i]);
+    // A midpoint keeps unusually long imported segments away from the globe's
+    // center. Working in 3D also keeps date-line crossings continuous.
+    if (a.angleTo(b) > Math.PI * .8) {
+      const rotation = new THREE.Quaternion().setFromUnitVectors(a, b);
+      controls.push(a.clone().applyQuaternion(new THREE.Quaternion().slerp(rotation, .5)).normalize());
     }
+    controls.push(b);
   }
-  points.push(latLonVector(...route.points.at(-1), 1.015));
+  const curve = new THREE.CatmullRomCurve3(controls, false, 'centripetal');
+  const points = [], steps = 64 * (controls.length - 1);
+  // Smooth through the waypoints, then project back onto the sphere. Both the
+  // endpoint clearance and the arc's rise are half their former height.
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    points.push(curve.getPoint(t).normalize().multiplyScalar(1 + .5 * (.015 + .13 * Math.sin(Math.PI * t))));
+  }
   return points;
 }
 function along(points, t) { const f = clamp(t, 0, 1) * (points.length - 1), i = Math.min(points.length - 2, Math.floor(f)); return points[i].clone().lerp(points[i + 1], f - i); }

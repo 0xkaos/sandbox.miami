@@ -6,7 +6,7 @@ The main story covers 50,000+ years, with a timeline extending to 70,000 BCE for
 
 ## What is included
 
-- A rotatable, zoomable globe with **15,098 population cells by default, optional finer grids, and 75 dates**, using actual HYDE 3.2 gridded reconstructions from 10,000 BCE to 2017 CE.
+- A rotatable, zoomable globe with **52,498 population cells at the default 0.5° resolution, optional 1° and 0.25° grids, and 75 dates**, using actual HYDE 3.2 gridded reconstructions from 10,000 BCE to 2017 CE.
 - **48 historical boundary snapshots**, from 3000 BCE to 2010 CE, plus two deliberately schematic early farming zones.
 - **13 migration corridors** and **27 curated historical records**, with denser coverage of Europe and the Mediterranean. Themes include migration, urban society, writing, industrial technology, religions and polytheistic traditions, famines, and plague.
 - Study-specific ancestry illustrations for early farmers, German Corded Ware, and Beaker-period Britain. Other routes explain qualitative genetic or archaeological evidence.
@@ -23,7 +23,7 @@ Play traverses the timeline in about three minutes at 1× in **era-weighted** mo
 
 Click the large date for exact-year entry. With the globe focused, **Space** toggles playback and **← / →** steps through time (1,000 years in deep time, 100 years BCE, 10 years CE). Controls remain accessible on narrow screens through **Controls** in the header.
 
-Under **Population appearance**, use **Spike visibility** (0–100%) to reveal territory colors beneath the population layer, and **Spike height** (0.05–10×) to adjust magnification continuously. The population toggle still turns the layer off without losing these settings. **Population resolution** selects a real source aggregation; the frame-rate readout runs during playback.
+The default view uses **0.5° resolution and 50% spike visibility**. Saved URLs retain their explicitly selected settings. Under **Population appearance**, use **Spike visibility** (0–100%) to reveal territory colors beneath the population layer, and **Spike height** (0.05–10×) to adjust magnification continuously. The population toggle still turns the layer off without losing these settings. **Population resolution** selects a real source aggregation; the frame-rate readout runs during playback.
 
 The URL records the date, selected region, height mapping, magnification, spike visibility, population resolution, and layer visibility. Imported records remain in the current tab only and are not included in a shared URL.
 
@@ -46,13 +46,13 @@ The continuous height slider multiplies these heights explicitly from 0.05× to 
 
 | Display grid | Population cells | Count data per source date | Use |
 | --- | ---: | ---: | --- |
-| 1° (default) | 15,098 | Included in the initial 4.53 MB series | Lowest graphics cost |
-| 0.5° | 52,498 | 210 KB | More detail at regional zoom |
+| 1° | 15,098 | Included in the initial 4.53 MB series | Lowest graphics cost |
+| 0.5° (default) | 52,498 | 210 KB | More detail at regional zoom |
 | 0.25° | 185,566 | 742 KB | Highest bundled detail; try the frame-rate readout |
 
 Finer grids are aggregated from the original raster, not subdivided or invented from the 1° grid. They retain all 75 source dates and preserve counts within each original 1° cell to Float32 rounding. Finer model resolution does not establish more precise ancient evidence. Native 5-arc-minute rendering is not bundled.
 
-Only the default series loads initially. Selecting a finer grid loads its cell metadata and adjoining date files, caches up to eight dates, and prefetches the next date during forward playback. While a date loads, the last population display remains visible with its date explicitly identified; population is hidden before the quantitative record begins. Superseded date requests are canceled when scrubbing. Failures keep the existing display and offer a resolution change to retry. Changing resolution releases the previous detail cache and spike mesh. Spike orientation is fixed per grid and heights are evaluated on the GPU; the finer grids still require more triangles and memory.
+The 1° reference series loads for charts and totals. The default view also loads the 0.5° cell metadata and adjoining dates; 0.25° data loads only when selected. Each finer grid caches up to eight dates and prefetches the next date during forward playback. While a date loads, the last population display remains visible with its date explicitly identified; population is hidden before the quantitative record begins. Superseded date requests are canceled when scrubbing. Failures keep the existing display and offer a resolution change to retry. Changing resolution releases the previous detail cache and spike mesh. Spike orientation is fixed per grid and heights are evaluated on the GPU; the finer grids still require more triangles and memory.
 
 Regional charts, headline totals, and CSV/JSON/SVG snapshots always use the **1° reference grid** so geographic bin edges and summary values stay comparable across display resolutions. Clicking the globe inspects the selected display grid.
 
@@ -72,7 +72,7 @@ Snapshot regions use explicit fixed geographic bins, defined in the preparation 
 
 ### Migration and ancestry
 
-Every corridor is manually drawn to illustrate a published interpretation. Lines are not GPS paths; animated dots do not measure the number of migrants, journeys, or the speed of travel. Early dispersal hypotheses can overlap and disagree.
+Every corridor is manually drawn to illustrate a published interpretation. The display smooths each corridor through its waypoints and keeps route lines and traveling markers close to the globe. Lines are not GPS paths; animated dots do not measure the number of migrants, journeys, or the speed of travel. Early dispersal hypotheses can overlap and disagree.
 
 Ancestry illustrations have deliberately narrow scopes:
 
@@ -142,7 +142,7 @@ The example coordinates illustrate the format only. Replace the placeholder sour
 
 ## Data preparation
 
-The deployed atlas data total roughly 91 MB including optional finer grids. Loading the initial globe still needs roughly 5 MB of population/geography plus the local Three.js module; finer metadata (about 1.4 MB at 0.5° or 4.9 MB at 0.25°) and individual dates are fetched only when needed. Boundary files also load by date. No individual file exceeds Cloudflare's 25 MiB asset limit. Raw source archives are not shipped.
+The deployed atlas data total roughly 91 MB including optional finer grids. The 1° reference population/geography needs roughly 5 MB plus the local Three.js module; the default 0.5° view adds its metadata and adjoining dates. Finer metadata (about 1.4 MB at 0.5° or 4.9 MB at 0.25°) and individual dates are fetched only when needed. Boundary files also load by date. No individual file exceeds Cloudflare's 25 MiB asset limit. Raw source archives are not shipped.
 
 The committed artifacts allow normal builds with **no Python or network dependency**. To reproduce them, use a separate Python environment with `numpy`, `rasterio`, and `shapely`:
 

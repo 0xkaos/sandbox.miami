@@ -6,7 +6,7 @@ import { validateResearch } from './import.mjs';
 import { PopulationDetail, POPULATION_RESOLUTIONS } from './population-detail.mjs';
 
 const $ = selector => document.querySelector(selector);
-const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: 1, opacity: 1, resolution: 1, layers: { population: true, territories: true, migrations: true, ancestry: true, events: true } };
+const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: 1, opacity: .5, resolution: .5, layers: { population: true, territories: true, migrations: true, ancestry: true, events: true } };
 const data = { sources: [...SOURCES], events: [...EVENTS], migrations: [...MIGRATIONS] };
 let meta, values, comparison, borders, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
 let detailGrid=null, resolutionRequest=0, resolutionError=null, displayedPopulationYear=null;

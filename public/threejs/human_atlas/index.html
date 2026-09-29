@@ -30,11 +30,11 @@
         <label><span><i class="swatch events"></i>Historical moments</span><input id="layer-events" type="checkbox" checked></label>
       </div>
       <details class="scale-settings" open><summary>Population appearance <span>Fixed over time</span></summary>
-        <label class="range-control" for="spike-opacity"><span>Spike visibility</span><output id="spike-opacity-output" for="spike-opacity">100%</output><input id="spike-opacity" type="range" min="0" max="100" step="1" value="100"></label>
+        <label class="range-control" for="spike-opacity"><span>Spike visibility</span><output id="spike-opacity-output" for="spike-opacity">50%</output><input id="spike-opacity" type="range" min="0" max="100" step="1" value="50"></label>
         <label class="range-control" for="height-gain"><span>Spike height</span><output id="height-gain-output" for="height-gain">1×</output><input id="height-gain" type="range" min="0.05" max="10" step="0.05" value="1"></label>
         <label>Height mapping<select id="height-scale"><option value="log">Fixed logarithmic</option><option value="linear">Fixed linear</option></select></label>
         <label for="population-resolution">Population resolution</label>
-        <select id="population-resolution" aria-describedby="resolution-status"><option value="1">1° · 15,098 cells</option><option value="0.5">0.5° · 52,498 cells</option><option value="0.25">0.25° · 185,566 cells</option></select>
+        <select id="population-resolution" aria-describedby="resolution-status"><option value="1">1° · 15,098 cells</option><option value="0.5" selected>0.5° · 52,498 cells</option><option value="0.25">0.25° · 185,566 cells</option></select>
         <p id="resolution-status" role="status">Finer HYDE grids load on demand.</p>
         <p id="render-performance">Play to measure frame rate on this device.</p>
         <p>No automatic rescaling. Log height keeps small populations visible; linear height preserves density ratios. Zoom and magnification are independent of time.</p>
