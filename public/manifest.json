@@ -1,5 +1,12 @@
 [
   {
+    "path": "/threejs/human_atlas/",
+    "title": "Human Atlas — 50,000 Years in Motion",
+    "description": "Explore 50,000+ years of human history on an interactive globe: reconstructed population, migrations, ancestry studies, historical territories, and local stories.",
+    "category": "threejs",
+    "createdAt": "2026-09-29T15:22:57.627Z"
+  },
+  {
     "path": "/threejs/acoustic_mist/",
     "title": "Living Mist — Acoustic Interference",
     "description": "Live acoustic interference rendered as three soft, colored energy shells. Shape the chamber, mix harmonics, and watch the mist evolve.",

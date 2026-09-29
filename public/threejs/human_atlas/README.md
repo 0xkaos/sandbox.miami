@@ -1,0 +1,160 @@
+# Human Atlas
+
+An offline-capable Three.js sketch for exploring population, migration, and historical context. Open **`/threejs/human_atlas/`** after `npm run dev`. It is automatically listed in the project catalog by `npm run build`.
+
+The main story covers 50,000+ years, with a timeline extending to 70,000 BCE for earlier dispersal context. The latest population map is **2017 CE**, not the present day.
+
+## What is included
+
+- A rotatable, zoomable globe with **15,098 population cells and 75 dates**, using actual HYDE 3.2 gridded reconstructions from 10,000 BCE to 2017 CE.
+- **48 historical boundary snapshots**, from 3000 BCE to 2010 CE, plus two deliberately schematic early farming zones.
+- **13 migration corridors** and **27 curated historical records**, with denser coverage of Europe and the Mediterranean. Themes include migration, urban society, writing, industrial technology, religions and polytheistic traditions, famines, and plague.
+- Study-specific ancestry illustrations for early farmers, German Corded Ware, and Beaker-period Britain. Other routes explain qualitative genetic or archaeological evidence.
+- Seven geographic views; exact-year entry; chapter navigation; previous/next event; layer controls; shared URLs; and local research imports.
+- Global or regional snapshot charts, with SVG, population-grid CSV, and contextual JSON downloads. A separate OWID world-population series provides a comparison without altering the map.
+
+All runtime assets are served from this repository. Three.js and OrbitControls reuse the existing local copies in `../acoustic_chamber/vendor/`. There are no runtime data APIs, analytics, API keys, new npm dependencies, or remote font requests.
+
+## Controls
+
+Drag to orbit. Scroll or pinch to zoom. Click a place or event to pause and inspect it. The region buttons and `+`/`−` buttons provide alternatives to pointer navigation. The crosshair returns to the selected region's camera view.
+
+Play traverses the timeline in about three minutes at 1× in **era-weighted** mode. Equal timeline segments represent unequal historical spans, leaving room to explore later history. The alternative **100 years / sec** mode advances at a constant chronological rate. The speed multiplier applies to either mode. Playback stops at 2017; pressing play at the endpoint restarts at the beginning. Opening a dialog or hiding the browser tab pauses playback.
+
+Click the large date for exact-year entry. With the globe focused, **Space** toggles playback and **← / →** steps through time (1,000 years in deep time, 100 years BCE, 10 years CE). Controls remain accessible on narrow screens through **Controls** in the header.
+
+The URL records the date, selected region, height mapping, magnification, and layer visibility. Imported records remain in the current tab only and are not included in a shared URL.
+
+## How to read the map
+
+### Population and scale
+
+Population values are summed from the source's 5-arc-minute raster into **1° cells**. No synthetic settlement distribution is used. Zero population and unavailable data are distinct: **there are no headcounts before 10,000 BCE**. No population is extrapolated into that gap.
+
+Density is people divided by the **whole spherical grid-cell footprint**, including coastal water. It is not the density of a city, nor population divided only by inhabited land. Coastal cells can place a spike over water. The place inspector reports the nearest available cell within 170 km, identifies its center, and does not label it as a settlement count. Small islands missing from the source cannot be recovered by aggregation.
+
+Heights stay on a fixed scale throughout the timeline:
+
+```text
+default: height / globe radius = 0.1 × log10(1 + people/km²)
+linear:  height / globe radius = 0.00015 × people/km²
+```
+
+The optional 0.25×, 0.5×, 3×, and 10× settings multiply these heights explicitly. Camera zoom does not change the density-to-height mapping. No value is divided by the maximum or total population of the selected year. Log height makes small densities visible while compressing ratios; choose linear height to preserve density ratios. Very tall spikes can fill the view at high magnification; zoom out or lower magnification.
+
+Population counts interpolate **linearly in people per cell**, preserving totals between neighboring source dates. Float32 storage introduces small numerical rounding, not a new demographic model. The baseline contains no bundled lower/upper confidence intervals. Interpolation does not resolve short famines, epidemics, or sudden local changes between coarse dates. Event cards do **not** add extra population losses, which would double-count effects or invent unsupported magnitudes.
+
+The source uses a year-0 sample. Its display label is **1 BCE**; the raw year 0 is preserved in exported provenance. Exact-year entry does not accept a year zero. BCE date ranges and deep-time conversions remain approximate at this sketch's resolution.
+
+### Geography and territories
+
+Natural Earth provides fixed **modern coastlines**. The viewer does not model changing sea levels, glacial extent, submerged shelf settlement, or paleocoastlines. This is particularly significant for Beringia, Sunda, Sahul, and Ice Age Europe.
+
+Historical Basemaps supplies named geographic reconstructions with disputed and sometimes dated interpretations. Some entries describe cultural areas, not states. Geometry is simplified by 0.12° for this regional-scale viewer. The especially speculative deep-time files and a known problematic 1500 BCE snapshot are excluded. The remaining maps are not independently vetted authoritative borders.
+
+The viewer **crossfades two dated polygon layers**. It does not infer a sequence of conquests or continuously deform polygons into supposedly known intervening borders. Inspecting a place reports labels from both adjoining snapshots, each with its own date. After 2010 the last boundary map is explicitly held. Before 3000 BCE only selected early farming zones appear, and those are illustrative areas of activity, not political boundaries.
+
+Snapshot regions use explicit fixed geographic bins, defined in the preparation script, and a Mediterranean bounding box. They are approximate analytical areas, not historical nations or an official continent classification. Political-territory population totals are not calculated. Simply moving the camera does not silently redefine the selected region.
+
+### Migration and ancestry
+
+Every corridor is manually drawn to illustrate a published interpretation. Lines are not GPS paths; animated dots do not measure the number of migrants, journeys, or the speed of travel. Early dispersal hypotheses can overlap and disagree.
+
+Ancestry illustrations have deliberately narrow scopes:
+
+- Mathieson et al. (2018): a **qualitative** farmer/hunter-gatherer blend. No quantitative European-wide fraction is asserted.
+- Haak et al. (2015): approximately **75% Yamnaya-related ancestry in sampled German Corded Ware individuals**.
+- Olalde et al. (2018): approximately **90% ancestry turnover in Britain** over several centuries.
+
+The circular sending/receiving footprints and intermediate color fractions are visual assumptions. With ancestry colors enabled, ordinary population growth changes spike height without changing its hue; migration progress controls the study blend separately. Counts are never changed by these colors. Tint is shown only during each study's configured time window, not carried into modern populations. Colors do not encode race, citizenship, language, or a claim of homogeneous ancient peoples. The AADR sample-level dataset has been researched but **is not imported**.
+
+### Historical moments and exports
+
+“Near this time” includes events within a stated contextual time window. It can include events before or after the selected year; every card supplies its actual date interval. Selecting a place narrows nearby records to 1,800 km. Empty lists are coverage gaps, not a historical claim. Religious points mark places discussed in the cited source, not distributions or counts of believers. The 1918 pandemic marker does not claim its geographic origin.
+
+Snapshots use the **selected named geographic region**, not the current camera frustum or the clicked cell. The context follows the selected theme filter. On phones, swipe the chart horizontally to read it at full size. SVG charts show the longer population trajectory with the snapshot date marked; their population axis is logarithmic and their time axis is era weighted. The JSON contains source URLs, event intervals, active migrations, boundary status, and limits. Its active migration list is explicitly global context, not clipped to the snapshot region. CSV rows identify the two population source dates and interpolation weight. CSV export is disabled before the population record begins.
+
+## Sources and expansion
+
+Full source records and URLs are in [`history.mjs`](history.mjs) and **Sources & methods** in the app. Integrated data, curated literature, and candidate datasets have different statuses.
+
+See [`DATA_REVIEW.md`](DATA_REVIEW.md) for the four user-suggested sources: TimelineConsortium, History Explorer, and the two Kaggle collections. Their raw text and event claims have not been silently merged into the curated map.
+
+Priority extensions are finer HYDE tiles for close zoom; published paleodemographic ranges before 10,000 BCE; paleocoastlines; AADR sample metadata with publication-specific ancestry models; Seshat polity attributes; Pleiades places; and reviewed, geocoded event records. The existing import format supports additional events and qualitative migration routes now.
+
+### Local research format
+
+Use **Sources & methods → Import research JSON**. A file is validated completely before anything is added. It must be below 4 MB and may contain at most 100 sources, 2,000 events, and 100 routes. Source links must use HTTP(S). IDs must be unique, including against existing records. All date intervals must fit 70,000 BCE–2017 CE. Negative years denote BCE.
+
+```json
+{
+  "schemaVersion": 1,
+  "sources": [{
+    "id": "your-paper",
+    "title": "Title of the original research",
+    "author": "Author and publication year",
+    "url": "https://example.org/research",
+    "detail": "What this source establishes and what remains uncertain."
+  }],
+  "events": [{
+    "id": "your-event",
+    "title": "A sourced local development",
+    "kind": "technology",
+    "start": -3200,
+    "end": -3000,
+    "lat": 31.3,
+    "lon": 45.6,
+    "region": 2,
+    "sources": ["your-paper"],
+    "detail": "A short account with a clearly stated scope.",
+    "certainty": "Approximate archaeological interval"
+  }],
+  "migrations": [{
+    "id": "your-route",
+    "title": "A schematic movement",
+    "start": -3300,
+    "end": -2500,
+    "points": [[48, 44], [49, 30], [51, 11]],
+    "color": "#b8a0e9",
+    "sources": ["your-paper"],
+    "detail": "Explain which elements are documented and which are schematic."
+  }]
+}
+```
+
+Region codes are `0 Africa`, `1 Europe`, `2 Asia`, `3 North America`, `4 South America`, `5 Oceania`. Route points are **[latitude, longitude]**, unlike GeoJSON's longitude-first order. Themes are `migration`, `technology`, `society`, `religion`, `famine`, `plague`, and `climate`. Routes need 2–40 waypoints and a nonzero date span. Quantitative ancestry blends require reviewing and editing `history.mjs`; the local importer rejects them instead of silently treating a percent as established evidence.
+
+The example coordinates illustrate the format only. Replace the placeholder source and content with actual research before importing. Existing source IDs can be reused without defining them again.
+
+## Data preparation
+
+The deployed data total roughly 13 MB, with boundary files fetched only when their dates are needed. Loading the initial globe needs roughly 5 MB of population/geography plus the local Three.js module. Raw source archives are not shipped.
+
+The committed artifacts allow normal builds with **no Python or network dependency**. To reproduce them, use a separate Python environment with `numpy`, `rasterio`, and `shapely`:
+
+1. Download Harvard Dataverse file **4570054** (`raw-data.zip`, about 848 MB) from `https://dataverse.harvard.edu/api/access/datafile/4570054`, part of [doi:10.7910/DVN/E3H3AK](https://doi.org/10.7910/DVN/E3H3AK).
+2. Extract `raw-data/HYDE.zip`, then `HYDE/popc.tif.zip`, then `popc.tif`. The uncompressed raster needs several GB of temporary space.
+3. Run:
+
+```sh
+python scripts/prepare-human-atlas.py \
+  --cache /tmp/human-atlas-source \
+  --population-tif /tmp/human-atlas-source/population/popc.tif
+```
+
+The script sums all 75 population bands in row blocks, computes spherical areas, retains every cell with any positive population, and writes little-endian, year-major Float32 counts plus metadata. It downloads/simplifies boundaries, preserves hashes and their Git revision, downloads Natural Earth land, and prepares seven independent OWID comparison series. Source downloads are cached outside the repo. The bundled Basemaps revision is `da7a4b735ecef70aebdc9c73e409d8a2500d50f3`; preserve `basemaps-revision.json` and `border-index.json` in the cache to reproduce that revision. A fresh cache deliberately resolves the current revision, which requires reviewing the resulting changes.
+
+`population.json` includes source-year totals and the SHA-256 of `population.f32`. `borders.json` includes each original GeoJSON's SHA-256. App data and rendering stay separate, so finer grids can replace the current aggregation without changing the narrative records.
+
+## Validation
+
+```sh
+node --test scripts/test-human-atlas.mjs
+npm run build
+```
+
+Tests check the full binary checksum, every source-year total, nonnegative/finite cells, population-conserving interpolation, unavailable dates, region sums, fixed height mapping, timeline inversion, date-line/hole selection, all 48 boundary files, narrative source references, import validation, and snapshot provenance/CSV scope. Browser checks cover playback, date entry, globe picking, filters, layers, studies, downloads, imports, keyboard controls, responsive layout, and the WebGL fallback.
+
+## Attribution and licenses
+
+Application code follows this repository's MIT license. Third-party data retain their own terms; see [`THIRD_PARTY.md`](THIRD_PARTY.md). In particular, the historical boundary dataset is GPL-3.0 and its license is bundled at [`data/BORDERS-LICENSE.txt`](data/BORDERS-LICENSE.txt). This does not relabel all atlas data as MIT.

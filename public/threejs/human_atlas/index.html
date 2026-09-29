@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101714">
+  <meta name="description" content="Explore 50,000+ years of human history on an interactive globe: reconstructed population, migrations, ancestry studies, historical territories, and local stories.">
+  <title>Human Atlas — 50,000 Years in Motion</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="importmap">{"imports":{"three":"../acoustic_chamber/vendor/three.module.js","three/addons/controls/OrbitControls.js":"../acoustic_chamber/vendor/OrbitControls.js"}}</script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="back" href="/" aria-label="Back to Sandbox Miami">↖ <span>Sandbox</span></a>
+    <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12"/><ellipse cx="16" cy="16" rx="5" ry="12"/><path d="M4 16h24M7 8q9 5 18 0M7 24q9-5 18 0"/></svg><div>HUMAN ATLAS<span>50,000+ years in motion</span></div></div>
+    <div class="header-actions"><button id="mobile-controls" aria-expanded="false">Controls</button><button id="sources-button">Sources & methods <span>↗</span></button><button id="snapshot-button" class="outline-button">↗ <span>Make a snapshot</span></button></div>
+  </header>
+
+  <main class="workspace">
+    <aside class="sidebar" id="controls-panel" aria-label="Atlas controls">
+      <div class="section-label">01 / Find a moment</div>
+      <h1>One species.<br>Countless journeys.</h1>
+      <nav class="chapters" id="chapters" aria-label="Historical chapters"></nav>
+      <div class="layers-heading section-label">02 / Read the map</div>
+      <div class="layer-list">
+        <label><span><i class="swatch population"></i>Population spikes</span><input id="layer-population" type="checkbox" checked></label>
+        <label><span><i class="swatch territories"></i>Territories & cultures</span><input id="layer-territories" type="checkbox" checked></label>
+        <label><span><i class="swatch migrations"></i>Migration paths</span><input id="layer-migrations" type="checkbox" checked></label>
+        <label><span><i class="swatch ancestry"></i>Ancestry studies</span><input id="layer-ancestry" type="checkbox" checked></label>
+        <label><span><i class="swatch events"></i>Historical moments</span><input id="layer-events" type="checkbox" checked></label>
+      </div>
+      <details class="scale-settings"><summary>Population scale <span>Fixed over time</span></summary>
+        <label>Height mapping<select id="height-scale"><option value="log">Fixed logarithmic</option><option value="linear">Fixed linear</option></select></label>
+        <label>Magnification<select id="height-gain"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="3">3×</option><option value="10">10×</option></select></label>
+        <p>No automatic rescaling. Log height keeps small populations visible; linear height preserves density ratios. Zoom and magnification are independent of time.</p>
+      </details>
+      <a class="field-notes" href="./README.md" target="_blank" rel="noopener">Field notes & data guide <span>↗</span></a>
+    </aside>
+
+    <section class="map-stage" aria-label="Interactive history globe">
+      <div id="globe" tabindex="0" role="img" aria-label="Interactive globe. Drag to rotate, scroll or pinch to zoom, click a place to inspect. Region controls provide keyboard navigation."></div>
+      <nav class="region-nav" id="region-nav" aria-label="Focus a region"></nav>
+      <div class="map-caption"><span class="live-dot"></span><span id="map-caption">Reading the population record</span></div>
+      <div id="map-labels" aria-hidden="true"></div>
+      <div id="tooltip" role="status" hidden></div>
+      <div class="map-tools"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button><button id="reset-view" aria-label="Reset globe view">⌖</button></div>
+      <div class="map-footer"><span>Drag to orbit · scroll to zoom · select a place</span><button id="clear-location" hidden>Clear place ×</button></div>
+      <div class="map-key"><span class="section-label">PEOPLE / KM²</span><div class="density-key"><i></i><i></i><i></i><i></i><i></i></div><div class="density-values"><span>0.01</span><span>1</span><span>10</span><span>100</span><span>1,000+</span></div><small id="scale-caption">Fixed log height · 1° grid cells</small></div>
+      <div id="loading" class="loading" role="status"><span class="loading-globe">◎</span><strong>Assembling the human story</strong><span>Loading 75 population maps and historical geography…</span></div>
+      <div id="map-error" class="map-error" role="alert" hidden></div>
+    </section>
+
+    <aside class="inspector" aria-label="Information for this place and time">
+      <div class="inspector-top"><span class="section-label" id="focus-kicker">WORLD / ESTIMATED POPULATION</span><span class="status-pill" id="data-status">Reconstruction</span></div>
+      <div class="population-number" id="population-number">—</div>
+      <div class="population-description" id="population-description">people in the selected region</div>
+      <svg class="sparkline" id="population-sparkline" viewBox="0 0 260 62" role="img" aria-label="Population through time"></svg>
+      <div class="sparkline-labels"><span>10,000 BCE</span><span>2017 CE</span></div>
+      <p class="estimate-note" id="estimate-note"></p>
+      <section id="place-info" hidden></section>
+      <section class="territory-note"><div class="section-label">Territory record</div><p id="territory-status">Loading historical boundaries…</p></section>
+      <section id="migration-panel"><div class="section-label">People in motion · global <span id="migration-count"></span></div><div id="migration-list"></div></section>
+      <section class="moments"><div class="moments-heading"><span class="section-label">Near this time</span><select id="event-category" aria-label="Filter historical moments"><option value="all">All themes</option><option value="migration">Migrations</option><option value="technology">Technology</option><option value="society">Society</option><option value="religion">Religions</option><option value="famine">Famines</option><option value="plague">Plagues</option></select></div><p class="context-note" id="context-note"></p><div id="event-list"></div></section>
+      <div class="inspector-foot">A growing atlas. Gaps in the record are not empty worlds.</div>
+    </aside>
+  </main>
+
+  <footer class="timeline" aria-label="Historical timeline">
+    <div class="time-topline"><div class="epoch"><span class="section-label">YOU ARE HERE</span><button id="date-button" title="Jump to an exact year"><span id="year-label">3,000 BCE</span><span class="date-edit">↗</span></button></div><div class="timeline-context"><strong id="chapter-title">Across the steppe</strong><span id="time-context">People, places, and the spaces between.</span></div><div class="transport"><button id="previous-event" class="icon-button" aria-label="Previous historical moment">Ⅰ‹</button><button id="play" class="play-button" aria-label="Play timeline" aria-pressed="false">▶</button><button id="next-event" class="icon-button" aria-label="Next historical moment">›Ⅰ</button><select id="playback-speed" aria-label="Playback speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select><select id="playback-mode" aria-label="Playback time mode"><option value="era">Era weighted</option><option value="linear">100 years / sec</option></select></div></div>
+    <div class="timeline-track"><div id="timeline-markers" aria-label="Jump to historical moments"></div><input type="range" id="year-slider" min="0" max="10000" step="1" value="5740" aria-label="Year on era-weighted timeline"><div class="timeline-ticks" id="timeline-ticks"></div></div>
+    <div class="timeline-bottom"><span><i class="legend-dot"></i> Reconstructed data <i class="legend-dash"></i> Interpolated between records</span><span id="record-label">HYDE 3.2 · Historical Basemaps</span></div>
+  </footer>
+
+  <dialog id="date-dialog"><form method="dialog" class="dialog-content date-form"><button class="dialog-close" aria-label="Close" formnovalidate>×</button><span class="section-label">TRAVEL THROUGH TIME</span><h2>Choose a year.</h2><label>Year<input id="jump-year" type="number" min="1" max="70000" value="3000" required></label><label>Era<select id="jump-era"><option value="bce">BCE</option><option value="ce">CE</option></select></label><p id="jump-error" role="alert"></p><button type="button" class="primary-button" id="jump-go">Go to this moment →</button></form></dialog>
+  <dialog id="sources-dialog"><div class="dialog-content"><button class="dialog-close" data-close="sources-dialog" aria-label="Close sources">×</button><span class="section-label">THE RECORD BEHIND THE MAP</span><h2>Evidence, with its edges showing.</h2><p class="dialog-intro">A global population record with a deliberately denser set of stories in Europe and the Mediterranean. Each layer has its own limits.</p><div class="method-grid"><div><b>Population</b><p>Actual HYDE grids, summed to 1°. Linear interpolation between dates. Before 10,000 BCE, headcounts are unavailable. Missing data never means zero people.</p></div><div><b>Changing territories</b><p>Colors crossfade between documented snapshots. This is a visual transition, not a dated reconstruction of the intervening borders. Modern coastlines remain fixed.</p></div><div><b>Ancestry & movement</b><p>Routes are schematic. Study-specific colors blend at selected receiving locations; intermediate fractions and footprints are illustrative. Colors do not represent race, language, or nationality.</p></div><div><b>Population scale</b><p>The same density always produces the same height at the chosen scale and magnification. No year-by-year normalization. The default logarithmic mapping compresses large differences.</p></div></div><div id="source-list"></div><div class="import-area"><h3>Add to the atlas</h3><p><a href="./DATA_REVIEW.md" target="_blank" rel="noopener">Read the review of the four suggested datasets ↗</a></p><p>Import a local JSON file of sourced events and migration routes. Additions stay in this tab. The format is described in the field notes.</p><label class="outline-button file-button">Import research JSON<input type="file" id="import-data" accept="application/json,.json"></label><p id="import-status" role="status"></p></div></div></dialog>
+  <dialog id="snapshot-dialog"><div class="dialog-content"><button class="dialog-close" data-close="snapshot-dialog" aria-label="Close snapshot">×</button><span class="section-label">A MOMENT, HELD STILL</span><h2 id="snapshot-title">World snapshot</h2><p id="snapshot-subtitle" class="dialog-intro"></p><div id="snapshot-chart"></div><div id="snapshot-notes"></div><div class="snapshot-actions"><button id="download-svg" class="primary-button">Download chart · SVG</button><button id="download-csv" class="outline-button">Grid data · CSV</button><button id="download-json" class="outline-button">Snapshot · JSON</button></div><p class="export-note">Exports include dates, sources, interpolation status, and coverage limits.</p></div></dialog>
+  <div id="announcement" role="status" class="sr-only" aria-live="polite"></div>
+  <noscript>This atlas requires JavaScript. Read the <a href="./README.md">field notes</a> for sources and data coverage.</noscript>
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>
