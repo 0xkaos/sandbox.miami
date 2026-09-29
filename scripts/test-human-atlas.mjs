@@ -6,6 +6,7 @@ import { MIN_YEAR, MAX_YEAR, TIME_KNOTS, REGIONS, bracket, yearToPosition, posit
 import { SOURCES, EVENTS, MIGRATIONS } from '../public/threejs/human_atlas/history.mjs';
 import { makeSnapshot, snapshotCSV } from '../public/threejs/human_atlas/snapshot.mjs';
 import { validateResearch } from '../public/threejs/human_atlas/import.mjs';
+import { PopulationDetail } from '../public/threejs/human_atlas/population-detail.mjs';
 
 const dir = new URL('../public/threejs/human_atlas/data/', import.meta.url);
 const meta = JSON.parse(readFileSync(new URL('population.json', dir)));
@@ -102,4 +103,56 @@ test('local research import rejects unsafe links, invented source IDs, invalid g
   assert.throws(()=>validateResearch({schemaVersion:1,sources:[{id:'evil',title:'Bad',url:'javascript:alert(1)',author:'x',detail:'x'}]},existing));
   assert.throws(()=>validateResearch({schemaVersion:1,events:[record,record]},existing));
   assert.equal(existing.events.length,EVENTS.length);
+});
+
+test('finer grids preserve source counts, dates, checksums, and the original spatial distribution', () => {
+  const parentIndex=new Map(meta.cells.map((c,i)=>[`${Math.floor(90-c[0])}/${Math.floor(c[1]+180)}`,i]));
+  for(const resolution of [.5,.25]){
+    const root=new URL(`population-${resolution}/`,dir),fine=JSON.parse(readFileSync(new URL('index.json',root)));
+    assert.equal(fine.resolutionDegrees,resolution);assert.deepEqual(fine.years,meta.years);
+    assert.equal(fine.cells.length,resolution===.5?52498:185566);
+    const parents=fine.cells.map(c=>parentIndex.get(`${Math.floor(90-c[0])}/${Math.floor(c[1]+180)}`));
+    assert.ok(parents.every(i=>i!==undefined));
+    for(let j=0;j<fine.frames.length;j++){
+      const frame=fine.frames[j],binary=readFileSync(new URL(frame.file,root));
+      assert.equal(binary.byteLength,fine.cells.length*4);assert.ok(binary.byteLength<25*1024*1024);
+      assert.equal(createHash('sha256').update(binary).digest('hex'),frame.sha256);
+      const cells=new Float32Array(binary.buffer,binary.byteOffset,binary.byteLength/4),sums=new Float64Array(meta.cells.length);
+      assert.ok(cells.every(p=>Number.isFinite(p)&&p>=0));
+      let total=0;for(let i=0;i<cells.length;i++){total+=cells[i];sums[parents[i]]+=cells[i];}
+      assert.equal(Math.round(total),frame.total);
+      assert.ok(Math.abs(total-meta.totals[j])<Math.max(1,total*1e-7));
+      for(let i=0;i<sums.length;i++)assert.ok(Math.abs(sums[i]-values[j*meta.cells.length+i])<Math.max(.01,sums[i]*1e-6));
+    }
+  }
+});
+
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+function detailFixture(fetcher,onChange=()=>{}){
+  return new PopulationDetail({years:[0,10,20],cells:[[0,0,1],[1,1,1]],frames:[{file:'0.f32'},{file:'10.f32'},{file:'20.f32'}]},'/detail',onChange,fetcher);
+}
+test('detail loads only adjoining dates, interpolates counts, and reuses cached frames', async () => {
+  const requests=[],changed=[];
+  const detail=detailFixture(async url=>{requests.push(url);const year=Number(url.split('/').at(-1).split('.')[0]);return {ok:true,arrayBuffer:async()=>new Float32Array([year,year*2]).buffer};},()=>changed.push(true));
+  assert.deepEqual(detail.sample(-1),{populations:null,year:-1});assert.equal(requests.length,0);
+  assert.equal(detail.sample(4).loading,true);await tick();
+  assert.deepEqual(requests,['/detail/0.f32','/detail/10.f32']);assert.equal(changed.length,1);
+  assert.deepEqual([...detail.sample(4).populations],[4,8]);assert.deepEqual([...detail.sample(3).populations],[3,6]);assert.equal(requests.length,2);
+  detail.dispose();
+});
+test('scrubbing aborts obsolete detail requests and suppresses stale callbacks', async () => {
+  const waiting=[],changed=[];
+  const detail=detailFixture((url,{signal})=>new Promise(resolve=>waiting.push({url,signal,resolve})),()=>changed.push(true));
+  detail.sample(4);const old=waiting.slice();detail.sample(20);
+  assert.ok(old.every(r=>r.signal.aborted));
+  for(const r of old)r.resolve({ok:true,arrayBuffer:async()=>new Float32Array([999,999]).buffer});
+  await tick();assert.equal(changed.length,0);
+  waiting.at(-1).resolve({ok:true,arrayBuffer:async()=>new Float32Array([20,40]).buffer});await tick();
+  assert.deepEqual([...detail.sample(20).populations],[20,40]);assert.equal(changed.length,1);detail.dispose();
+});
+test('failed detail requests remain errors without a retry storm', async () => {
+  let count=0;const detail=detailFixture(async()=>{count++;return {ok:false,status:503};});
+  detail.sample(4);await tick();
+  for(let i=0;i<30;i++)assert.match(detail.sample(4).error,/503/);
+  assert.equal(count,2);detail.dispose();
 });

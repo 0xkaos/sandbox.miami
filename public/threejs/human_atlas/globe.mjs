@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { densityHeight, distanceKm, activeMigrations, migrationProgress, borderBracket, containsPoint, clamp, mix, CATEGORY_COLORS } from './model.mjs';
+import { distanceKm, activeMigrations, migrationProgress, borderBracket, containsPoint, clamp, CATEGORY_COLORS } from './model.mjs';
 import { EARLY_ZONES } from './history.mjs';
 
 const R = Math.PI / 180;
@@ -61,7 +61,7 @@ export class HistoryGlobe {
   constructor(container, meta, land, borders, callbacks = {}) {
     this.container = container; this.meta = meta; this.borders = borders; this.callbacks = callbacks;
     this.layers = { population: true, territories: true, migrations: true, ancestry: true, events: true };
-    this.scale = 'log'; this.gain = 1; this.year = -3000; this.routes = []; this.phase = 0; this.disposed = false; this.dirty = true;
+    this.scale = 'log'; this.gain = 1; this.populationOpacity = 1; this.year = -3000; this.routes = []; this.phase = 0; this.disposed = false; this.dirty = true;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(38, 1, .005, 30);
     this.camera.position.copy(latLonVector(24, 24, 3.2));
@@ -92,13 +92,35 @@ export class HistoryGlobe {
       fragmentShader:'varying vec3 vNormal; varying vec3 vView; void main(){float a=pow(1.0-abs(dot(normalize(vNormal),normalize(vView))),4.0);gl_FragColor=vec4(0.34,0.56,0.43,a*0.19);}',
       transparent:true,depthWrite:false,side:THREE.FrontSide,
     })); this.scene.add(atmosphere);
-    this.territoryMeshes = [0,1].map(i=>{const m=new THREE.Mesh(new THREE.SphereGeometry(1.001+i*.0003,96,48),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));m.renderOrder=i+1;this.scene.add(m);return m;});
-    this.earlyMesh = new THREE.Mesh(new THREE.SphereGeometry(1.0012,96,48),new THREE.MeshBasicMaterial({transparent:true,opacity:.38,depthWrite:false}));this.scene.add(this.earlyMesh);
+    // A single surface blends premultiplied colors, avoiding both z-fighting
+    // between shells and the dark pulse caused by stacking two alpha layers.
+    this.emptyBorder = canvasTexture(textureCanvas(2));
+    this.borderUniforms = {
+      oldA:{value:this.emptyBorder}, oldB:{value:this.emptyBorder},
+      mapA:{value:this.emptyBorder}, mapB:{value:this.emptyBorder},
+      oldWeight:{value:0}, weight:{value:0}, transition:{value:1}, opacity:{value:.38},
+    };
+    this.territoryMesh = new THREE.Mesh(this.surface.geometry.clone(), new THREE.ShaderMaterial({
+      uniforms:this.borderUniforms, transparent:true, depthWrite:false,
+      vertexShader:'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+      fragmentShader:`uniform sampler2D oldA,oldB,mapA,mapB;
+        uniform float oldWeight,weight,transition,opacity; varying vec2 vUv;
+        vec4 premultiply(vec4 c){return vec4(c.rgb*c.a,c.a);}
+        void main(){
+          vec4 before=mix(premultiply(texture2D(oldA,vUv)),premultiply(texture2D(oldB,vUv)),oldWeight);
+          vec4 after=mix(premultiply(texture2D(mapA,vUv)),premultiply(texture2D(mapB,vUv)),weight);
+          vec4 c=mix(before,after,transition);
+          gl_FragColor=vec4(c.rgb/max(c.a,0.00001),c.a*opacity);
+          #include <colorspace_fragment>
+        }`,
+    }));
+    this.territoryMesh.scale.setScalar(1.002);this.territoryMesh.renderOrder=1;this.territoryMesh.visible=false;this.scene.add(this.territoryMesh);
+    this.textureCache=new Map();this.displayBorder=null;this.previousBorder=null;this.pendingBorder=null;this.borderFade=1;
+    this.earlyMesh = new THREE.Mesh(this.surface.geometry.clone(),new THREE.MeshBasicMaterial({transparent:true,opacity:.38,depthWrite:false}));this.earlyMesh.scale.setScalar(1.002);this.scene.add(this.earlyMesh);
     this.geoCache = new Map(); this.borderKey = null; this.borderData = null; this.borderRequest = 0;
-    this.normals = meta.cells.map(c => latLonVector(c[0],c[1]));
-    this.spikes = new THREE.InstancedMesh(new THREE.CylinderGeometry(.7,1,1,4,1),new THREE.MeshBasicMaterial({color:0xffffff}),meta.cells.length);
-    this.spikes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.spikes.frustumCulled=false;this.scene.add(this.spikes);
     this.dotObject = new THREE.Object3D();this.color = new THREE.Color();this.up = new THREE.Vector3(0,1,0);
+    this.spikeUniforms={heightGain:{value:1},linearHeight:{value:0},studyColors:{value:1},lowDensityColor:{value:new THREE.Color('#766846')},highDensityColor:{value:new THREE.Color('#ffe6ac')}};
+    this.setPopulationGrid(meta);
     this.routeGroup = new THREE.Group();this.eventGroup = new THREE.Group();this.scene.add(this.routeGroup,this.eventGroup);
     this.selection = new THREE.Mesh(new THREE.RingGeometry(.017,.019,48),new THREE.MeshBasicMaterial({color:0xe7d4a0,side:THREE.DoubleSide,transparent:true,opacity:.85,depthWrite:false}));this.selection.visible=false;this.scene.add(this.selection);
     this.raycaster = new THREE.Raycaster();this.pointer = new THREE.Vector2();
@@ -116,29 +138,64 @@ export class HistoryGlobe {
   focus(region){this.destination=latLonVector(region.lat,region.lon,Math.min(6,region.distance/Math.min(1,this.camera.aspect)));}
   zoom(factor){this.destination=null;this.camera.position.setLength(clamp(this.camera.position.length()*factor,1.13,6));this.controls.update();}
   setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);}
-  setScale(scale,gain){this.scale=scale;this.gain=gain;if(this.populations)this.updatePopulation(this.populations);}
+  setScale(scale,gain){this.scale=scale;this.gain=gain;this.spikeUniforms.heightGain.value=gain;this.spikeUniforms.linearHeight.value=scale==='linear'?1:0;this.dirty=true;}
+  setPopulationOpacity(opacity){this.populationOpacity=clamp(opacity,0,1);this.spikes.material.opacity=this.populationOpacity;this.spikes.visible=this.layers.population&&!!this.populations&&this.populationOpacity>0;this.dirty=true;}
+  setPopulationGrid(meta){
+    if(this.spikes){this.scene.remove(this.spikes);this.spikes.geometry.dispose();this.spikes.material.dispose();}
+    this.meta=meta;this.populations=null;this.blendWeights=new Map();
+    this.normals=meta.cells.map(c=>latLonVector(c[0],c[1]));
+    const geometry=new THREE.CylinderGeometry(.7,1,1,4,1);geometry.translate(0,.5,0);
+    geometry.setAttribute('cellPopulation',new THREE.InstancedBufferAttribute(new Float32Array(meta.cells.length),1).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute('cellArea',new THREE.InstancedBufferAttribute(new Float32Array(meta.cells.map(c=>c[2])),1));
+    const material=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:this.populationOpacity,depthWrite:false});
+    material.onBeforeCompile=shader=>{
+      Object.assign(shader.uniforms,this.spikeUniforms);
+      shader.vertexShader='attribute float cellPopulation; attribute float cellArea; uniform float heightGain; uniform float linearHeight; uniform float studyColors; uniform vec3 lowDensityColor; uniform vec3 highDensityColor;\n'+shader.vertexShader;
+      shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+        float density=max(0.0,cellPopulation/cellArea);
+        float height=heightGain*mix(0.1*log(1.0+density)/log(10.0),density*0.00015,linearHeight);
+        transformed.y*=height;
+        if(cellPopulation<=0.0)transformed=vec3(0.0);
+        #ifdef USE_INSTANCING_COLOR
+          if(studyColors<0.5)vColor=mix(lowDensityColor,highDensityColor,clamp((log(density+0.01)/log(10.0)+2.0)/5.0,0.0,1.0));
+        #endif`);
+    };
+    this.spikes=new THREE.InstancedMesh(geometry,material,meta.cells.length);
+    this.spikes.frustumCulled=false;this.spikes.renderOrder=3;this.spikes.visible=false;
+    // Orientation and footprint are static. Only one scalar per cell changes
+    // during playback; height and magnification are evaluated on the GPU.
+    for(let i=0;i<meta.cells.length;i++){
+      const c=meta.cells[i],normal=this.normals[i],width=.0028*meta.resolutionDegrees*Math.max(.38,Math.sqrt(Math.cos(c[0]*R)));
+      this.dotObject.position.copy(normal).multiplyScalar(1.003);
+      this.dotObject.quaternion.setFromUnitVectors(this.up,normal);this.dotObject.scale.set(width,1,width);this.dotObject.updateMatrix();this.spikes.setMatrixAt(i,this.dotObject.matrix);
+      this.spikes.setColorAt(i,this.color.set('#dbc28a'));
+    }
+    this.scene.add(this.spikes);this.colorKey=null;this.dirty=true;
+  }
   updatePopulation(populations){
-    this.dirty=true;this.populations=populations;this.spikes.visible=!!populations&&this.layers.population;
+    this.dirty=true;this.populations=populations;this.spikes.visible=!!populations&&this.layers.population&&this.populationOpacity>0;
     if(!populations)return;
+    const attribute=this.spikes.geometry.attributes.cellPopulation;attribute.array.set(populations);attribute.needsUpdate=true;
+    this.spikeUniforms.studyColors.value=this.layers.ancestry?1:0;
     const routes=this.layers.ancestry?activeMigrations(this.routes,this.year).filter(r=>r.blend):[];
-    const low=new THREE.Color('#766846'), high=new THREE.Color('#ffe6ac');
-    for(let i=0;i<populations.length;i++){
-      const c=this.meta.cells[i],normal=this.normals[i],d=populations[i]/c[2];
-      const height=densityHeight(d,this.scale,this.gain),width=.0028*Math.max(.38,Math.sqrt(Math.cos(c[0]*R)));
-      this.dotObject.position.copy(normal).multiplyScalar(1.003+height/2);
-      this.dotObject.quaternion.setFromUnitVectors(this.up,normal);this.dotObject.scale.set(populations[i]>0?width:0,height,width);this.dotObject.updateMatrix();this.spikes.setMatrixAt(i,this.dotObject.matrix);
-      // With study colors enabled, growth changes height only. The study's
-      // incoming fraction drives hue independently of population growth.
-      if(this.layers.ancestry)this.color.set('#dbc28a');
-      else this.color.copy(low).lerp(high,clamp((Math.log10(d+.01)+2)/5,0,1));
-      for(const route of routes){
-        const b=route.blend,dist=distanceKm(c[0],c[1],...b.center),sourceDistance=distanceKm(c[0],c[1],...route.points[0]);
-        if(sourceDistance<b.radius*.65)this.color.lerp(new THREE.Color(b.incoming),1-sourceDistance/(b.radius*.65));
-        if(dist<b.radius){const fraction=(b.fraction??.55)*migrationProgress(route,this.year);const blended=new THREE.Color(b.prior).lerp(new THREE.Color(b.incoming),fraction);this.color.lerp(blended,1-dist/b.radius);}
+    const key=routes.map(r=>`${r.id}:${migrationProgress(r,this.year)}`).join('|');
+    if(this.colorKey===key)return;this.colorKey=key;
+    const blends=routes.map(route=>{
+      const b=route.blend;
+      if(!this.blendWeights.has(route.id)){
+        const source=new Float32Array(this.meta.cells.length),target=new Float32Array(source.length);
+        for(let i=0;i<source.length;i++){const c=this.meta.cells[i];source[i]=Math.max(0,1-distanceKm(c[0],c[1],...route.points[0])/(b.radius*.65));target[i]=Math.max(0,1-distanceKm(c[0],c[1],...b.center)/b.radius);}
+        this.blendWeights.set(route.id,{source,target});
       }
+      return {...this.blendWeights.get(route.id),incoming:new THREE.Color(b.incoming),mixed:new THREE.Color(b.prior).lerp(new THREE.Color(b.incoming),(b.fraction??.55)*migrationProgress(route,this.year))};
+    });
+    const base=new THREE.Color('#dbc28a');
+    for(let i=0;i<populations.length;i++){
+      this.color.copy(base);
+      for(const b of blends){if(b.source[i])this.color.lerp(b.incoming,b.source[i]);if(b.target[i])this.color.lerp(b.mixed,b.target[i]);}
       this.spikes.setColorAt(i,this.color);
     }
-    this.spikes.instanceMatrix.needsUpdate=true;this.spikes.instanceColor.needsUpdate=true;
+    this.spikes.instanceColor.needsUpdate=true;
   }
   setYear(year,routes,events){
     this.dirty=true;this.year=year;this.routes=routes;this.setBorders(year);
@@ -156,30 +213,73 @@ export class HistoryGlobe {
     this.updateBordersOpacity();
   }
   async loadGeo(index){const row=this.borders.snapshots[index];if(!this.geoCache.has(row.file))this.geoCache.set(row.file,fetch(`./data/borders/${row.file}`).then(r=>{if(!r.ok)throw new Error(`Boundary snapshot ${row.year} could not load.`);return r.json();}).catch(e=>{this.geoCache.delete(row.file);throw e;}));return this.geoCache.get(row.file);}
+  textureFor(index,data){
+    if(!this.textureCache.has(index))this.textureCache.set(index,borderTexture(data));
+    return this.textureCache.get(index);
+  }
+  beginBorder(pair){
+    this.previousBorder=this.displayBorder;this.displayBorder=pair;this.borderFade=0;
+    const u=this.borderUniforms,old=this.previousBorder;
+    u.oldA.value=old?.textures[0]??this.emptyBorder;u.oldB.value=old?.textures[1]??this.emptyBorder;u.oldWeight.value=u.weight.value;
+    u.mapA.value=pair.textures[0];u.mapB.value=pair.textures[1];u.weight.value=pair.bracket?.t??0;u.transition.value=0;
+    this.updateBordersOpacity();
+  }
+  queueBorder(pair){if(this.borderFade<1)this.pendingBorder=pair;else this.beginBorder(pair);}
+  advanceBorders(dt){
+    const target=this.displayBorder?.bracket?.t??0,delta=target-this.borderUniforms.weight.value;
+    if(Math.abs(delta)>.00001){this.borderUniforms.weight.value+=delta*(1-Math.exp(-dt*18));this.dirty=true;}
+    if(this.borderFade>=1)return;
+    this.borderFade=Math.min(1,this.borderFade+dt/.28);
+    this.borderUniforms.transition.value=this.borderFade*this.borderFade*(3-2*this.borderFade);this.dirty=true;
+    if(this.borderFade===1){
+      this.previousBorder=null;
+      this.borderUniforms.oldA.value=this.borderUniforms.mapA.value;this.borderUniforms.oldB.value=this.borderUniforms.mapB.value;
+      if(this.pendingBorder){const next=this.pendingBorder;this.pendingBorder=null;this.beginBorder(next);}
+      const used=new Set([this.emptyBorder,...[this.displayBorder,this.previousBorder,this.pendingBorder].flatMap(p=>p?.textures??[])]);
+      for(const [key,texture] of this.textureCache){if(this.textureCache.size<=6)break;if(!used.has(texture)){texture.dispose();this.textureCache.delete(key);}}
+      this.updateBordersOpacity();
+    }
+  }
   async setBorders(year){
-    const b=borderBracket(this.borders.snapshots,year);this.currentBorderBracket=b;
+    let b=borderBracket(this.borders.snapshots,year);
+    // At an exact sample use the following interval at weight zero. Avoid an
+    // extra (same,same) swap between every pair during playback.
+    if(b&&b.a===b.b&&b.b<this.borders.snapshots.length-1)b={...b,b:b.a+1,t:0};
+    this.currentBorderBracket=b;
     const early=EARLY_ZONES.filter(z=>year>=z.start&&year<=z.end),earlyKey=early.map(z=>z.name).join('|');
     if(earlyKey!==this.earlyKey){this.earlyKey=earlyKey;const canvas=textureCanvas(),ctx=canvas.getContext('2d');for(const zone of early){polygonPath(ctx,zone.geometry,canvas.width,canvas.height);ctx.fillStyle=zone.color;ctx.fill('evenodd');ctx.strokeStyle=zone.color;ctx.setLineDash([3,3]);ctx.lineWidth=1.5;ctx.stroke();}this.earlyMesh.material.map?.dispose();this.earlyMesh.material.map=canvasTexture(canvas);this.earlyMesh.material.needsUpdate=true;}
-    if(!b){this.borderRequest++;this.borderKey=null;this.borderData=null;this.updateBordersOpacity();this.callbacks.onBorders?.({early});return;}
+    if(!b){
+      if(this.borderKey!==null){this.borderRequest++;this.borderKey=null;this.borderData=null;this.borderError=null;this.pendingBorder=null;this.queueBorder({key:null,bracket:null,data:null,textures:[this.emptyBorder,this.emptyBorder]});}
+      this.updateBordersOpacity();this.callbacks.onBorders?.({early});return;
+    }
     const key=`${b.a}/${b.b}`;
+    if(this.displayBorder?.key===key)this.displayBorder.bracket=b;
+    if(this.pendingBorder?.key===key)this.pendingBorder.bracket=b;
+    if(b.t>.5&&b.b+1<this.borders.snapshots.length)this.loadGeo(b.b+1).catch(()=>{});
     if(key===this.borderKey){this.updateBordersOpacity();this.callbacks.onBorders?.({bracket:b,ready:!!this.borderData,loading:!this.borderData&&!this.borderError,error:this.borderError});return;}
-    this.borderKey=key;this.borderData=null;this.borderError=null;const request=++this.borderRequest;this.updateBordersOpacity();this.callbacks.onBorders?.({bracket:b,loading:true});
+    // Preserve the complete displayed pair until the replacement is ready.
+    this.borderKey=key;this.borderData=null;this.borderError=null;this.pendingBorder=null;
+    const request=++this.borderRequest;this.updateBordersOpacity();this.callbacks.onBorders?.({bracket:b,loading:true});
     try{
       const data=await Promise.all([this.loadGeo(b.a),this.loadGeo(b.b)]);
       if(request!==this.borderRequest||this.disposed)return;
       this.borderData=data;
-      for(let i=0;i<2;i++){this.territoryMeshes[i].material.map?.dispose();this.territoryMeshes[i].material.map=borderTexture(data[i]);this.territoryMeshes[i].material.needsUpdate=true;}
+      const textures=[this.textureFor(b.a,data[0]),this.textureFor(b.b,data[1])];
+      this.queueBorder({key,bracket:this.currentBorderBracket,data,textures});
       this.updateBordersOpacity();this.callbacks.onBorders?.({bracket:this.currentBorderBracket,ready:true});
-    }catch(error){if(request===this.borderRequest){this.borderError=error.message+' Select another era and return, or reload, to retry.';this.callbacks.onBorders?.({error:this.borderError});}}
+    }catch(error){if(request===this.borderRequest&&!this.disposed){this.borderError=error.message+' Keeping the last available map. Select another era and return, or reload, to retry.';this.callbacks.onBorders?.({error:this.borderError});}}
   }
   updateBordersOpacity(){
     this.dirty=true;
-    const b=this.currentBorderBracket;for(let i=0;i<2;i++){this.territoryMeshes[i].visible=this.layers.territories&&!!b&&!!this.borderData;this.territoryMeshes[i].material.opacity=.38*(b?(i===0?1-b.t:b.t):0);}
-    this.earlyMesh.visible=this.layers.territories&&!b;
+    this.territoryMesh.visible=this.layers.territories&&!!(this.displayBorder?.data||this.previousBorder?.data);
+    this.earlyMesh.visible=this.layers.territories&&!this.currentBorderBracket;
   }
-  territoriesAt(lat,lon){const b=this.currentBorderBracket;if(!b)return EARLY_ZONES.filter(z=>this.year>=z.start&&this.year<=z.end&&containsPoint(z.geometry,lon,lat)).map(z=>({name:z.name,source:z.source,year:null}));if(!this.borderData)return[];
-    const out=[];for(const i of(b.a===b.b?[0]:[0,1]))for(const feature of this.borderData[i].features)if(containsPoint(feature.geometry,lon,lat))out.push({name:feature.properties.name,year:this.borders.snapshots[i===0?b.a:b.b].year,source:'basemaps'});return out;}
-  nearestCell(lat,lon){let best=-1,bestDistance=Infinity;for(let i=0;i<this.meta.cells.length;i++){const c=this.meta.cells[i];if(Math.abs(c[0]-lat)>2)continue;const d=distanceKm(lat,lon,c[0],c[1]);if(d<bestDistance){bestDistance=d;best=i;}}return bestDistance<170?best:-1;}
+  territoriesAt(lat,lon){
+    if(!this.currentBorderBracket)return EARLY_ZONES.filter(z=>this.year>=z.start&&this.year<=z.end&&containsPoint(z.geometry,lon,lat)).map(z=>({name:z.name,source:z.source,year:null}));
+    const pair=this.displayBorder,b=pair?.bracket;if(!b||!pair.data)return[];
+    const out=[];for(const i of(b.a===b.b||b.t===0?[0]:[0,1]))for(const feature of pair.data[i].features)if(containsPoint(feature.geometry,lon,lat))out.push({name:feature.properties.name,year:this.borders.snapshots[i===0?b.a:b.b].year,source:'basemaps'});return out;
+  }
+  nearestCell(lat,lon){let best=-1,bestDistance=Infinity;for(let i=0;i<this.meta.cells.length;i++){const c=this.meta.cells[i];if(Math.abs(c[0]-lat)>this.meta.resolutionDegrees*2)continue;const d=distanceKm(lat,lon,c[0],c[1]);if(d<bestDistance){bestDistance=d;best=i;}}return bestDistance<170*this.meta.resolutionDegrees?best:-1;}
   selectLocation(lat,lon){this.selection.position.copy(latLonVector(lat,lon,1.011));this.selection.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),this.selection.position.clone().normalize());this.selection.visible=true;}
   clearSelection(){this.selection.visible=false;}
   pick(event,click){
@@ -194,11 +294,11 @@ export class HistoryGlobe {
   render(dt,playing){
     if(this.disposed)return;
     if(this.destination){this.camera.position.lerp(this.destination,1-Math.exp(-dt*5));if(this.camera.position.distanceTo(this.destination)<.001)this.destination=null;}
-    this.controls.update();if(!this.dirty&&!playing&&!this.destination)return;if(playing)this.phase+=dt;
+    this.advanceBorders(dt);this.controls.update();if(!this.dirty&&!playing&&!this.destination)return;if(playing)this.phase+=dt;
     for(const v of this.routeVisuals??[]){const p=migrationProgress(v.route,this.year),positions=v.dots.geometry.attributes.position;for(let i=0;i<18;i++){const t=p===0?0:((i/18+this.phase*.1)%1)*p;const point=along(v.points,t);positions.setXYZ(i,point.x,point.y,point.z);}positions.needsUpdate=true;v.head.position.copy(along(v.points,p));}
     const cameraNormal=this.camera.position.clone().normalize(),horizon=1/this.camera.position.length();
     for(const label of this.labels){const visible=label.position.clone().normalize().dot(cameraNormal)>horizon+.07;label.el.hidden=!visible;if(visible){const p=label.position.clone().project(this.camera);label.el.style.left=`${(p.x*.5+.5)*this.width}px`;label.el.style.top=`${(-p.y*.5+.5)*this.height}px`;}}
     this.renderer.render(this.scene,this.camera);this.dirty=false;
   }
-  dispose(){this.disposed=true;this.borderRequest++;this.resizeObserver.disconnect();this.controls.dispose();this.scene.traverse(o=>{o.geometry?.dispose();if(o.material){o.material.map?.dispose();o.material.dispose();}});this.renderer.dispose();for(const label of this.labels)label.el.remove();}
+  dispose(){this.disposed=true;this.borderRequest++;this.resizeObserver.disconnect();this.controls.dispose();this.scene.traverse(o=>{o.geometry?.dispose();if(o.material){o.material.map?.dispose();o.material.dispose();}});for(const texture of this.textureCache.values())texture.dispose();this.emptyBorder.dispose();this.renderer.dispose();for(const label of this.labels)label.el.remove();}
 }

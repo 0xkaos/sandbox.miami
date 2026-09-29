@@ -4,7 +4,7 @@
 
 Klein Goldewijk, K., Beusen, A., Doelman, J., and Stehfest, E. (2017). *Anthropogenic land use estimates for the Holocene – HYDE 3.2*. Earth System Science Data 9, 927–953. <https://doi.org/10.5194/essd-9-927-2017>.
 
-Input: `popc.tif` (75 bands) from `raw-data.zip`, file 4570054, in the Anthromes 12K reproducibility archive: <https://doi.org/10.7910/DVN/E3H3AK>. The archive's API identifies its release as **CC0 1.0**. The archive README explicitly asks users of the included HYDE inputs to cite the original HYDE publication. These derived 1° grids preserve that credit. No publication prose or figures are redistributed.
+Input: `popc.tif` (75 bands) from `raw-data.zip`, file 4570054, in the Anthromes 12K reproducibility archive: <https://doi.org/10.7910/DVN/E3H3AK>. The archive's API identifies its release as **CC0 1.0**. The archive README explicitly asks users of the included HYDE inputs to cite the original HYDE publication. These derived 1°, 0.5°, and 0.25° grids preserve that credit. No publication prose or figures are redistributed.
 
 Transformations: NaN ocean/missing raster values excluded from sums; positive population cells aggregated by summing 12×12 source pixels; spherical cell areas computed; floats converted to Float32; approximate fixed region codes added. The retained mask covers cells with positive population in at least one sample. This is a baseline reconstruction; lower and upper scenarios are not included.
 

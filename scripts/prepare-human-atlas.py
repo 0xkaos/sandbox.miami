@@ -81,6 +81,46 @@ def population(tif):
         print('Population:', len(cells), 'cells ×', len(years), 'years;', len(values.tobytes()), 'bytes', flush=True)
 
 
+def population_detail(tif):
+    """Real finer aggregations, with separate date files for bounded downloads."""
+    with rasterio.open(tif) as src:
+        assert (src.width, src.height, src.count) == (4320, 2160, 75)
+        years = [(-int(d[:-2]) if d.endswith('BC') else int(d[:-2])) for d in src.descriptions]
+        # One source pass builds both resolutions; every native cell contributes.
+        grids = {factor: np.zeros((75, 2160 // factor, 4320 // factor), dtype=np.float64) for factor in (6, 3)}
+        for row in range(0, src.height, 72):
+            block = np.nan_to_num(src.read(window=rasterio.windows.Window(0, row, src.width, 72)), nan=0, posinf=0, neginf=0)
+            assert block.min() >= 0
+            for factor, grid in grids.items():
+                grid[:, row // factor:(row + 72) // factor] = block.reshape(75, 72 // factor, factor, 4320 // factor, factor).sum(axis=(2, 4), dtype=np.float64)
+        for factor, grid in grids.items():
+            resolution = factor / 12
+            destination = OUT / f'population-{resolution:g}'
+            destination.mkdir(exist_ok=True)
+            mask = grid.max(axis=0) > 0
+            cells = []
+            for row, col in np.argwhere(mask):
+                lat, lon = 90 - (float(row) + .5) * resolution, -180 + (float(col) + .5) * resolution
+                area = 6371.0088 ** 2 * math.radians(resolution) * (math.sin(math.radians(lat + resolution / 2)) - math.sin(math.radians(lat - resolution / 2)))
+                cells.append([lat, lon, round(area, 3), region(lat, lon)])
+            frames = []
+            for i, year in enumerate(years):
+                values = grid[i, mask].astype('<f4')
+                binary = values.tobytes()
+                filename = f'{year}.f32'
+                (destination / filename).write_bytes(binary)
+                frames.append({'year': year, 'file': filename, 'bytes': len(binary), 'total': round(float(values.sum(dtype=np.float64))), 'sha256': hashlib.sha256(binary).hexdigest()})
+            write_json(destination / 'index.json', {
+                'version': 1, 'source': 'hyde', 'resolutionDegrees': resolution,
+                'sourceResolutionDegrees': 1 / 12,
+                'layout': 'one little-endian float32 file per source date; cell index; people per cell',
+                'years': years, 'cells': cells, 'frames': frames,
+                'regions': ['Africa', 'Europe', 'Asia', 'North America', 'South America', 'Oceania'],
+                'note': 'HYDE 3.2 baseline summed directly from the 5-arc-minute source. Whole-cell area includes coastal water. Finer model output does not imply more precise historical evidence. Charts and regional exports use the fixed 1-degree reference grid.',
+            })
+            print(f'Detail {resolution}°: {len(cells):,} cells × 75 dates; {len(binary):,} bytes per date', flush=True)
+
+
 def rounded(value):
     if isinstance(value, (tuple, list)):
         return [rounded(v) for v in value]
@@ -143,10 +183,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cache', type=Path, default=Path('/tmp/human-atlas-source'))
     parser.add_argument('--population-tif', type=Path)
+    parser.add_argument('--population-detail-only', action='store_true', help='Rebuild only the optional 0.5° and 0.25° date files from --population-tif')
     args = parser.parse_args()
     args.cache.mkdir(parents=True, exist_ok=True)
     (OUT / 'borders').mkdir(parents=True, exist_ok=True)
+    if args.population_detail_only:
+        if not args.population_tif:
+            parser.error('--population-detail-only requires --population-tif')
+        population_detail(args.population_tif)
+        raise SystemExit(0)
     if args.population_tif:
         population(args.population_tif)
+        population_detail(args.population_tif)
     geography(args.cache)
     comparison(args.cache)

@@ -3,11 +3,13 @@ import { SOURCES, EVENTS, MIGRATIONS, CHAPTERS } from './history.mjs';
 import { MIN_YEAR, MAX_YEAR, TIME_KNOTS, REGIONS, CATEGORY_COLORS, clamp, bracket, borderBracket, formatYear, formatPeople, yearToPosition, positionToYear, populationAt, summarize, densityHeight, contextWindow, nearbyEvents, activeMigrations, migrationProgress, sourceLinks, escapeHTML as esc } from './model.mjs';
 import { populationSeries, sparklinePath, makeSnapshot, snapshotCSV, downloadFile } from './snapshot.mjs';
 import { validateResearch } from './import.mjs';
+import { PopulationDetail, POPULATION_RESOLUTIONS } from './population-detail.mjs';
 
 const $ = selector => document.querySelector(selector);
-const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: 1, layers: { population: true, territories: true, migrations: true, ancestry: true, events: true } };
+const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: 1, opacity: 1, resolution: 1, layers: { population: true, territories: true, migrations: true, ancestry: true, events: true } };
 const data = { sources: [...SOURCES], events: [...EVENTS], migrations: [...MIGRATIONS] };
 let meta, values, comparison, borders, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
+let detailGrid=null, resolutionRequest=0, resolutionError=null, displayedPopulationYear=null;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function readHash() {
@@ -16,13 +18,15 @@ function readHash() {
   if (params.has('year') && Number.isFinite(y)) state.year = clamp(Math.round(y), MIN_YEAR, MAX_YEAR);
   state.region = REGIONS.find(r => r.id === params.get('region')) ?? state.region;
   if (['linear', 'log'].includes(params.get('scale'))) state.scale = params.get('scale');
-  if ([.25, .5, 1, 3, 10].includes(Number(params.get('gain')))) state.gain = Number(params.get('gain'));
+  if (params.has('gain') && Number.isFinite(Number(params.get('gain')))) state.gain = clamp(Number(params.get('gain')), .05, 10);
+  if (params.has('opacity') && Number.isFinite(Number(params.get('opacity')))) state.opacity = clamp(Number(params.get('opacity')), 0, 1);
+  if (POPULATION_RESOLUTIONS.includes(Number(params.get('resolution')))) state.resolution = Number(params.get('resolution'));
   if (params.has('layers')) { const shown = params.get('layers').split(','); for (const key in state.layers) state.layers[key] = shown.includes(key); }
 }
 function saveHash() {
   clearTimeout(hashTimer);
   hashTimer = setTimeout(() => {
-    const p = new URLSearchParams({ year: Math.round(state.year), region: state.region.id, scale: state.scale, gain: state.gain, layers: Object.keys(state.layers).filter(k => state.layers[k]).join(',') });
+    const p = new URLSearchParams({ year: Math.round(state.year), region: state.region.id, scale: state.scale, gain: state.gain, opacity: state.opacity, resolution: state.resolution, layers: Object.keys(state.layers).filter(k => state.layers[k]).join(',') });
     history.replaceState(null, '', `${location.pathname}${location.search}#${p}`);
   }, 250);
 }
@@ -32,7 +36,7 @@ function setPlaying(playing) {
   if (playing && state.year >= MAX_YEAR) setYear(MIN_YEAR);
   state.playing = playing;
   $('#play').textContent = playing ? 'Ⅱ' : '▶'; $('#play').setAttribute('aria-label', playing ? 'Pause timeline' : 'Play timeline'); $('#play').setAttribute('aria-pressed', String(playing));
-  if (!playing) saveHash();
+  if (!playing) { $('#render-performance').textContent='Play to measure frame rate on this device.'; saveHash(); }
 }
 function setYear(year, pause = false) {
   if (pause) setPlaying(false);
@@ -74,9 +78,10 @@ function renderDetail() {
     html += sourceHTML(item.sources);
   }
   if (location) {
-    const c = location.index >= 0 ? meta.cells[location.index] : null, count = c && populations ? populations[location.index] : null;
+    const grid=globe?.meta??meta, shown=globe?globe.populations:populations;
+    const c = location.index >= 0 ? grid.cells[location.index] : null, count = c && shown ? shown[location.index] : null;
     if (!detail) html += `<span class="section-label">SELECTED PLACE</span><h2>${Math.abs(location.lat).toFixed(1)}° ${location.lat >= 0 ? 'N' : 'S'} · ${Math.abs(location.lon).toFixed(1)}° ${location.lon >= 0 ? 'E' : 'W'}</h2>`;
-    if (c && count != null) html += `<dl><dt>Nearby 1° cell</dt><dd>${formatPeople(count)} people</dd><dt>Mean cell density</dt><dd>${(count / c[2]).toLocaleString('en-US', { maximumFractionDigits: 3 })} / km²</dd><dt>Cell footprint</dt><dd>${Math.round(c[2]).toLocaleString('en-US')} km²</dd></dl><p>Cell center: ${c[0]}°, ${c[1]}°. These are grid estimates, not settlement counts.</p>`;
+    if (c && count != null) html += `<dl><dt>Nearby ${grid.resolutionDegrees}° cell</dt><dd>${formatPeople(count)} people</dd><dt>Mean cell density</dt><dd>${(count / c[2]).toLocaleString('en-US', { maximumFractionDigits: 3 })} / km²</dd><dt>Cell footprint</dt><dd>${Math.round(c[2]).toLocaleString('en-US')} km²</dd></dl><p>Cell center: ${c[0]}°, ${c[1]}°. These are grid estimates, not settlement counts.${displayedPopulationYear!=null&&displayedPopulationYear!==Math.round(state.year)?` Displayed population: ${formatYear(displayedPopulationYear)} while detail loads.`:''}</p>`;
     else html += `<p>${state.year < -10000 ? 'No quantitative population estimate is available at this date.' : 'No population grid cell is available near this point.'}</p>`;
     const territories = globe?.territoriesAt(location.lat, location.lon) ?? [];
     if (territories.length) html += territories.map(t => `<p class="territory-chip">${esc(t.name)}${t.year != null ? ` · ${formatYear(t.year)} snapshot` : ' · broad schematic zone'}</p>`).join('');
@@ -91,7 +96,7 @@ function boundaryDescription(status = borderLoadStatus) {
   const b = borderBracket(borders.snapshots, Math.round(state.year));
   if (!state.layers.territories) return 'Territory layer hidden. Population remains independent of political boundaries.';
   if (!b) return state.year < -7400 ? 'No territory reconstruction for this date. Modern coastlines are shown.' : 'Selected early farming zones only: overlapping, schematic areas of activity, not states.';
-  if (status?.loading) return 'Loading the adjoining boundary snapshots…';
+  if (status?.loading) return 'Loading the adjoining boundary snapshots; keeping the last available map visible…';
   const a = borders.snapshots[b.a].year, z = borders.snapshots[b.b].year;
   if (b.held) return `Holding the ${formatYear(a)} reconstruction. No later boundary snapshot is bundled.`;
   return b.a === b.b ? `${formatYear(a)} reconstruction. Approximate territories and cultural regions.` : `${formatYear(a)} ↔ ${formatYear(z)} · ${Math.round(b.t*100)}% crossfade. The intervening boundaries are not independently known.`;
@@ -115,7 +120,10 @@ function renderState() {
   $('#estimate-note').textContent = !b ? 'Migration and archaeological evidence extend into deep time. The quantitative grid starts at 10,000 BCE; no population is extrapolated backward.' : b.a === b.b ? 'HYDE baseline estimate, aggregated to 1°. Small chart: log population over era-weighted time. No confidence interval is bundled.' : `Interpolated between ${formatYear(meta.years[b.a])} and ${formatYear(meta.years[b.b])}. Coarse samples can smooth over crises. Small chart uses a log axis.`;
   $('#map-caption').textContent = !b ? 'Deep time · migration evidence · population unknown' : `${state.region.name} · ${meta.cells.length.toLocaleString('en-US')} population cells · ${b.a === b.b ? 'source reconstruction' : 'interpolated reconstruction'}`;
   $('#record-label').textContent = !b ? 'Before the population record · modern coastlines' : `HYDE 3.2 · ${b.a === b.b ? formatYear(year) : `${formatYear(meta.years[b.a])} → ${formatYear(meta.years[b.b])}`}`;
-  $('#scale-caption').textContent = `Fixed ${state.scale === 'log' ? 'log' : 'linear'} height · ${state.gain}× · 1° cells`;
+  $('#height-gain-output').textContent=`${Number(state.gain.toFixed(2))}×`;
+  $('#spike-opacity-output').textContent=`${Math.round(state.opacity*100)}%`;
+  $('#height-gain').setAttribute('aria-valuetext',`${Number(state.gain.toFixed(2))} times height`);
+  $('#spike-opacity').setAttribute('aria-valuetext',`${Math.round(state.opacity*100)} percent visible`);
   $('.map-key').classList.toggle('study-colors',state.layers.ancestry);
   document.querySelectorAll('.density-key i').forEach((el,i)=>{el.style.height=`${Math.max(1,32*densityHeight([.01,1,10,100,1000][i],state.scale)/densityHeight(1000,state.scale))}px`;});
   const chapter = CHAPTERS.reduce((a, c) => Math.abs(c.year - year) < Math.abs(a.year - year) ? c : a, CHAPTERS[0]);
@@ -139,9 +147,52 @@ function renderState() {
     $('#migration-list').innerHTML = routes.map(r => `<button class="migration-card" data-route="${esc(r.id)}" style="--route-color:${r.color}"><b>${esc(r.title)}</b><small>${r.blend ? 'Ancient DNA study · inspect mixture' : 'Schematic corridor · inspect evidence'}</small></button>`).join('');
   }
   const mapEvents = nearbyEvents(data.events, year, REGIONS[0], state.category).slice(0,100);
-  globe?.setYear(year, data.migrations, mapEvents); globe?.updatePopulation(populations);
+  globe?.setYear(year, data.migrations, mapEvents); updatePopulationView(year);
   $('#territory-status').textContent = boundaryDescription();
   renderDetail();
+}
+function updatePopulationView(year) {
+  if(!globe)return;
+  const previousGrid=globe.meta;
+  let status='',sample;
+  if(state.resolution===1){
+    if(globe.meta!==meta)globe.setPopulationGrid(meta);
+    globe.updatePopulation(populations);displayedPopulationYear=populations?year:null;
+  }else if(detailGrid){
+    sample=detailGrid.sample(year);
+    if('populations' in sample){
+      if(sample.populations&&globe.meta!==detailGrid.meta)globe.setPopulationGrid(detailGrid.meta);
+      globe.updatePopulation(sample.populations);displayedPopulationYear=sample.populations?year:null;
+    }else{
+      status=sample.error??`Loading ${state.resolution}° population for ${formatYear(year)}…`;
+    }
+  }else status=resolutionError??`Loading the ${state.resolution}° grid…`;
+  // Missing deep-time evidence must never leave a previous headcount on screen.
+  if(!populations){globe.updatePopulation(null);displayedPopulationYear=null;}
+  if(state.resolution!==1&&globe.meta===meta){globe.updatePopulation(populations);displayedPopulationYear=populations?year:null;}
+  const grid=globe.meta;
+  if(state.location&&grid!==previousGrid)state.location.index=globe.nearestCell(state.location.lat,state.location.lon);
+  const held=displayedPopulationYear!=null&&displayedPopulationYear!==year;
+  $('#resolution-status').textContent=status?(status+(held?` Spikes still show ${formatYear(displayedPopulationYear)}.`:` Showing the ${grid.resolutionDegrees}° grid.`)):`${grid.cells.length.toLocaleString('en-US')} cells · ${grid.resolutionDegrees}° grid. Finer grids use more graphics power.`;
+  $('#scale-caption').textContent=`Fixed ${state.scale==='log'?'log':'linear'} height · ${Number(state.gain.toFixed(2))}× · ${grid.resolutionDegrees}° cells`;
+  if(populations)$('#map-caption').textContent=`${state.region.name} · ${grid.cells.length.toLocaleString('en-US')} population cells · ${grid.resolutionDegrees}°${held?` · displaying ${formatYear(displayedPopulationYear)}`:''}`;
+}
+async function setPopulationResolution(resolution) {
+  state.resolution=resolution;$('#population-resolution').value=resolution;
+  const request=++resolutionRequest;
+  detailGrid?.dispose();detailGrid=null;resolutionError=null;
+  if(ready)renderState();saveHash();
+  if(resolution===1||!globe){return;}
+  try{
+    const root=`./data/population-${resolution}`;
+    const response=await fetch(`${root}/index.json`);
+    if(!response.ok)throw new Error(`The ${resolution}° grid could not load (${response.status}).`);
+    const detailMeta=await response.json();
+    if(request!==resolutionRequest)return;
+    if(detailMeta.resolutionDegrees!==resolution||detailMeta.years.length!==meta.years.length||detailMeta.frames.length!==meta.years.length)throw new Error('Population detail metadata is incomplete.');
+    detailGrid=new PopulationDetail(detailMeta,root,()=>{if(ready)renderState();});
+    renderState();
+  }catch(error){if(request!==resolutionRequest)return;resolutionError=`${error.message} Choose another resolution to retry.`;renderState();}
 }
 function renderCatalog() {
   $('#source-list').innerHTML = data.sources.map(s => `<article class="source-row"><div><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)} ↗</a><small>${esc(s.author)}</small></div><span class="status-pill">${esc(s.status)}</span><p>${esc(s.detail)}</p></article>`).join('');
@@ -156,7 +207,7 @@ function snapshot() {
   currentSnapshot = makeSnapshot({ meta, populations, values, year, region: state.region, events, migrations, sources: data.sources, comparison, borderStatus: boundaryDescription() });
   currentSnapshot.populations = populations?.slice() ?? null; currentSnapshot.region = state.region; currentSnapshot.year = year;
   $('#snapshot-title').textContent = currentSnapshot.data.title;
-  $('#snapshot-subtitle').textContent = 'Population, local context, and the limits of the record at this moment. The geographic region comes from the region selector.';
+  $('#snapshot-subtitle').textContent = 'Population and context for the selected region. Charts and CSV use the fixed 1° reference grid at every display resolution.';
   $('#snapshot-chart').innerHTML = currentSnapshot.svg;
   $('#snapshot-notes').innerHTML = `<p>${esc(boundaryDescription())}</p><h3>Nearby records · ${esc(state.category === 'all' ? 'all themes' : state.category)}</h3>${events.length ? `<ul>${events.map(e=>`<li>${esc(e.title)} · ${formatYear(e.start)}–${formatYear(e.end)}</li>`).join('')}</ul>` : '<p>No curated events in this region and time window.</p>'}<p>Routes and ancestry colors summarize selected evidence; they do not establish local headcounts or precise paths. Regional totals use geographic bins, not historical political borders.</p>`;
   $('#download-csv').disabled = !populations; $('#download-csv').title = populations ? '' : 'No population grid is available at this date.';
@@ -168,8 +219,9 @@ function onHover(hit) {
   let html;
   if (hit.event) html = `<strong>${esc(hit.event.title)}</strong><small>${formatYear(hit.event.start)} – ${formatYear(hit.event.end)} · click to read</small>`;
   else {
-    const c = hit.index >= 0 ? meta.cells[hit.index] : null, p = populations && c ? populations[hit.index] : null;
-    html = `<strong>${esc(hit.territories[0]?.name ?? `${Math.abs(hit.lat).toFixed(1)}°${hit.lat>=0?'N':'S'} · ${Math.abs(hit.lon).toFixed(1)}°${hit.lon>=0?'E':'W'}`)}</strong><small>${p == null ? 'Population estimate unavailable' : `${formatPeople(p)} people · ${(p/c[2]).toLocaleString('en-US',{maximumFractionDigits:2})} / km²`}<br>Click to pause and inspect</small>`;
+    const grid=globe?.meta??meta, shown=globe?globe.populations:populations;
+    const c = hit.index >= 0 ? grid.cells[hit.index] : null, p = shown && c ? shown[hit.index] : null;
+    html = `<strong>${esc(hit.territories[0]?.name ?? `${Math.abs(hit.lat).toFixed(1)}°${hit.lat>=0?'N':'S'} · ${Math.abs(hit.lon).toFixed(1)}°${hit.lon>=0?'E':'W'}`)}</strong><small>${p == null ? 'Population estimate unavailable' : `${formatPeople(p)} people · ${(p/c[2]).toLocaleString('en-US',{maximumFractionDigits:2})} / km²`}${displayedPopulationYear!=null&&displayedPopulationYear!==Math.round(state.year)?` · ${formatYear(displayedPopulationYear)}`:''}<br>Click to pause and inspect</small>`;
   }
   tooltip.innerHTML = html; tooltip.hidden = false;
   const stage = $('.map-stage').getBoundingClientRect(); tooltip.style.left = `${clamp(hit.x+15,8,stage.width-tooltip.offsetWidth-8)}px`; tooltip.style.top = `${clamp(hit.y+15,8,stage.height-tooltip.offsetHeight-8)}px`;
@@ -193,8 +245,10 @@ function initializeControls() {
   $('#event-category').onchange=e=>{state.category=e.target.value;renderState();};
   $('#clear-location').onclick=clearPlace;
   for (const key in state.layers) {const el=$(`#layer-${key}`);el.checked=state.layers[key];el.onchange=()=>{state.layers[key]=el.checked;globe?.setLayers(state.layers);renderState();saveHash();};}
-  $('#height-scale').value=state.scale;$('#height-gain').value=state.gain;
-  const scale=()=>{state.scale=$('#height-scale').value;state.gain=Number($('#height-gain').value);globe?.setScale(state.scale,state.gain);renderState();saveHash();};$('#height-scale').onchange=scale;$('#height-gain').onchange=scale;
+  $('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;$('#population-resolution').value=state.resolution;
+  const scale=()=>{state.scale=$('#height-scale').value;state.gain=Number($('#height-gain').value);globe?.setScale(state.scale,state.gain);renderState();saveHash();};$('#height-scale').onchange=scale;$('#height-gain').oninput=scale;
+  $('#spike-opacity').oninput=e=>{state.opacity=Number(e.target.value)/100;globe?.setPopulationOpacity(state.opacity);renderState();saveHash();};
+  $('#population-resolution').onchange=e=>setPopulationResolution(Number(e.target.value));
   $('#zoom-in').onclick=()=>globe?.zoom(.82);$('#zoom-out').onclick=()=>globe?.zoom(1.2);$('#reset-view').onclick=()=>globe?.focus(state.region);
   $('#sources-button').onclick=()=>showDialog('#sources-dialog');$('#snapshot-button').onclick=snapshot;
   $('#date-button').onclick=()=>{const y=Math.round(state.year);$('#jump-year').value=Math.max(1,Math.abs(y));$('#jump-era').value=y<=0?'bce':'ce';$('#jump-error').textContent='';showDialog('#date-dialog');};
@@ -209,7 +263,7 @@ function initializeControls() {
   $('#import-data').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>4e6)throw new Error('Please use a file smaller than 4 MB.');const extra=validateResearch(JSON.parse(await file.text()),data);data.sources.push(...extra.sources);data.events.push(...extra.events);data.migrations.push(...extra.migrations);renderCatalog();renderTimelineMarkers();lastEventKey=null;lastRouteKey=null;renderState();$('#import-status').textContent=`Added ${extra.events.length} events and ${extra.migrations.length} routes from ${file.name}. They remain in this tab only.`;}catch(error){$('#import-status').textContent=`Could not import: ${error.message}`;}e.target.value='';};
   addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.target.closest('input,select,textarea,button,a,summary'))return;if(e.code==='Space'){e.preventDefault();setPlaying(!state.playing);}if(e.code==='ArrowLeft'||e.code==='ArrowRight'){e.preventDefault();const step=state.year < -10000?1000:state.year<0?100:10;setYear(state.year+(e.code==='ArrowLeft'?-step:step),true);}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)setPlaying(false);});
-  addEventListener('hashchange',()=>{setPlaying(false);readHash();for(const key in state.layers)$(`#layer-${key}`).checked=state.layers[key];$('#height-scale').value=state.scale;$('#height-gain').value=state.gain;globe?.setLayers(state.layers);globe?.setScale(state.scale,state.gain);setRegion(state.region);});
+  addEventListener('hashchange',()=>{setPlaying(false);readHash();for(const key in state.layers)$(`#layer-${key}`).checked=state.layers[key];$('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;setPopulationResolution(state.resolution);globe?.setPopulationOpacity(state.opacity);globe?.setLayers(state.layers);globe?.setScale(state.scale,state.gain);setRegion(state.region);});
 }
 async function loadJSON(name) {const r=await fetch(`./data/${name}`);if(!r.ok)throw new Error(`${name} could not load (${r.status}).`);return r.json();}
 async function start() {
@@ -225,15 +279,17 @@ async function start() {
         onBorders:status=>{borderLoadStatus=status;if(ready){$('#territory-status').textContent=boundaryDescription(status);if(state.location)renderDetail();}},
         onError:message=>{$('#map-error').hidden=false;$('#map-error').textContent=message;setPlaying(false);},
       });
-      globe.setLayers(state.layers);globe.setScale(state.scale,state.gain);globe.focus(state.region);
+      globe.setLayers(state.layers);globe.setScale(state.scale,state.gain);globe.setPopulationOpacity(state.opacity);globe.focus(state.region);
     } catch (error) {
       console.error(error);$('#map-error').hidden=false;$('#map-error').innerHTML='<strong>The 3D globe could not start.</strong><p>Enable WebGL and hardware acceleration, then reload. The timeline, sources, and population snapshots are still available.</p>';
     }
-    ready=true;initializeControls();renderState();$('#loading').hidden=true;
-    let previous=performance.now(),accumulator=0;
+    ready=true;initializeControls();renderState();if(state.resolution!==1)setPopulationResolution(state.resolution);$('#loading').hidden=true;
+    let previous=performance.now(),accumulator=0,fpsStart=previous,fpsFrames=0;
     function frame(now){const dt=Math.min(.1,(now-previous)/1000);previous=now;
       if(state.playing){state.year=state.mode==='era'?positionToYear(yearToPosition(state.year)+dt*state.speed/180):clamp(state.year+dt*100*state.speed,MIN_YEAR,MAX_YEAR);accumulator+=dt;if(accumulator>.08||state.year>=MAX_YEAR){if(Math.round(state.year)!==lastRenderedYear)renderState();accumulator=0;}if(state.year>=MAX_YEAR)setPlaying(false);}
-      globe?.render(dt,state.playing);requestAnimationFrame(frame);
+      globe?.render(dt,state.playing);
+      if(state.playing&&globe){fpsFrames++;if(now-fpsStart>=1000){$('#render-performance').textContent=`${Math.round(fpsFrames*1000/(now-fpsStart))} fps · ${globe.meta.resolutionDegrees}° grid`;fpsStart=now;fpsFrames=0;}}else{fpsStart=now;fpsFrames=0;}
+      requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
     addEventListener('pagehide',()=>{if(!document.hidden)return;setPlaying(false);});

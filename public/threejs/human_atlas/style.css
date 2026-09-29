@@ -14,3 +14,5 @@ dialog{color:var(--ink);background:#16211a;border:1px solid #4a5a46;border-radiu
 
 @media(max-width:520px){#snapshot-chart{overflow-x:auto}#snapshot-chart svg{width:640px;max-width:none}.dialog-close{margin-right:-12px}}
 .study-colors .density-key i{background:#dbc28a}.density-key i:nth-child(2){background:#9a8b62}.study-colors .density-key i:nth-child(2){background:#dbc28a}
+
+.scale-settings .range-control{display:grid;grid-template-columns:1fr auto;gap:8px;margin:16px 0}.range-control output{font-variant-numeric:tabular-nums;color:var(--accent)}.range-control input[type=range]{grid-column:1/-1;width:100%;height:22px;margin:0;accent-color:var(--accent);cursor:pointer}.scale-settings #population-resolution{max-width:none;width:100%;font-size:10px;padding:8px 5px}.scale-settings #render-performance{font-variant-numeric:tabular-nums;color:var(--accent);font-size:9px}.scale-settings #resolution-status{line-height:1.5}
