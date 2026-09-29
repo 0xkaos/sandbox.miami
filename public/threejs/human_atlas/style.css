@@ -15,6 +15,18 @@ dialog{color:var(--ink);background:#16211a;border:1px solid #4a5a46;border-radiu
 @media(max-width:520px){#snapshot-chart{overflow-x:auto}#snapshot-chart svg{width:640px;max-width:none}.dialog-close{margin-right:-12px}}
 .study-colors .density-key i{background:#dbc28a}.density-key i:nth-child(2){background:#9a8b62}.study-colors .density-key i:nth-child(2){background:#dbc28a}
 
+#near-east-panel{border-top:1px solid var(--line);padding-top:17px;margin-top:18px}
+#near-east-panel .section-label span{color:var(--accent)}
+#near-east-panel .context-note{margin:9px 0 11px}
+.regional-card{width:100%;display:flex;align-items:flex-start;gap:10px;text-align:left;padding:8px 0;border-bottom:1px solid #ffffff10}
+.regional-card i{display:block;flex:none;width:8px;height:8px;margin-top:5px;background:var(--regional-color);border-radius:50%;box-shadow:0 0 7px var(--regional-color)}
+.regional-card b{display:block;color:var(--ink);font-size:11px;font-weight:500;line-height:1.35}
+.regional-card small{display:block;color:var(--muted);font-size:9px;margin-top:3px;line-height:1.3}
+.regional-card:hover b,.regional-card:focus-visible b{color:var(--accent)}
+.territory-chip small{display:block;color:var(--muted);font-size:10px;line-height:1.5;margin:4px 0 8px}
+.near-east-label{color:#f0dbad;text-shadow:0 1px 4px #0b150c,0 0 9px #0b150c;font-size:8px;letter-spacing:.5px;transform:translate(-50%,9px)}
+@media(max-width:900px){#near-east-panel{grid-column:1}}
+
 .scale-settings .range-control{display:grid;grid-template-columns:1fr auto;gap:8px;margin:16px 0}.range-control output{font-variant-numeric:tabular-nums;color:var(--accent)}.range-control input[type=range]{grid-column:1/-1;width:100%;height:22px;margin:0;accent-color:var(--accent);cursor:pointer}.scale-settings #population-resolution{max-width:none;width:100%;font-size:10px;padding:8px 5px}.scale-settings #render-performance{font-variant-numeric:tabular-nums;color:var(--accent);font-size:9px}.scale-settings #resolution-status{line-height:1.5}
 
 .swatch.sites{border:2px solid #f0bb83;border-radius:50%;background:transparent}.sites-browse{width:100%;margin:12px 0 0;padding:10px 6px;font-size:10px}

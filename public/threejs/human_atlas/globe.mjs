@@ -2,8 +2,11 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { distanceKm, activeMigrations, migrationProgress, borderBracket, containsPoint, clamp, CATEGORY_COLORS } from './model.mjs';
 import { EARLY_ZONES } from './history.mjs';
+import { activeNearEast, nearEastAt } from './near-east.mjs';
 
 const R = Math.PI / 180;
+const NEAR_EAST_BOUNDS = { west:25, south:20, east:60, north:43 };
+const SUPERSEDED_BORDERS = new Set(['Ur','Semites','Canaan','Judea']);
 export function latLonVector(lat, lon, radius = 1) {
   return new THREE.Vector3(radius * Math.cos(lat * R) * Math.cos(lon * R), radius * Math.sin(lat * R), -radius * Math.cos(lat * R) * Math.sin(lon * R));
 }
@@ -29,12 +32,37 @@ function nameColor(name) {
   return `hsl(${((h >>> 0) % 360)}, 26%, 49%)`;
 }
 function canvasTexture(canvas) { const t = new THREE.CanvasTexture(canvas); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
-function borderTexture(data) {
+function borderTexture(data, hasRegionalDetail = false) {
   const canvas = textureCanvas(), ctx = canvas.getContext('2d');
   for (const feature of data.features) {
+    // The regional layer handles these broad or misleading early labels.
+    if (hasRegionalDetail && SUPERSEDED_BORDERS.has(feature.properties.name)) continue;
     polygonPath(ctx, feature.geometry, canvas.width, canvas.height);
     ctx.fillStyle = nameColor(feature.properties.name); ctx.fill('evenodd');
     ctx.strokeStyle = '#c5c8a2'; ctx.lineWidth = .45; ctx.stroke();
+  }
+  return canvasTexture(canvas);
+}
+function regionalPolygonPath(ctx, geometry, width, height) {
+  const polys=geometry.type==='Polygon'?[geometry.coordinates]:geometry.type==='MultiPolygon'?geometry.coordinates:[];
+  ctx.beginPath();
+  for(const polygon of polys)for(const ring of polygon){
+    ring.forEach(([lon,lat],i)=>{
+      const x=(lon-NEAR_EAST_BOUNDS.west)/(NEAR_EAST_BOUNDS.east-NEAR_EAST_BOUNDS.west)*width;
+      const y=(NEAR_EAST_BOUNDS.north-lat)/(NEAR_EAST_BOUNDS.north-NEAR_EAST_BOUNDS.south)*height;
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    });ctx.closePath();
+  }
+}
+function regionalTexture(areas) {
+  const canvas=document.createElement('canvas');canvas.width=2048;canvas.height=1344;
+  const ctx=canvas.getContext('2d');
+  const ordered=[...areas].sort((a,b)=>(a.kind==='culture'?0:1)-(b.kind==='culture'?0:1)||b.area-a.area);
+  for(const area of ordered){
+    regionalPolygonPath(ctx,area.geometry,canvas.width,canvas.height);
+    ctx.fillStyle=area.color;ctx.globalAlpha=area.kind==='culture'?.28:area.confidence==='schematic'?.58:.72;ctx.fill('evenodd');
+    ctx.globalAlpha=area.kind==='culture'?.85:1;ctx.strokeStyle=area.color;ctx.lineWidth=area.confidence==='schematic'?1.5:1;
+    ctx.setLineDash(area.confidence==='schematic'?[4,3]:[]);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
   }
   return canvasTexture(canvas);
 }
@@ -66,8 +94,8 @@ function routePoints(route) {
 function along(points, t) { const f = clamp(t, 0, 1) * (points.length - 1), i = Math.min(points.length - 2, Math.floor(f)); return points[i].clone().lerp(points[i + 1], f - i); }
 
 export class HistoryGlobe {
-  constructor(container, meta, land, borders, callbacks = {}) {
-    this.container = container; this.meta = meta; this.borders = borders; this.callbacks = callbacks;
+  constructor(container, meta, land, borders, nearEast, callbacks = {}) {
+    this.container = container; this.meta = meta; this.borders = borders; this.nearEast = nearEast; this.callbacks = callbacks;
     this.layers = { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true };
     this.scale = 'log'; this.gain = 1; this.populationOpacity = 1; this.year = -3000; this.routes = []; this.phase = 0; this.disposed = false; this.dirty = true;
     this.scene = new THREE.Scene();
@@ -123,13 +151,33 @@ export class HistoryGlobe {
         }`,
     }));
     this.territoryMesh.scale.setScalar(1.002);this.territoryMesh.renderOrder=1;this.territoryMesh.visible=false;this.scene.add(this.territoryMesh);
+    this.emptyRegion=canvasTexture(textureCanvas(2));
+    this.regionUniforms={oldMap:{value:this.emptyRegion},map:{value:this.emptyRegion},weight:{value:1},bounds:{value:new THREE.Vector4(
+      (NEAR_EAST_BOUNDS.west+180)/360,(NEAR_EAST_BOUNDS.south+90)/180,
+      (NEAR_EAST_BOUNDS.east-NEAR_EAST_BOUNDS.west)/360,(NEAR_EAST_BOUNDS.north-NEAR_EAST_BOUNDS.south)/180)}};
+    this.regionMesh=new THREE.Mesh(this.surface.geometry.clone(),new THREE.ShaderMaterial({
+      uniforms:this.regionUniforms,transparent:true,depthWrite:false,
+      vertexShader:'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+      fragmentShader:`uniform sampler2D oldMap,map; uniform float weight; uniform vec4 bounds; varying vec2 vUv;
+        void main(){vec2 uv=(vUv-bounds.xy)/bounds.zw;
+          if(uv.x<0.0||uv.x>1.0||uv.y<0.0||uv.y>1.0){gl_FragColor=vec4(0.0);return;}
+          vec4 a=texture2D(oldMap,uv),b=texture2D(map,uv);
+          float alpha=mix(a.a,b.a,weight);
+          vec3 rgb=mix(a.rgb*a.a,b.rgb*b.a,weight)/max(alpha,0.00001);
+          gl_FragColor=vec4(rgb,alpha);
+          #include <colorspace_fragment>
+        }`,
+    }));
+    this.regionMesh.scale.setScalar(1.004);this.regionMesh.renderOrder=2;this.regionMesh.visible=false;this.scene.add(this.regionMesh);
+    this.regionTexture=null;this.regionPrevious=null;this.regionPending=null;this.regionFade=1;this.regionKey=null;
     this.textureCache=new Map();this.displayBorder=null;this.previousBorder=null;this.pendingBorder=null;this.borderFade=1;
     this.earlyMesh = new THREE.Mesh(this.surface.geometry.clone(),new THREE.MeshBasicMaterial({transparent:true,opacity:.38,depthWrite:false}));this.earlyMesh.scale.setScalar(1.002);this.scene.add(this.earlyMesh);
     this.geoCache = new Map(); this.borderKey = null; this.borderData = null; this.borderRequest = 0;
     this.dotObject = new THREE.Object3D();this.color = new THREE.Color();this.up = new THREE.Vector3(0,1,0);
     this.spikeUniforms={heightGain:{value:1},linearHeight:{value:0},studyColors:{value:1},lowDensityColor:{value:new THREE.Color('#766846')},highDensityColor:{value:new THREE.Color('#ffe6ac')}};
     this.setPopulationGrid(meta);
-    this.routeGroup = new THREE.Group();this.eventGroup = new THREE.Group();this.siteGroup = new THREE.Group();this.scene.add(this.routeGroup,this.eventGroup,this.siteGroup);
+    this.routeGroup = new THREE.Group();this.eventGroup = new THREE.Group();this.siteGroup = new THREE.Group();this.regionalPlaceGroup=new THREE.Group();this.scene.add(this.routeGroup,this.eventGroup,this.siteGroup,this.regionalPlaceGroup);
+    this.regionalLabels=[];
     this.selection = new THREE.Mesh(new THREE.RingGeometry(.017,.019,48),new THREE.MeshBasicMaterial({color:0xe7d4a0,side:THREE.DoubleSide,transparent:true,opacity:.85,depthWrite:false}));this.selection.visible=false;this.scene.add(this.selection);
     this.raycaster = new THREE.Raycaster();this.pointer = new THREE.Vector2();
     this.hoverAt = 0;
@@ -145,7 +193,7 @@ export class HistoryGlobe {
   resize(){const {width,height}=this.container.getBoundingClientRect();if(!width||!height)return;this.width=width;this.height=height;this.camera.aspect=width/height;this.camera.updateProjectionMatrix();this.renderer.setSize(width,height);this.dirty=true;}
   focus(region){this.destination=latLonVector(region.lat,region.lon,Math.min(6,region.distance/Math.min(1,this.camera.aspect)));}
   zoom(factor){this.destination=null;this.camera.position.setLength(clamp(this.camera.position.length()*factor,1.13,6));this.controls.update();}
-  setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.siteGroup.visible=this.layers.sites;this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);}
+  setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.siteGroup.visible=this.layers.sites;this.regionalPlaceGroup.visible=this.layers.territories;this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);}
   setScale(scale,gain){this.scale=scale;this.gain=gain;this.spikeUniforms.heightGain.value=gain;this.spikeUniforms.linearHeight.value=scale==='linear'?1:0;this.dirty=true;}
   setPopulationOpacity(opacity){this.populationOpacity=clamp(opacity,0,1);this.spikes.material.opacity=this.populationOpacity;this.spikes.visible=this.layers.population&&!!this.populations&&this.populationOpacity>0;this.dirty=true;}
   setPopulationGrid(meta){
@@ -206,7 +254,7 @@ export class HistoryGlobe {
     this.spikes.instanceColor.needsUpdate=true;
   }
   setYear(year,routes,events,sites=[]){
-    this.dirty=true;this.year=year;this.routes=routes;this.setBorders(year);
+    this.dirty=true;this.year=year;this.routes=routes;this.setBorders(year);this.setRegionalYear(year);
     const active=activeMigrations(routes,year),key=active.map(r=>r.id).join('|');
     if(this.routeKey!==key){
       this.routeKey=key;disposeGroup(this.routeGroup);this.routeVisuals=[];
@@ -235,9 +283,60 @@ export class HistoryGlobe {
     }}
     this.updateBordersOpacity();
   }
+  beginRegion(next){
+    this.regionPrevious=this.regionTexture;this.regionTexture=next.texture;this.regionKey=next.key;this.regionFade=0;
+    this.regionUniforms.oldMap.value=this.regionPrevious??this.emptyRegion;
+    this.regionUniforms.map.value=this.regionTexture;this.regionUniforms.weight.value=0;
+    this.regionMesh.visible=this.layers.territories;this.dirty=true;
+  }
+  setRegionalYear(year){
+    const {areas,places}=activeNearEast(this.nearEast,year);
+    const key=areas.map(a=>a.id).join('|');
+    if(key===this.regionKey&&this.regionPending){
+      if(this.regionPending.texture!==this.emptyRegion)this.regionPending.texture.dispose();
+      this.regionPending=null;
+    }
+    if(key!==this.regionKey&&key!==this.regionPending?.key){
+      const next={key,texture:areas.length?regionalTexture(areas):this.emptyRegion};
+      if(this.regionFade<1){if(this.regionPending?.texture!==this.emptyRegion)this.regionPending?.texture.dispose();this.regionPending=next;}
+      else this.beginRegion(next);
+    }
+    const placeKey=places.map(p=>p.id).join('|');
+    if(placeKey!==this.regionalPlaceKey){
+      this.regionalPlaceKey=placeKey;disposeGroup(this.regionalPlaceGroup);
+      for(const label of this.regionalLabels)label.el.remove();this.regionalLabels=[];
+      for(const place of places){
+        const point=latLonVector(place.lat,place.lon,1.02);
+        const marker=new THREE.Mesh(new THREE.SphereGeometry(.0065,10,8),new THREE.MeshBasicMaterial({color:'#e5d39c',depthWrite:false}));
+        marker.position.copy(point);marker.renderOrder=4;marker.userData.regionalPlace=place;
+        // Give the small dot a usable hit area without selecting the far side.
+        marker.raycast=(raycaster,hits)=>{
+          const sphere=new THREE.Sphere(marker.getWorldPosition(new THREE.Vector3()),.014);
+          const hit=raycaster.ray.intersectSphere(sphere,new THREE.Vector3());if(!hit)return;
+          const distance=raycaster.ray.origin.distanceTo(hit);
+          if(distance>=raycaster.near&&distance<=raycaster.far)hits.push({distance,point:hit,object:marker});
+        };
+        this.regionalPlaceGroup.add(marker);
+        const el=document.createElement('span');el.className='globe-label near-east-label';el.textContent=place.name;document.querySelector('#map-labels').appendChild(el);
+        this.regionalLabels.push({el,position:point});
+      }
+    }
+    this.updateBordersOpacity();
+  }
+  advanceRegion(dt){
+    if(this.regionFade>=1)return;
+    this.regionFade=Math.min(1,this.regionFade+dt/.28);
+    this.regionUniforms.weight.value=this.regionFade*this.regionFade*(3-2*this.regionFade);this.dirty=true;
+    if(this.regionFade===1){
+      if(this.regionPrevious&&this.regionPrevious!==this.emptyRegion&&this.regionPrevious!==this.regionTexture)this.regionPrevious.dispose();
+      this.regionPrevious=null;this.regionUniforms.oldMap.value=this.regionTexture;
+      if(this.regionPending){const next=this.regionPending;this.regionPending=null;this.beginRegion(next);}
+      else if(this.regionTexture===this.emptyRegion)this.regionMesh.visible=false;
+    }
+  }
   async loadGeo(index){const row=this.borders.snapshots[index];if(!this.geoCache.has(row.file))this.geoCache.set(row.file,fetch(`./data/borders/${row.file}`).then(r=>{if(!r.ok)throw new Error(`Boundary snapshot ${row.year} could not load.`);return r.json();}).catch(e=>{this.geoCache.delete(row.file);throw e;}));return this.geoCache.get(row.file);}
   textureFor(index,data){
-    if(!this.textureCache.has(index))this.textureCache.set(index,borderTexture(data));
+    if(!this.textureCache.has(index))this.textureCache.set(index,borderTexture(data,!!this.nearEast));
     return this.textureCache.get(index);
   }
   beginBorder(pair){
@@ -296,11 +395,17 @@ export class HistoryGlobe {
     this.dirty=true;
     this.territoryMesh.visible=this.layers.territories&&!!(this.displayBorder?.data||this.previousBorder?.data);
     this.earlyMesh.visible=this.layers.territories&&!this.currentBorderBracket;
+    this.regionMesh.visible=this.layers.territories&&!!this.regionTexture&&(this.regionTexture!==this.emptyRegion||this.regionFade<1);
   }
   territoriesAt(lat,lon){
-    if(!this.currentBorderBracket)return EARLY_ZONES.filter(z=>this.year>=z.start&&this.year<=z.end&&containsPoint(z.geometry,lon,lat)).map(z=>({name:z.name,source:z.source,year:null}));
-    const pair=this.displayBorder,b=pair?.bracket;if(!b||!pair.data)return[];
-    const out=[];for(const i of(b.a===b.b||b.t===0?[0]:[0,1]))for(const feature of pair.data[i].features)if(containsPoint(feature.geometry,lon,lat))out.push({name:feature.properties.name,year:this.borders.snapshots[i===0?b.a:b.b].year,source:'basemaps'});return out;
+    const regional=nearEastAt(this.nearEast,this.year,lat,lon).map(item=>({...item,source:'regional'}));
+    if(!this.currentBorderBracket)return regional.concat(EARLY_ZONES.filter(z=>this.year>=z.start&&this.year<=z.end&&containsPoint(z.geometry,lon,lat)).map(z=>({name:z.name,source:z.source,year:null})));
+    const pair=this.displayBorder,b=pair?.bracket;if(!b||!pair.data)return regional;
+    const out=[];for(const i of(b.a===b.b||b.t===0?[0]:[0,1]))for(const feature of pair.data[i].features){
+      const name=feature.properties.name;
+      if(this.nearEast&&SUPERSEDED_BORDERS.has(name))continue;
+      if(containsPoint(feature.geometry,lon,lat))out.push({name,year:this.borders.snapshots[i===0?b.a:b.b].year,source:'basemaps'});
+    }return regional.concat(out);
   }
   nearestCell(lat,lon){let best=-1,bestDistance=Infinity;for(let i=0;i<this.meta.cells.length;i++){const c=this.meta.cells[i];if(Math.abs(c[0]-lat)>this.meta.resolutionDegrees*2)continue;const d=distanceKm(lat,lon,c[0],c[1]);if(d<bestDistance){bestDistance=d;best=i;}}return bestDistance<170*this.meta.resolutionDegrees?best:-1;}
   selectLocation(lat,lon){this.selection.position.copy(latLonVector(lat,lon,1.011));this.selection.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),this.selection.position.clone().normalize());this.selection.visible=true;}
@@ -309,21 +414,35 @@ export class HistoryGlobe {
     const rect=this.renderer.domElement.getBoundingClientRect();this.pointer.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);this.raycaster.setFromCamera(this.pointer,this.camera);
     const targets=[this.surface];if(this.layers.events)targets.push(...this.eventGroup.children);
     if(this.layers.sites)targets.push(...this.siteGroup.children);
+    if(this.layers.territories)targets.push(...this.regionalPlaceGroup.children);
     const hit=this.raycaster.intersectObjects(targets,false)[0];
     if(!hit){this.callbacks.onHover?.(null);return;}
     if(hit.object.userData.event){const e=hit.object.userData.event;if(click)this.callbacks.onEvent?.(e);else this.callbacks.onHover?.({event:e,x:event.clientX-rect.left,y:event.clientY-rect.top});return;}
     if(hit.object.userData.site){const site=hit.object.userData.site;if(click)this.callbacks.onSite?.(site);else this.callbacks.onHover?.({site,x:event.clientX-rect.left,y:event.clientY-rect.top});return;}
+    if(hit.object.userData.regionalPlace){const place=hit.object.userData.regionalPlace;if(click)this.callbacks.onRegional?.(place);else this.callbacks.onHover?.({regionalPlace:place,x:event.clientX-rect.left,y:event.clientY-rect.top});return;}
     const place=vectorLatLon(hit.point);place.index=this.nearestCell(place.lat,place.lon);place.territories=this.territoriesAt(place.lat,place.lon);
     if(click){this.selectLocation(place.lat,place.lon);this.callbacks.onLocation?.(place);}else this.callbacks.onHover?.({...place,x:event.clientX-rect.left,y:event.clientY-rect.top});
   }
   render(dt,playing){
     if(this.disposed)return;
     if(this.destination){this.camera.position.lerp(this.destination,1-Math.exp(-dt*5));if(this.camera.position.distanceTo(this.destination)<.001)this.destination=null;}
-    this.advanceBorders(dt);this.controls.update();if(!this.dirty&&!playing&&!this.destination)return;if(playing)this.phase+=dt;
+    this.advanceBorders(dt);this.advanceRegion(dt);this.controls.update();if(!this.dirty&&!playing&&!this.destination)return;if(playing)this.phase+=dt;
     for(const v of this.routeVisuals??[]){const p=migrationProgress(v.route,this.year),positions=v.dots.geometry.attributes.position;for(let i=0;i<18;i++){const t=p===0?0:((i/18+this.phase*.1)%1)*p;const point=along(v.points,t);positions.setXYZ(i,point.x,point.y,point.z);}positions.needsUpdate=true;v.head.position.copy(along(v.points,p));}
     const cameraNormal=this.camera.position.clone().normalize(),horizon=1/this.camera.position.length();
     for(const label of this.labels){const visible=label.position.clone().normalize().dot(cameraNormal)>horizon+.07;label.el.hidden=!visible;if(visible){const p=label.position.clone().project(this.camera);label.el.style.left=`${(p.x*.5+.5)*this.width}px`;label.el.style.top=`${(-p.y*.5+.5)*this.height}px`;}}
+    const labelPriority=['Ur','Babylon','Nineveh','Samaria','Jerusalem','Uruk','Ashur','Ebla','Hazor'];
+    const placed=[];
+    for(const label of [...this.regionalLabels].sort((a,b)=>{
+      const ai=labelPriority.indexOf(a.el.textContent),bi=labelPriority.indexOf(b.el.textContent);
+      return (ai<0?100:ai)-(bi<0?100:bi);
+    })){
+      let visible=this.layers.territories&&this.camera.position.length()<1.9&&label.position.clone().normalize().dot(cameraNormal)>horizon+.06;
+      if(visible){const p=label.position.clone().project(this.camera),x=(p.x*.5+.5)*this.width,y=(-p.y*.5+.5)*this.height;
+        if(placed.some(([px,py])=>Math.abs(x-px)<50&&Math.abs(y-py)<17))visible=false;
+        else{label.el.style.left=`${x}px`;label.el.style.top=`${y}px`;placed.push([x,y]);}
+      }label.el.hidden=!visible;
+    }
     this.renderer.render(this.scene,this.camera);this.dirty=false;
   }
-  dispose(){this.disposed=true;this.borderRequest++;this.resizeObserver.disconnect();this.controls.dispose();this.scene.traverse(o=>{o.geometry?.dispose();if(o.material){o.material.map?.dispose();o.material.dispose();}});for(const texture of this.textureCache.values())texture.dispose();this.emptyBorder.dispose();this.renderer.dispose();for(const label of this.labels)label.el.remove();}
+  dispose(){this.disposed=true;this.borderRequest++;this.resizeObserver.disconnect();this.controls.dispose();this.scene.traverse(o=>{o.geometry?.dispose();if(o.material){o.material.map?.dispose();o.material.dispose();}});for(const texture of this.textureCache.values())texture.dispose();this.emptyBorder.dispose();for(const texture of [this.regionTexture,this.regionPrevious,this.regionPending?.texture,this.emptyRegion])texture?.dispose();this.renderer.dispose();for(const label of [...this.labels,...this.regionalLabels])label.el.remove();}
 }

@@ -5,6 +5,7 @@ export const REGIONS = [
   { id: 'world', name: 'World', lat: 24, lon: 24, distance: 3.2 },
   { id: 'europe', name: 'Europe', lat: 49, lon: 15, distance: 1.85, index: 1 },
   { id: 'mediterranean', name: 'Mediterranean', lat: 34, lon: 24, distance: 1.8, bounds: [-12, 24, 46, 47] },
+  { id: 'near-east', name: 'Near East', lat: 33.5, lon: 42, distance: 1.65, bounds: [32, 27, 51, 40] },
   { id: 'africa', name: 'Africa', lat: 4, lon: 22, distance: 2.3, index: 0 },
   { id: 'asia', name: 'Asia', lat: 30, lon: 91, distance: 2.6, index: 2 },
   { id: 'americas', name: 'Americas', lat: 13, lon: -87, distance: 2.7, indices: [3, 4] },

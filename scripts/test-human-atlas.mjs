@@ -8,6 +8,7 @@ import { makeSnapshot, snapshotCSV } from '../public/threejs/human_atlas/snapsho
 import { validateResearch } from '../public/threejs/human_atlas/import.mjs';
 import { PopulationDetail } from '../public/threejs/human_atlas/population-detail.mjs';
 import { sitesAt, phasesAt, searchSites, siteSnapshot, hasSiteLocation } from '../public/threejs/human_atlas/sites.mjs';
+import { activeNearEast, nearEastAt, nearEastForRegion, nearEastSnapshot } from '../public/threejs/human_atlas/near-east.mjs';
 
 const dir = new URL('../public/threejs/human_atlas/data/', import.meta.url);
 const meta = JSON.parse(readFileSync(new URL('population.json', dir)));
@@ -17,6 +18,44 @@ const borders = JSON.parse(readFileSync(new URL('borders.json', dir)));
 const comparison = JSON.parse(readFileSync(new URL('comparison.json', dir)));
 const world = REGIONS[0];
 const heritage = JSON.parse(readFileSync(new URL('unesco-sites.json', dir)));
+const nearEast = JSON.parse(readFileSync(new URL('near-east.json', dir)));
+
+test('Near East layer distinguishes Ur the city, Sumer the region, and successive political rule', () => {
+  assert.equal(nearEast.schemaVersion,1);
+  assert.equal(nearEast.source.polygonsLicense,'CC BY 4.0');
+  assert.equal(nearEast.source.placesLicense,'CC BY 3.0');
+  assert.equal(new Set(nearEast.features.map(f=>f.id)).size,nearEast.features.length);
+  for(const item of [...nearEast.features,...nearEast.places]){
+    assert.ok(item.start<=item.end&&item.start>=MIN_YEAR&&item.end<=MAX_YEAR,item.id);
+    assert.ok(Math.abs(item.lat)<=90&&Math.abs(item.lon)<=180,item.id);
+    assert.ok(item.note&&item.sources.length,item.id);
+  }
+  const names=year=>nearEastAt(nearEast,year,30.962,46.105).map(x=>x.name);
+  assert.ok(names(-3000).includes('Ur'));
+  assert.ok(names(-3000).includes('Sumerian city-states'));
+  assert.ok(names(-3000).includes('Sumer · cultural region'));
+  assert.ok(names(-2250).includes('Akkadian Empire'));
+  assert.ok(!names(-2250).some(x=>x.includes('Ur III')));
+  assert.ok(names(-2050).includes('Ur III state · approximate core'));
+  assert.ok(!names(-2050).includes('Akkadian Empire'));
+  assert.ok(!names(-2050).includes('Sumerian city-states'));
+});
+
+test('Near East chronology separates Israel, Samaria, Judah, and later Judea', () => {
+  const samaria=year=>nearEastAt(nearEast,year,32.276,35.190).map(x=>x.name);
+  assert.ok(samaria(-800).includes('Kingdom of Israel'));
+  assert.ok(!samaria(-722).includes('Kingdom of Israel'));
+  assert.ok(samaria(-700).includes('Samaria'));
+  assert.ok(samaria(-700).includes('Neo-Assyrian Empire'));
+  assert.ok(activeNearEast(nearEast,-600).areas.some(x=>x.name==='Kingdom of Judah · approximate core'));
+  assert.ok(activeNearEast(nearEast,-1).areas.some(x=>x.name==='Judea · region'));
+  const region=REGIONS.find(x=>x.id==='near-east');
+  assert.ok(nearEastForRegion(nearEast,-800,region).some(x=>x.name==='Kingdom of Judah'));
+  const snap=nearEastSnapshot(nearEast,-800,region);
+  assert.ok(snap.records.find(x=>x.name==='Samaria').url.includes('pleiades.stoa.org'));
+  assert.ok(snap.records.find(x=>x.name==='Kingdom of Israel').sources.includes('oracc-israel'));
+  assert.equal(nearEastSnapshot(nearEast,-4000,region).records.length,0);
+});
 
 test('UNESCO catalog preserves provenance, coordinates, and reviewed evidence separately from inscription', () => {
   const { sites, counts } = heritage;

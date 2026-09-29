@@ -5,11 +5,12 @@ import { populationSeries, sparklinePath, makeSnapshot, snapshotCSV, downloadFil
 import { validateResearch } from './import.mjs';
 import { PopulationDetail, POPULATION_RESOLUTIONS } from './population-detail.mjs';
 import { hasSiteLocation, phasesAt, sitesAt, searchSites, sitePhaseHTML, siteSnapshot } from './sites.mjs';
+import { activeNearEast, nearEastForRegion, nearEastRole, nearEastSnapshot } from './near-east.mjs';
 
 const $ = selector => document.querySelector(selector);
 const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: 1, opacity: .5, resolution: .5, layers: { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true } };
 const data = { sources: [...SOURCES], events: [...EVENTS], migrations: [...MIGRATIONS] };
-let meta, values, comparison, borders, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
+let meta, values, comparison, borders, nearEastCatalog, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
 let detailGrid=null, resolutionRequest=0, resolutionError=null, displayedPopulationYear=null;
 let siteCatalog=null, siteLoadError=null, lastSiteKey=null, catalogSelection=null, siteResultLimit=40;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -71,6 +72,12 @@ function chooseSite(site) {
   }else{state.location=null;globe?.clearSelection();}
   renderState();$('#place-info').scrollIntoView({block:'nearest',behavior:reduceMotion?'instant':'smooth'});
 }
+function chooseRegional(item) {
+  setPlaying(false);state.detail={type:'regional',item};
+  state.location={lat:item.lat,lon:item.lon,index:globe?.nearestCell(item.lat,item.lon)??-1};
+  globe?.selectLocation(item.lat,item.lon);globe?.focus({lat:item.lat,lon:item.lon,distance:1.55});
+  renderState();$('#place-info').scrollIntoView({block:'nearest',behavior:reduceMotion?'instant':'smooth'});
+}
 function jumpSite(id, index) {
   const site=siteCatalog?.sites.find(s=>s.id===id),phase=site?.phases[index];if(!phase)return;
   $('#sites-dialog').close();setYear(Math.round((phase.start+phase.end)/2),true);chooseSite(site);
@@ -86,6 +93,13 @@ function renderSitePanel(year) {
   const key=sites.map(s=>s.id+':'+phasesAt(s,year).map(p=>p.label).join('/')).join('|');
   if(key!==lastSiteKey){lastSiteKey=key;$('#site-list').innerHTML=sites.slice(0,6).map(site=>`<button class="event-card site-card" data-site="${esc(site.id)}"><span class="event-kind">Heritage site</span><b>${esc(site.title)}</b><small>${phasesAt(site,year).map(p=>esc(p.dateLabel)).join(' · ')}</small></button>`).join('');}
   $('#sites-at-time').textContent=sites.length>6?`Browse all ${sites.length} matching sites →`:'Browse the heritage catalog →';
+}
+function renderNearEastPanel(year) {
+  const records=state.layers.territories?nearEastForRegion(nearEastCatalog,year,state.region):[];
+  const panel=$('#near-east-panel');panel.hidden=!records.length;
+  if(!records.length)return;
+  $('#near-east-count').textContent=String(records.length);
+  $('#near-east-list').innerHTML=records.map(item=>`<button class="regional-card" data-regional="${esc(item.id)}" style="--regional-color:${esc(item.color??'#e5d39c')}"><i aria-hidden="true"></i><span><b>${esc(item.name)}</b><small>${esc(nearEastRole(item,year)??(item.kind==='city'?'City · selected viewing window':item.kind==='culture'?'Cultural / geographic region':item.confidence==='schematic'?'Political area · schematic':'Political area · approximate'))}</small></span></button>`).join('');
 }
 function renderSiteDirectory() {
   if(!siteCatalog){$('#site-results-status').textContent=siteLoadError??'Loading the heritage catalog…';$('#site-more').hidden=true;return;}
@@ -122,7 +136,10 @@ function renderDetail() {
   el.hidden = !location && !detail; $('#clear-location').hidden = el.hidden;
   if (el.hidden) return;
   let html = '<button class="detail-close" aria-label="Clear selected place">×</button>';
-  if (detail?.type === 'site') {
+  if (detail?.type === 'regional') {
+    const item=detail.item;
+    html+=`<span class="section-label">NEAR EAST · ${esc(item.kind.toUpperCase())}</span><h2>${esc(item.name)}</h2><p>${formatYear(item.start)} – ${formatYear(item.end)}${item.kind==='city'?' · selected viewing window':' · approximate mapping interval'}</p>${nearEastRole(item,Math.round(state.year))?`<p><strong>${esc(nearEastRole(item,Math.round(state.year)))}</strong></p>`:''}<p>${esc(item.note)}</p>${item.sourceInterval&&(item.sourceInterval[0]!==item.start||item.sourceInterval[1]!==item.end)?`<p class="context-note">This polygon is from a ${formatYear(item.sourceInterval[0])}–${formatYear(item.sourceInterval[1])} source interval; its shape is held to the reviewed transition.</p>`:''}${item.confidence==='schematic'?'<p class="context-note">Schematic area; its edge is not a surveyed historical border.</p>':''}${item.url?`<a href="${esc(item.url)}" target="_blank" rel="noopener">Place record ↗</a>`:''}${sourceHTML(item.sources)}`;
+  } else if (detail?.type === 'site') {
     const site=detail.item;
     html+=`<span class="section-label">HERITAGE SITE · ${site.phases.length?'REVIEWED PHASES':'DATES AWAITING REVIEW'}</span><h2>${esc(site.title)}</h2>${sitePhaseHTML(site,Math.round(state.year))}<p>World Heritage inscription: ${site.inscribed}. This is separate from occupation or construction dates.</p><button class="outline-button" id="site-read-more">Read the source description ↗</button>${siteLinkHTML(site)}`;
   } else if (detail) {
@@ -142,9 +159,11 @@ function renderDetail() {
     if (c && count != null) html += `<dl><dt>Nearby ${grid.resolutionDegrees}° cell</dt><dd>${formatPeople(count)} people</dd><dt>Mean cell density</dt><dd>${(count / c[2]).toLocaleString('en-US', { maximumFractionDigits: 3 })} / km²</dd><dt>Cell footprint</dt><dd>${Math.round(c[2]).toLocaleString('en-US')} km²</dd></dl><p>Cell center: ${c[0]}°, ${c[1]}°. These are grid estimates, not settlement counts.${displayedPopulationYear!=null&&displayedPopulationYear!==Math.round(state.year)?` Displayed population: ${formatYear(displayedPopulationYear)} while detail loads.`:''}</p>`;
     else html += `<p>${state.year < -10000 ? 'No quantitative population estimate is available at this date.' : 'No population grid cell is available near this point.'}</p>`;
     const territories = globe?.territoriesAt(location.lat, location.lon) ?? [];
-    if (territories.length) html += territories.map(t => `<p class="territory-chip">${esc(t.name)}${t.year != null ? ` · ${formatYear(t.year)} snapshot` : ' · broad schematic zone'}</p>`).join('');
+    if (territories.length) html += territories.map(t => t.source==='regional'
+      ? `<p class="territory-chip" style="border-color:${esc(t.color??'#d1ad68')}"><b>${esc(t.name)}</b> · ${esc(nearEastRole(t,Math.round(state.year))??t.kind)}${t.confidence==='schematic'?' · schematic':''}<small>${esc(t.note)}</small></p>`
+      : `<p class="territory-chip">${esc(t.name)}${t.year != null ? ` · ${formatYear(t.year)} snapshot` : ' · broad schematic zone'}</p>`).join('');
     else html += '<p>No territorial label in the available snapshot. This does not mean the place was uninhabited or ungoverned.</p>';
-    if (!detail) html += sourceHTML(['hyde', ...(territories.length ? ['basemaps'] : [])]);
+    if (!detail) html += sourceHTML(['hyde', ...(territories.some(t=>t.source==='basemaps') ? ['basemaps'] : []), ...territories.flatMap(t=>t.sources??[])]);
   }
   el.innerHTML = html; el.querySelector('.detail-close').onclick = clearPlace;
   const jump = $('#event-jump'); if (jump) jump.onclick = () => setYear((detail.item.start + detail.item.end) / 2, true);
@@ -155,11 +174,12 @@ function boundaryDescription(status = borderLoadStatus) {
   if (status?.error) return status.error;
   const b = borderBracket(borders.snapshots, Math.round(state.year));
   if (!state.layers.territories) return 'Territory layer hidden. Population remains independent of political boundaries.';
-  if (!b) return state.year < -7400 ? 'No territory reconstruction for this date. Modern coastlines are shown.' : 'Selected early farming zones only: overlapping, schematic areas of activity, not states.';
+  if (!b) return activeNearEast(nearEastCatalog,Math.round(state.year)).areas.length?'Near East regional context only; global territory snapshots begin at 3000 BCE. Regional areas are approximate.':state.year < -7400 ? 'No territory reconstruction for this date. Modern coastlines are shown.' : 'Selected early farming zones only: overlapping, schematic areas of activity, not states.';
   if (status?.loading) return 'Loading the adjoining boundary snapshots; keeping the last available map visible…';
   const a = borders.snapshots[b.a].year, z = borders.snapshots[b.b].year;
   if (b.held) return `Holding the ${formatYear(a)} reconstruction. No later boundary snapshot is bundled.`;
-  return b.a === b.b ? `${formatYear(a)} reconstruction. Approximate territories and cultural regions.` : `${formatYear(a)} ↔ ${formatYear(z)} · ${Math.round(b.t*100)}% crossfade. The intervening boundaries are not independently known.`;
+  const base=b.a === b.b ? `${formatYear(a)} reconstruction. Approximate territories and cultural regions.` : `${formatYear(a)} ↔ ${formatYear(z)} · ${Math.round(b.t*100)}% crossfade. The intervening boundaries are not independently known.`;
+  return activeNearEast(nearEastCatalog,Math.round(state.year)).areas.length?`${base} Near East detail has its own dated intervals.`:base;
 }
 function renderSparkline(year) {
   const { path } = sparklinePath(series, 260, 57, 2), x = clamp((yearToPosition(year) - yearToPosition(-10000)) / (1 - yearToPosition(-10000)), 0, 1) * 256 + 2;
@@ -209,6 +229,7 @@ function renderState() {
   const mapEvents = nearbyEvents(data.events, year, REGIONS[0], state.category).slice(0,100);
   globe?.setYear(year, data.migrations, mapEvents,sitesAt(siteCatalog?.sites??[],year,REGIONS[0])); updatePopulationView(year);
   renderSitePanel(year);
+  renderNearEastPanel(year);
   $('#territory-status').textContent = boundaryDescription();
   renderDetail();
 }
@@ -266,13 +287,15 @@ function snapshot() {
   setPlaying(false);
   const year = Math.round(state.year), events = nearbyEvents(data.events, year, state.region, state.category), migrations = activeMigrations(data.migrations, year);
   const heritage=siteSnapshot(sitesAt(siteCatalog?.sites??[],year,state.region),year,siteCatalog?.source);
-  currentSnapshot = makeSnapshot({ meta, populations, values, year, region: state.region, events, migrations, sources: data.sources, comparison, borderStatus: boundaryDescription(), heritage });
+  const regional=nearEastSnapshot(nearEastCatalog,year,state.region);
+  currentSnapshot = makeSnapshot({ meta, populations, values, year, region: state.region, events, migrations, sources: data.sources, comparison, borderStatus: boundaryDescription(), heritage, regional });
   currentSnapshot.populations = populations?.slice() ?? null; currentSnapshot.region = state.region; currentSnapshot.year = year;
   $('#snapshot-title').textContent = currentSnapshot.data.title;
   $('#snapshot-subtitle').textContent = 'Population and context for the selected region. Charts and CSV use the fixed 1° reference grid at every display resolution.';
   $('#snapshot-chart').innerHTML = currentSnapshot.svg;
   $('#snapshot-notes').innerHTML = `<p>${esc(boundaryDescription())}</p><h3>Nearby records · ${esc(state.category === 'all' ? 'all themes' : state.category)}</h3>${events.length ? `<ul>${events.map(e=>`<li>${esc(e.title)} · ${formatYear(e.start)}–${formatYear(e.end)}</li>`).join('')}</ul>` : '<p>No curated events in this region and time window.</p>'}<p>Routes and ancestry colors summarize selected evidence; they do not establish local headcounts or precise paths. Regional totals use geographic bins, not historical political borders.</p>`;
   $('#snapshot-notes').insertAdjacentHTML('beforeend',`<h3>Heritage sites · reviewed phases at this time</h3>${heritage.records.length?`<ul>${heritage.records.map(site=>`<li>${siteLinkHTML(site)} · ${site.phases.map(p=>esc(p.dateLabel)).join(' · ')}</li>`).join('')}</ul>`:`<p>${esc(siteLoadError??(siteCatalog?'No reviewed site phases match this region and year.':'Heritage catalog is still loading.'))}</p>`}<p>Site phases and UNESCO attribution accompany the JSON export. Dates describe selected evidence, not complete settlement lifespans.</p>`);
+  if(regional?.records.length)$('#snapshot-notes').insertAdjacentHTML('beforeend',`<h3>Near East · dated places and areas</h3><ul>${regional.records.map(item=>`<li>${esc(item.name)} · ${esc(item.kind)}${item.confidence==='schematic'?' · schematic':''}</li>`).join('')}</ul><p>Area outlines are approximate; city windows are selected display periods. The JSON export includes dates and source attribution.</p>`);
   $('#download-csv').disabled = !populations; $('#download-csv').title = populations ? '' : 'No population grid is available at this date.';
   showDialog('#snapshot-dialog');
 }
@@ -282,6 +305,7 @@ function onHover(hit) {
   let html;
   if (hit.event) html = `<strong>${esc(hit.event.title)}</strong><small>${formatYear(hit.event.start)} – ${formatYear(hit.event.end)} · click to read</small>`;
   else if (hit.site) html = `<strong>${esc(hit.site.title)}</strong><small>${phasesAt(hit.site,Math.round(state.year)).map(p=>esc(p.dateLabel)).join(' · ')} · click to read</small>`;
+  else if (hit.regionalPlace) html=`<strong>${esc(hit.regionalPlace.name)}</strong><small>${esc(nearEastRole(hit.regionalPlace,Math.round(state.year))??'Ancient city')} · click to read</small>`;
   else {
     const grid=globe?.meta??meta, shown=globe?globe.populations:populations;
     const c = hit.index >= 0 ? grid.cells[hit.index] : null, p = shown && c ? shown[hit.index] : null;
@@ -309,6 +333,8 @@ function initializeControls() {
   $('#sites-button').onclick=()=>openSites();
   $('#sites-at-time').onclick=()=>openSites(sitesAt(siteCatalog?.sites??[],Math.round(state.year),state.region,state.location).length?'time':'all');
   $('#site-list').onclick=e=>{const b=e.target.closest('[data-site]');if(b)chooseSite(siteCatalog.sites.find(s=>s.id===b.dataset.site));};
+  $('#near-east-list').onclick=e=>{const b=e.target.closest('[data-regional]');if(b){const item=nearEastForRegion(nearEastCatalog,Math.round(state.year),state.region).find(x=>x.id===b.dataset.regional);if(item)chooseRegional(item);}};
+  $('#near-east-focus').onclick=()=>setRegion(REGIONS.find(r=>r.id==='near-east'));
   const filterSites=()=>{siteResultLimit=40;renderSiteDirectory();};$('#site-search').oninput=filterSites;$('#site-scope').onchange=filterSites;
   $('#site-more').onclick=()=>{siteResultLimit+=40;renderSiteDirectory();};
   $('#site-results').onclick=e=>{const b=e.target.closest('[data-site-record]');if(b){renderSiteRecord(siteCatalog.sites.find(s=>s.id===b.dataset.siteRecord));if(innerWidth<=620)$('#site-record').scrollIntoView({block:'start',behavior:reduceMotion?'instant':'smooth'});}};
@@ -344,13 +370,13 @@ async function loadJSON(name) {const r=await fetch(`./data/${name}`);if(!r.ok)th
 async function start() {
   readHash();
   try {
-    const results=await Promise.all([loadJSON('population.json'),fetch('./data/population.f32').then(r=>{if(!r.ok)throw new Error('Population grid could not load.');return r.arrayBuffer();}),loadJSON('land.json'),loadJSON('borders.json'),loadJSON('comparison.json')]);
-    [meta,, ,borders,comparison]=results;values=new Float32Array(results[1]);
+    const results=await Promise.all([loadJSON('population.json'),fetch('./data/population.f32').then(r=>{if(!r.ok)throw new Error('Population grid could not load.');return r.arrayBuffer();}),loadJSON('land.json'),loadJSON('borders.json'),loadJSON('comparison.json'),loadJSON('near-east.json')]);
+    [meta,, ,borders,comparison,nearEastCatalog]=results;values=new Float32Array(results[1]);
     if(values.length!==meta.years.length*meta.cells.length)throw new Error('Population grid is incomplete. Reload to retry.');
     buffer=new Float32Array(meta.cells.length);series=populationSeries(meta,values,state.region);
     try {
-      globe=new HistoryGlobe($('#globe'),meta,results[2],borders,{
-        onLocation:place=>{setPlaying(false);state.location=place;state.detail=null;lastEventKey=null;renderState();},onEvent:chooseEvent,onSite:chooseSite,onHover,
+      globe=new HistoryGlobe($('#globe'),meta,results[2],borders,nearEastCatalog,{
+        onLocation:place=>{setPlaying(false);state.location=place;state.detail=null;lastEventKey=null;renderState();},onEvent:chooseEvent,onSite:chooseSite,onRegional:chooseRegional,onHover,
         onBorders:status=>{borderLoadStatus=status;if(ready){$('#territory-status').textContent=boundaryDescription(status);if(state.location)renderDetail();}},
         onError:message=>{$('#map-error').hidden=false;$('#map-error').textContent=message;setPlaying(false);},
       });
@@ -360,7 +386,7 @@ async function start() {
     }
     ready=true;initializeControls();renderState();if(state.resolution!==1)setPopulationResolution(state.resolution);$('#loading').hidden=true;loadSites();
     let previous=performance.now(),accumulator=0,fpsStart=previous,fpsFrames=0;
-    function frame(now){const dt=Math.min(.1,(now-previous)/1000);previous=now;
+    function frame(now){const dt=clamp((now-previous)/1000,0,.1);previous=now;
       if(state.playing){state.year=state.mode==='era'?positionToYear(yearToPosition(state.year)+dt*state.speed/180):clamp(state.year+dt*100*state.speed,MIN_YEAR,MAX_YEAR);accumulator+=dt;if(accumulator>.08||state.year>=MAX_YEAR){if(Math.round(state.year)!==lastRenderedYear)renderState();accumulator=0;}if(state.year>=MAX_YEAR)setPlaying(false);}
       globe?.render(dt,state.playing);
       if(state.playing&&globe){fpsFrames++;if(now-fpsStart>=1000){$('#render-performance').textContent=`${Math.round(fpsFrames*1000/(now-fpsStart))} fps · ${globe.meta.resolutionDegrees}° grid`;fpsStart=now;fpsFrames=0;}}else{fpsStart=now;fpsFrames=0;}

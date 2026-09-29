@@ -7,7 +7,7 @@ export function populationSeries(meta, values, region) {
     return [year, total];
   });
 }
-export function makeSnapshot({ meta, populations, values, year, region, events, migrations, sources, comparison, borderStatus, heritage = null }) {
+export function makeSnapshot({ meta, populations, values, year, region, events, migrations, sources, comparison, borderStatus, heritage = null, regional = null }) {
   const stats = summarize(meta, populations, region), b = bracket(meta.years, year);
   const bins = [0, .1, 1, 10, 100, 1000, Infinity];
   const density = bins.slice(0, -1).map((n, i) => ({ label: i === 5 ? '1,000+' : `${n}–${bins[i + 1]}`, population: 0 }));
@@ -21,12 +21,13 @@ export function makeSnapshot({ meta, populations, values, year, region, events, 
   const comparisonValue = comparisonBracket ? mix(compare[comparisonBracket.a][1], compare[comparisonBracket.b][1], comparisonBracket.t) : null;
   const sourceIds = new Set(['hyde', 'archive', 'basemaps', 'naturalearth', ...(compare ? ['owid'] : []), ...events.flatMap(e => e.sources), ...migrations.flatMap(e => e.sources)]);
   if(heritage?.records.length)sourceIds.add('unesco');
+  for(const item of regional?.records??[])for(const source of item.sources)sourceIds.add(source);
   const result = {
     schemaVersion: 1, title: `${region.name} · ${formatYear(year)}`, year, region: { ...region },
     population: stats.total, comparisonPopulation: comparisonValue, geographicBins: stats.regions, densityBins: density,
     populationProvenance: b ? { status: b.a === b.b ? 'source reconstruction' : 'linear interpolation', fromYear: meta.years[b.a], toYear: meta.years[b.b], weight: b.t, source: 'HYDE 3.2 baseline' } : { status: 'unavailable before 10000 BCE' },
     boundaries: borderStatus, nearbyEvents: events, activeMigrations: migrations, migrationScope: 'Global context; routes are not clipped to the snapshot region.',
-    heritageSites: heritage,
+    heritageSites: heritage, nearEastDetail: regional,
     sources: sources.filter(s => sourceIds.has(s.id)),
     limitations: [
       'Population is a historical reconstruction. No statistical confidence interval is bundled.',
