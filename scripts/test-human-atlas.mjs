@@ -7,6 +7,7 @@ import { SOURCES, EVENTS, MIGRATIONS } from '../public/threejs/human_atlas/histo
 import { makeSnapshot, snapshotCSV } from '../public/threejs/human_atlas/snapshot.mjs';
 import { validateResearch } from '../public/threejs/human_atlas/import.mjs';
 import { PopulationDetail } from '../public/threejs/human_atlas/population-detail.mjs';
+import { sitesAt, phasesAt, searchSites, siteSnapshot, hasSiteLocation } from '../public/threejs/human_atlas/sites.mjs';
 
 const dir = new URL('../public/threejs/human_atlas/data/', import.meta.url);
 const meta = JSON.parse(readFileSync(new URL('population.json', dir)));
@@ -15,6 +16,70 @@ const values = new Float32Array(binary.buffer, binary.byteOffset, binary.byteLen
 const borders = JSON.parse(readFileSync(new URL('borders.json', dir)));
 const comparison = JSON.parse(readFileSync(new URL('comparison.json', dir)));
 const world = REGIONS[0];
+const heritage = JSON.parse(readFileSync(new URL('unesco-sites.json', dir)));
+
+test('UNESCO catalog preserves provenance, coordinates, and reviewed evidence separately from inscription', () => {
+  const { sites, counts } = heritage;
+  assert.equal(counts.sites, 1248);
+  assert.equal(sites.length, counts.sites);
+  assert.equal(new Set(sites.map(s => s.id)).size, sites.length);
+  assert.equal(counts.reviewedSites, sites.filter(s => s.phases.length).length);
+  assert.equal(counts.phases, sites.reduce((n, s) => n + s.phases.length, 0));
+  assert.equal(counts.unlocatedSites, sites.filter(s => !hasSiteLocation(s)).length);
+  assert.equal(createHash('sha256').update(readFileSync(new URL('unesco-phases.json', dir))).digest('hex'), heritage.reviewFileSha256);
+  for (const site of sites) {
+    assert.match(site.url, /^https:\/\/whc.unesco.org\/en\/list\/\d+\/$/);
+    if (hasSiteLocation(site)) assert.ok(Math.abs(site.lat) <= 90 && Math.abs(site.lon) <= 180);
+    else assert.equal(site.region, null);
+    for (const phase of site.phases) {
+      assert.ok(phase.start <= phase.end && phase.start >= MIN_YEAR && phase.end <= MAX_YEAR);
+      assert.ok(phase.start !== 0 && phase.end !== 0);
+      assert.ok(site.description.includes(phase.quote), `${site.id}: source phrase`);
+      assert.ok(phase.note && phase.precision && phase.dateLabel);
+    }
+    for (const mention of site.dateMentions) {
+      assert.equal(mention.status, 'unreviewed');
+      assert.ok(!('start' in mention) && !('end' in mention));
+      assert.ok(site.description.includes(mention.text));
+    }
+  }
+  const jericho = sites.find(s => s.unescoId === '1687');
+  assert.equal(jericho.inscribed, 2023);
+  assert.deepEqual(jericho.phases.map(p => [p.start, p.end]), [[-9000, -7001]]);
+  assert.ok(heritage.source.license && heritage.source.descriptionLicense && heritage.source.sha256);
+});
+
+test('heritage timeline uses reviewed phase bounds; overlapping phases produce one property', () => {
+  const sites = heritage.sites, jericho = sites.find(s => s.unescoId === '1687');
+  assert.ok(sitesAt(sites, -8000, world).includes(jericho));
+  assert.ok(!sitesAt(sites, -10000, world).includes(jericho));
+  assert.ok(!sitesAt(sites, 2023, world).includes(jericho));
+  const catal = sites.find(s => s.unescoId === '1405');
+  assert.equal(phasesAt(catal, -6200).length, 2);
+  assert.equal(sitesAt(sites, -6200, world).filter(s => s.id === catal.id).length, 1);
+  assert.equal(phasesAt(catal, -5500)[0].label, 'Western mound · Chalcolithic phase');
+  assert.ok(!sitesAt(sites, -8000, REGIONS.find(r => r.id === 'americas')).includes(jericho));
+  assert.ok(!sitesAt(sites, -8000, world, {lat: 40, lon: -100}).includes(jericho));
+  assert.equal(sitesAt(sites.filter(s => !s.phases.length), 1900, world).length, 0);
+});
+
+test('heritage search finds undated sites without inventing dates or locations; snapshots retain attribution', () => {
+  const sites = heritage.sites;
+  assert.equal(searchSites(sites, 'gobekli', 'all', -8000, world)[0].unescoId, '1572');
+  assert.equal(searchSites(sites, 'catalhoyuk', 'all', -8000, world)[0].unescoId, '1405');
+  const stonehenge = searchSites(sites, 'stonehenge', 'all', -3000, world)[0];
+  assert.equal(stonehenge.phases.length, 0);
+  assert.equal(searchSites(sites, 'stonehenge', 'time', -3000, world).length, 0);
+  assert.equal(searchSites(sites, 'Jericho', 'unreviewed', -8000, world).length, 0);
+  assert.equal(searchSites(sites, '1567', 'all', 1916, world)[0].lat, null);
+  const selected = sitesAt(sites, -8000, REGIONS.find(r => r.id === 'mediterranean'));
+  const snapshot = siteSnapshot(selected, -8000, heritage.source);
+  assert.equal(snapshot.records.find(s => s.id === 'unesco-1687').inscriptionYear, 2023);
+  assert.equal(snapshot.attribution.descriptionLicense, 'CC BY-SA 3.0 IGO');
+  assert.equal(snapshot.attribution.download, heritage.source.download);
+  assert.ok(snapshot.records.every(s => s.phases.every(p => p.start <= -8000 && p.end >= -8000)));
+  assert.match(siteSnapshot([], -8000).status, /unavailable/);
+});
 
 test('bundled population grid is complete, finite, nonnegative, and matches its checksum', () => {
   assert.equal(createHash('sha256').update(binary).digest('hex'), meta.sha256);

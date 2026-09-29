@@ -26,6 +26,16 @@ Natural Earth contributors, 1:110m physical land. **Public domain**. <https://ww
 
 Retrieved 2026-09-29 through the chart's documented CSV endpoint. `comparison.json` retains seven published geographic series through 2023 and a SHA-256 of the downloaded CSV. The app uses the world series as a separate comparison; it does not substitute OWID totals into the HYDE 3.2 grid. OWID's own work is CC BY; underlying data retain the original providers' terms, linked from the data page. Attribute those providers when reusing the comparison.
 
+## UNESCO heritage catalog
+
+`data/unesco-sites.json` derives from **UNESCO World Heritage Centre / UNESCO IHP-WINS, World Heritage Site List (2025)**, supplied by the user. Source: [dataset](https://ihp-wins.unesco.org/dataset/88c8eff6-b94d-4826-bb13-7107ac4c02a9), [CSV](https://ihp-wins.unesco.org/dataset/88c8eff6-b94d-4826-bb13-7107ac4c02a9/resource/2f46f6b2-45f9-402b-ace9-1e02c9c97a3d/download/whc-sites-2025.csv), [provider metadata](https://ihp-wins.unesco.org/api/3/action/package_show?id=88c8eff6-b94d-4826-bb13-7107ac4c02a9). Provider modification date: 2025-07-24; checked 2026-09-29. CSV SHA-256: `56aaa4e3ba16e526f758729d93d2850457d9e37974192bc601b1bb7e93357804`.
+
+IHP-WINS declares `license_id: cc-by-sa`, **Creative Commons Attribution Share-Alike**, linking to `http://www.opendefinition.org/licenses/cc-by-sa`; it does **not specify a version** in that metadata. Preserve that declaration when reusing the tabular catalog. UNESCO's English property descriptions are specifically published under **[CC BY-SA 3.0 IGO](https://creativecommons.org/licenses/by-sa/3.0/igo/)**, as displayed on the [Jericho](https://whc.unesco.org/en/list/1687/) and [Göbekli Tepe](https://whc.unesco.org/en/list/1572/) property pages. This specific licensing is the basis for the included description text; it does not grant rights to UNESCO photographs, logos, or unrelated materials.
+
+Changes: selected English fields; stripped HTML and normalized whitespace; converted numeric fields; added analytical region bins, unreviewed date-mention extraction, and editorial phase interpretations. The adapted descriptions and additions in `data/unesco-phases.json` are shared under **CC BY-SA 3.0 IGO**. Tabular source fields retain the provider's CC BY-SA declaration. Individual property URLs and attribution are preserved in the catalog and contextual JSON exports. Neither data file is covered by the application's MIT license. UNESCO does not endorse the interpretation or the atlas.
+
+**The present work is not an official UNESCO publication and shall not be considered as such.**
+
 ## Three.js
 
 The sketch imports existing local copies of Three.js and OrbitControls from the neighboring acoustic-chamber sketch. **MIT**, copyright the Three.js authors. License already present at `../acoustic_chamber/vendor/THREE.LICENSE`. No additional third-party runtime libraries are included.
@@ -34,4 +44,4 @@ The sketch imports existing local copies of Three.js and OrbitControls from the 
 
 `history.mjs` contains short original summaries and manually drawn schematic routes, each linked to its supporting publication or institution. Full paper texts, figures, genotype records, museum images, and data from candidate sources are not included. Citation does not mean that a source supplied the route's exact coordinates or every intermediate animation date; those are stated visual assumptions.
 
-The four user-suggested candidate datasets are assessed in [DATA_REVIEW.md](DATA_REVIEW.md). Their repository or uploader licenses are recorded there without assuming they replace upstream rights. Their raw text is not bundled.
+The four earlier user-suggested candidate datasets are assessed in [DATA_REVIEW.md](DATA_REVIEW.md). Their repository or uploader licenses are recorded there without assuming they replace upstream rights. Their raw text is not bundled. The separately supplied UNESCO catalog is integrated as described above.

@@ -4,12 +4,14 @@ import { MIN_YEAR, MAX_YEAR, TIME_KNOTS, REGIONS, CATEGORY_COLORS, clamp, bracke
 import { populationSeries, sparklinePath, makeSnapshot, snapshotCSV, downloadFile } from './snapshot.mjs';
 import { validateResearch } from './import.mjs';
 import { PopulationDetail, POPULATION_RESOLUTIONS } from './population-detail.mjs';
+import { hasSiteLocation, phasesAt, sitesAt, searchSites, sitePhaseHTML, siteSnapshot } from './sites.mjs';
 
 const $ = selector => document.querySelector(selector);
-const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: 1, opacity: .5, resolution: .5, layers: { population: true, territories: true, migrations: true, ancestry: true, events: true } };
+const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: 1, opacity: .5, resolution: .5, layers: { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true } };
 const data = { sources: [...SOURCES], events: [...EVENTS], migrations: [...MIGRATIONS] };
 let meta, values, comparison, borders, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
 let detailGrid=null, resolutionRequest=0, resolutionError=null, displayedPopulationYear=null;
+let siteCatalog=null, siteLoadError=null, lastSiteKey=null, catalogSelection=null, siteResultLimit=40;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function readHash() {
@@ -61,13 +63,69 @@ function chooseRoute(route) {
   const [lat, lon] = route.points[Math.floor(route.points.length / 2)]; globe?.focus({ lat, lon, distance: 2.2 });
   renderState(); $('#place-info').scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'instant' : 'smooth' });
 }
+function chooseSite(site) {
+  setPlaying(false);state.detail={type:'site',item:site};
+  if(hasSiteLocation(site)){
+    state.location={lat:site.lat,lon:site.lon,index:globe?.nearestCell(site.lat,site.lon)??-1};
+    globe?.selectLocation(site.lat,site.lon);globe?.focus({lat:site.lat,lon:site.lon,distance:1.6});
+  }else{state.location=null;globe?.clearSelection();}
+  renderState();$('#place-info').scrollIntoView({block:'nearest',behavior:reduceMotion?'instant':'smooth'});
+}
+function jumpSite(id, index) {
+  const site=siteCatalog?.sites.find(s=>s.id===id),phase=site?.phases[index];if(!phase)return;
+  $('#sites-dialog').close();setYear(Math.round((phase.start+phase.end)/2),true);chooseSite(site);
+}
+function siteLinkHTML(site) {
+  return `<a href="${esc(site.url)}" target="_blank" rel="noopener">UNESCO · ${esc(site.title)} ↗</a>`;
+}
+function renderSitePanel(year) {
+  const sites=sitesAt(siteCatalog?.sites??[],year,state.region,state.location);
+  $('#site-count').textContent=siteCatalog?String(sites.length):'';
+  $('#site-status').textContent=siteLoadError??(siteCatalog?`Reviewed phases matching this year${state.location?' within 1,800 km':''}. ${siteCatalog.counts.reviewedSites} of ${siteCatalog.counts.sites.toLocaleString('en-US')} sites dated so far; gaps reflect coverage.`:'Loading the heritage catalog…');
+  // Phase labels can change while the same site remains on the map.
+  const key=sites.map(s=>s.id+':'+phasesAt(s,year).map(p=>p.label).join('/')).join('|');
+  if(key!==lastSiteKey){lastSiteKey=key;$('#site-list').innerHTML=sites.slice(0,6).map(site=>`<button class="event-card site-card" data-site="${esc(site.id)}"><span class="event-kind">Heritage site</span><b>${esc(site.title)}</b><small>${phasesAt(site,year).map(p=>esc(p.dateLabel)).join(' · ')}</small></button>`).join('');}
+  $('#sites-at-time').textContent=sites.length>6?`Browse all ${sites.length} matching sites →`:'Browse the heritage catalog →';
+}
+function renderSiteDirectory() {
+  if(!siteCatalog){$('#site-results-status').textContent=siteLoadError??'Loading the heritage catalog…';$('#site-more').hidden=true;return;}
+  const focused=document.activeElement?.dataset.siteRecord;
+  const results=searchSites(siteCatalog.sites,$('#site-search').value,$('#site-scope').value,Math.round(state.year),state.region);
+  $('#site-results-status').textContent=`${results.length.toLocaleString('en-US')} matches · ${siteCatalog.counts.reviewedSites} of ${siteCatalog.counts.sites.toLocaleString('en-US')} sites have reviewed dates${$('#site-scope').value==='time'?` · ${state.region.name}, ${formatYear(state.year)}`:''}`;
+  $('#site-results').innerHTML=results.slice(0,siteResultLimit).map(site=>`<button class="site-result" data-site-record="${esc(site.id)}" aria-pressed="${catalogSelection===site.id}"><b>${esc(site.title)}</b><small>${esc(site.country)} · ${site.phases.length?'Reviewed dates':'Dates awaiting review'}${hasSiteLocation(site)?'':' · no coordinates'}</small></button>`).join('')||'<p class="empty-note">No matching sites. Try another name or widen the filter.</p>';
+  $('#site-more').hidden=results.length<=siteResultLimit;
+  if(focused)$('#site-results').querySelector(`[data-site-record="${focused}"]`)?.focus({preventScroll:true});
+}
+function renderSiteRecord(site) {
+  catalogSelection=site.id;
+  $('#site-record').innerHTML=`<span class="section-label">${esc(site.category)} heritage · UNESCO ${esc(site.unescoId)}</span><h3 class="site-title">${esc(site.title)}</h3><p class="site-location">${esc(site.country)} · ${hasSiteLocation(site)?`${site.lat.toFixed(3)}°, ${site.lon.toFixed(3)}°`:'No coordinates supplied'}</p>
+    <button class="outline-button" data-site-locate="${esc(site.id)}" ${hasSiteLocation(site)?'':'disabled'}>Locate on globe · keep current year ↗</button>
+    <p class="context-note">Representative property coordinate; some properties contain multiple sites. Inscribed on the World Heritage List in ${site.inscribed}, independently of the historical dates below.</p>
+    ${sitePhaseHTML(site,Math.round(state.year))}
+    <details class="site-description" open><summary>UNESCO source description</summary><p>${esc(site.description)}</p>${siteLinkHTML(site)}</details>
+    <details class="site-mentions"><summary>${site.dateMentions.length} automatically detected date mentions · unreviewed</summary><p>Research leads only. These may concern excavation, restoration, a tradition, or a relative age. They never place a site on the timeline. Relative ages and BP need a reference date and calibration check.</p>${site.dateMentions.map(m=>`<article><b>${esc(m.text)}</b><p>${esc(m.context)}</p></article>`).join('')||'<p>No date phrase was recognized. This does not mean the site has no historical dates.</p>'}</details>`;
+  renderSiteDirectory();
+}
+function openSites(scope='all',site=null) {
+  $('#site-scope').value=scope;$('#site-search').value='';siteResultLimit=40;
+  site??=siteCatalog?.sites.find(s=>s.id===catalogSelection);
+  if(site)renderSiteRecord(site);
+  renderSiteDirectory();showDialog('#sites-dialog');$('#sites-dialog').scrollTop=0;
+}
+async function loadSites() {
+  try{siteCatalog=await loadJSON('unesco-sites.json');}catch(error){siteLoadError=`Heritage catalog unavailable: ${error.message} Reload to retry.`;}
+  renderState();if($('#sites-dialog').open)renderSiteDirectory();
+}
 function clearPlace() { state.location = null; state.detail = null; globe?.clearSelection(); lastEventKey = null; renderState(); }
 function renderDetail() {
   const el = $('#place-info'), location = state.location, detail = state.detail;
   el.hidden = !location && !detail; $('#clear-location').hidden = el.hidden;
   if (el.hidden) return;
   let html = '<button class="detail-close" aria-label="Clear selected place">×</button>';
-  if (detail) {
+  if (detail?.type === 'site') {
+    const site=detail.item;
+    html+=`<span class="section-label">HERITAGE SITE · ${site.phases.length?'REVIEWED PHASES':'DATES AWAITING REVIEW'}</span><h2>${esc(site.title)}</h2>${sitePhaseHTML(site,Math.round(state.year))}<p>World Heritage inscription: ${site.inscribed}. This is separate from occupation or construction dates.</p><button class="outline-button" id="site-read-more">Read the source description ↗</button>${siteLinkHTML(site)}`;
+  } else if (detail) {
     const item = detail.item;
     html += `<span class="section-label">${detail.type === 'event' ? esc(item.kind) : 'MIGRATION STUDY'}</span><h2>${esc(item.title)}</h2><p>${formatYear(item.start)} – ${formatYear(item.end)}</p><p>${esc(item.detail)}</p>`;
     if (detail.type === 'route' && item.blend) {
@@ -90,6 +148,8 @@ function renderDetail() {
   }
   el.innerHTML = html; el.querySelector('.detail-close').onclick = clearPlace;
   const jump = $('#event-jump'); if (jump) jump.onclick = () => setYear((detail.item.start + detail.item.end) / 2, true);
+  el.querySelectorAll('[data-site-jump]').forEach(button=>button.onclick=()=>jumpSite(button.dataset.siteJump,Number(button.dataset.phase)));
+  const readMore=$('#site-read-more');if(readMore)readMore.onclick=()=>openSites('all',detail.item);
 }
 function boundaryDescription(status = borderLoadStatus) {
   if (status?.error) return status.error;
@@ -147,7 +207,8 @@ function renderState() {
     $('#migration-list').innerHTML = routes.map(r => `<button class="migration-card" data-route="${esc(r.id)}" style="--route-color:${r.color}"><b>${esc(r.title)}</b><small>${r.blend ? 'Ancient DNA study · inspect mixture' : 'Schematic corridor · inspect evidence'}</small></button>`).join('');
   }
   const mapEvents = nearbyEvents(data.events, year, REGIONS[0], state.category).slice(0,100);
-  globe?.setYear(year, data.migrations, mapEvents); updatePopulationView(year);
+  globe?.setYear(year, data.migrations, mapEvents,sitesAt(siteCatalog?.sites??[],year,REGIONS[0])); updatePopulationView(year);
+  renderSitePanel(year);
   $('#territory-status').textContent = boundaryDescription();
   renderDetail();
 }
@@ -204,12 +265,14 @@ function showDialog(id) { setPlaying(false); $(id).showModal(); }
 function snapshot() {
   setPlaying(false);
   const year = Math.round(state.year), events = nearbyEvents(data.events, year, state.region, state.category), migrations = activeMigrations(data.migrations, year);
-  currentSnapshot = makeSnapshot({ meta, populations, values, year, region: state.region, events, migrations, sources: data.sources, comparison, borderStatus: boundaryDescription() });
+  const heritage=siteSnapshot(sitesAt(siteCatalog?.sites??[],year,state.region),year,siteCatalog?.source);
+  currentSnapshot = makeSnapshot({ meta, populations, values, year, region: state.region, events, migrations, sources: data.sources, comparison, borderStatus: boundaryDescription(), heritage });
   currentSnapshot.populations = populations?.slice() ?? null; currentSnapshot.region = state.region; currentSnapshot.year = year;
   $('#snapshot-title').textContent = currentSnapshot.data.title;
   $('#snapshot-subtitle').textContent = 'Population and context for the selected region. Charts and CSV use the fixed 1° reference grid at every display resolution.';
   $('#snapshot-chart').innerHTML = currentSnapshot.svg;
   $('#snapshot-notes').innerHTML = `<p>${esc(boundaryDescription())}</p><h3>Nearby records · ${esc(state.category === 'all' ? 'all themes' : state.category)}</h3>${events.length ? `<ul>${events.map(e=>`<li>${esc(e.title)} · ${formatYear(e.start)}–${formatYear(e.end)}</li>`).join('')}</ul>` : '<p>No curated events in this region and time window.</p>'}<p>Routes and ancestry colors summarize selected evidence; they do not establish local headcounts or precise paths. Regional totals use geographic bins, not historical political borders.</p>`;
+  $('#snapshot-notes').insertAdjacentHTML('beforeend',`<h3>Heritage sites · reviewed phases at this time</h3>${heritage.records.length?`<ul>${heritage.records.map(site=>`<li>${siteLinkHTML(site)} · ${site.phases.map(p=>esc(p.dateLabel)).join(' · ')}</li>`).join('')}</ul>`:`<p>${esc(siteLoadError??(siteCatalog?'No reviewed site phases match this region and year.':'Heritage catalog is still loading.'))}</p>`}<p>Site phases and UNESCO attribution accompany the JSON export. Dates describe selected evidence, not complete settlement lifespans.</p>`);
   $('#download-csv').disabled = !populations; $('#download-csv').title = populations ? '' : 'No population grid is available at this date.';
   showDialog('#snapshot-dialog');
 }
@@ -218,6 +281,7 @@ function onHover(hit) {
   const tooltip = $('#tooltip'); if (!hit) { tooltip.hidden = true; return; }
   let html;
   if (hit.event) html = `<strong>${esc(hit.event.title)}</strong><small>${formatYear(hit.event.start)} – ${formatYear(hit.event.end)} · click to read</small>`;
+  else if (hit.site) html = `<strong>${esc(hit.site.title)}</strong><small>${phasesAt(hit.site,Math.round(state.year)).map(p=>esc(p.dateLabel)).join(' · ')} · click to read</small>`;
   else {
     const grid=globe?.meta??meta, shown=globe?globe.populations:populations;
     const c = hit.index >= 0 ? grid.cells[hit.index] : null, p = shown && c ? shown[hit.index] : null;
@@ -242,6 +306,17 @@ function initializeControls() {
   $('#timeline-markers').onclick=e=>{const b=e.target.closest('[data-event-jump]');if(b){const event=data.events.find(x=>x.id===b.dataset.eventJump);setYear(event.start,true);chooseEvent(event);}};
   $('#event-list').onclick=e=>{const b=e.target.closest('[data-event]');if(b)chooseEvent(data.events.find(x=>x.id===b.dataset.event));};
   $('#migration-list').onclick=e=>{const b=e.target.closest('[data-route]');if(b)chooseRoute(data.migrations.find(x=>x.id===b.dataset.route));};
+  $('#sites-button').onclick=()=>openSites();
+  $('#sites-at-time').onclick=()=>openSites(sitesAt(siteCatalog?.sites??[],Math.round(state.year),state.region,state.location).length?'time':'all');
+  $('#site-list').onclick=e=>{const b=e.target.closest('[data-site]');if(b)chooseSite(siteCatalog.sites.find(s=>s.id===b.dataset.site));};
+  const filterSites=()=>{siteResultLimit=40;renderSiteDirectory();};$('#site-search').oninput=filterSites;$('#site-scope').onchange=filterSites;
+  $('#site-more').onclick=()=>{siteResultLimit+=40;renderSiteDirectory();};
+  $('#site-results').onclick=e=>{const b=e.target.closest('[data-site-record]');if(b){renderSiteRecord(siteCatalog.sites.find(s=>s.id===b.dataset.siteRecord));if(innerWidth<=620)$('#site-record').scrollIntoView({block:'start',behavior:reduceMotion?'instant':'smooth'});}};
+  $('#site-record').onclick=e=>{
+    const jump=e.target.closest('[data-site-jump]'),locate=e.target.closest('[data-site-locate]');
+    if(jump)jumpSite(jump.dataset.siteJump,Number(jump.dataset.phase));
+    else if(locate){$('#sites-dialog').close();chooseSite(siteCatalog.sites.find(s=>s.id===locate.dataset.siteLocate));}
+  };
   $('#event-category').onchange=e=>{state.category=e.target.value;renderState();};
   $('#clear-location').onclick=clearPlace;
   for (const key in state.layers) {const el=$(`#layer-${key}`);el.checked=state.layers[key];el.onchange=()=>{state.layers[key]=el.checked;globe?.setLayers(state.layers);renderState();saveHash();};}
@@ -275,7 +350,7 @@ async function start() {
     buffer=new Float32Array(meta.cells.length);series=populationSeries(meta,values,state.region);
     try {
       globe=new HistoryGlobe($('#globe'),meta,results[2],borders,{
-        onLocation:place=>{setPlaying(false);state.location=place;state.detail=null;lastEventKey=null;renderState();},onEvent:chooseEvent,onHover,
+        onLocation:place=>{setPlaying(false);state.location=place;state.detail=null;lastEventKey=null;renderState();},onEvent:chooseEvent,onSite:chooseSite,onHover,
         onBorders:status=>{borderLoadStatus=status;if(ready){$('#territory-status').textContent=boundaryDescription(status);if(state.location)renderDetail();}},
         onError:message=>{$('#map-error').hidden=false;$('#map-error').textContent=message;setPlaying(false);},
       });
@@ -283,7 +358,7 @@ async function start() {
     } catch (error) {
       console.error(error);$('#map-error').hidden=false;$('#map-error').innerHTML='<strong>The 3D globe could not start.</strong><p>Enable WebGL and hardware acceleration, then reload. The timeline, sources, and population snapshots are still available.</p>';
     }
-    ready=true;initializeControls();renderState();if(state.resolution!==1)setPopulationResolution(state.resolution);$('#loading').hidden=true;
+    ready=true;initializeControls();renderState();if(state.resolution!==1)setPopulationResolution(state.resolution);$('#loading').hidden=true;loadSites();
     let previous=performance.now(),accumulator=0,fpsStart=previous,fpsFrames=0;
     function frame(now){const dt=Math.min(.1,(now-previous)/1000);previous=now;
       if(state.playing){state.year=state.mode==='era'?positionToYear(yearToPosition(state.year)+dt*state.speed/180):clamp(state.year+dt*100*state.speed,MIN_YEAR,MAX_YEAR);accumulator+=dt;if(accumulator>.08||state.year>=MAX_YEAR){if(Math.round(state.year)!==lastRenderedYear)renderState();accumulator=0;}if(state.year>=MAX_YEAR)setPlaying(false);}

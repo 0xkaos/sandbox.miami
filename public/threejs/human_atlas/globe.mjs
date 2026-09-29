@@ -68,7 +68,7 @@ function along(points, t) { const f = clamp(t, 0, 1) * (points.length - 1), i = 
 export class HistoryGlobe {
   constructor(container, meta, land, borders, callbacks = {}) {
     this.container = container; this.meta = meta; this.borders = borders; this.callbacks = callbacks;
-    this.layers = { population: true, territories: true, migrations: true, ancestry: true, events: true };
+    this.layers = { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true };
     this.scale = 'log'; this.gain = 1; this.populationOpacity = 1; this.year = -3000; this.routes = []; this.phase = 0; this.disposed = false; this.dirty = true;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(38, 1, .005, 30);
@@ -129,7 +129,7 @@ export class HistoryGlobe {
     this.dotObject = new THREE.Object3D();this.color = new THREE.Color();this.up = new THREE.Vector3(0,1,0);
     this.spikeUniforms={heightGain:{value:1},linearHeight:{value:0},studyColors:{value:1},lowDensityColor:{value:new THREE.Color('#766846')},highDensityColor:{value:new THREE.Color('#ffe6ac')}};
     this.setPopulationGrid(meta);
-    this.routeGroup = new THREE.Group();this.eventGroup = new THREE.Group();this.scene.add(this.routeGroup,this.eventGroup);
+    this.routeGroup = new THREE.Group();this.eventGroup = new THREE.Group();this.siteGroup = new THREE.Group();this.scene.add(this.routeGroup,this.eventGroup,this.siteGroup);
     this.selection = new THREE.Mesh(new THREE.RingGeometry(.017,.019,48),new THREE.MeshBasicMaterial({color:0xe7d4a0,side:THREE.DoubleSide,transparent:true,opacity:.85,depthWrite:false}));this.selection.visible=false;this.scene.add(this.selection);
     this.raycaster = new THREE.Raycaster();this.pointer = new THREE.Vector2();
     this.hoverAt = 0;
@@ -145,7 +145,7 @@ export class HistoryGlobe {
   resize(){const {width,height}=this.container.getBoundingClientRect();if(!width||!height)return;this.width=width;this.height=height;this.camera.aspect=width/height;this.camera.updateProjectionMatrix();this.renderer.setSize(width,height);this.dirty=true;}
   focus(region){this.destination=latLonVector(region.lat,region.lon,Math.min(6,region.distance/Math.min(1,this.camera.aspect)));}
   zoom(factor){this.destination=null;this.camera.position.setLength(clamp(this.camera.position.length()*factor,1.13,6));this.controls.update();}
-  setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);}
+  setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.siteGroup.visible=this.layers.sites;this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);}
   setScale(scale,gain){this.scale=scale;this.gain=gain;this.spikeUniforms.heightGain.value=gain;this.spikeUniforms.linearHeight.value=scale==='linear'?1:0;this.dirty=true;}
   setPopulationOpacity(opacity){this.populationOpacity=clamp(opacity,0,1);this.spikes.material.opacity=this.populationOpacity;this.spikes.visible=this.layers.population&&!!this.populations&&this.populationOpacity>0;this.dirty=true;}
   setPopulationGrid(meta){
@@ -205,7 +205,7 @@ export class HistoryGlobe {
     }
     this.spikes.instanceColor.needsUpdate=true;
   }
-  setYear(year,routes,events){
+  setYear(year,routes,events,sites=[]){
     this.dirty=true;this.year=year;this.routes=routes;this.setBorders(year);
     const active=activeMigrations(routes,year),key=active.map(r=>r.id).join('|');
     if(this.routeKey!==key){
@@ -218,6 +218,21 @@ export class HistoryGlobe {
     }
     const eventKey=events.map(e=>e.id).join('|');
     if(this.eventKey!==eventKey){this.eventKey=eventKey;disposeGroup(this.eventGroup);for(const event of events){const normal=latLonVector(event.lat,event.lon);const m=new THREE.Mesh(new THREE.OctahedronGeometry(.008),new THREE.MeshBasicMaterial({color:CATEGORY_COLORS[event.kind]??'#e2c794'}));m.position.copy(normal).multiplyScalar(1.025);m.userData.event=event;this.eventGroup.add(m);}}
+    const siteKey=sites.map(s=>s.id).join('|');
+    if(this.siteKey!==siteKey){this.siteKey=siteKey;disposeGroup(this.siteGroup);for(const site of sites){
+      const marker=new THREE.Mesh(new THREE.TorusGeometry(.010,.0025,6,20),new THREE.MeshBasicMaterial({color:'#f0bb83'}));
+      marker.position.copy(latLonVector(site.lat,site.lon,1.016));marker.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),marker.position.clone().normalize());
+      // Pick the whole badge, including its hollow center. The globe surface
+      // remains a ray target so markers on the far side cannot be selected.
+      marker.geometry.computeBoundingSphere();
+      marker.raycast=(raycaster,hits)=>{
+        const sphere=marker.geometry.boundingSphere.clone().applyMatrix4(marker.matrixWorld);
+        const point=raycaster.ray.intersectSphere(sphere,new THREE.Vector3());if(!point)return;
+        const distance=raycaster.ray.origin.distanceTo(point);
+        if(distance>=raycaster.near&&distance<=raycaster.far)hits.push({distance,point,object:marker});
+      };
+      marker.userData.site=site;this.siteGroup.add(marker);
+    }}
     this.updateBordersOpacity();
   }
   async loadGeo(index){const row=this.borders.snapshots[index];if(!this.geoCache.has(row.file))this.geoCache.set(row.file,fetch(`./data/borders/${row.file}`).then(r=>{if(!r.ok)throw new Error(`Boundary snapshot ${row.year} could not load.`);return r.json();}).catch(e=>{this.geoCache.delete(row.file);throw e;}));return this.geoCache.get(row.file);}
@@ -293,9 +308,11 @@ export class HistoryGlobe {
   pick(event,click){
     const rect=this.renderer.domElement.getBoundingClientRect();this.pointer.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);this.raycaster.setFromCamera(this.pointer,this.camera);
     const targets=[this.surface];if(this.layers.events)targets.push(...this.eventGroup.children);
+    if(this.layers.sites)targets.push(...this.siteGroup.children);
     const hit=this.raycaster.intersectObjects(targets,false)[0];
     if(!hit){this.callbacks.onHover?.(null);return;}
     if(hit.object.userData.event){const e=hit.object.userData.event;if(click)this.callbacks.onEvent?.(e);else this.callbacks.onHover?.({event:e,x:event.clientX-rect.left,y:event.clientY-rect.top});return;}
+    if(hit.object.userData.site){const site=hit.object.userData.site;if(click)this.callbacks.onSite?.(site);else this.callbacks.onHover?.({site,x:event.clientX-rect.left,y:event.clientY-rect.top});return;}
     const place=vectorLatLon(hit.point);place.index=this.nearestCell(place.lat,place.lon);place.territories=this.territoriesAt(place.lat,place.lon);
     if(click){this.selectLocation(place.lat,place.lon);this.callbacks.onLocation?.(place);}else this.callbacks.onHover?.({...place,x:event.clientX-rect.left,y:event.clientY-rect.top});
   }

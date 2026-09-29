@@ -9,6 +9,7 @@ The main story covers 50,000+ years, with a timeline extending to 70,000 BCE for
 - A rotatable, zoomable globe with **52,498 population cells at the default 0.5° resolution, optional 1° and 0.25° grids, and 75 dates**, using actual HYDE 3.2 gridded reconstructions from 10,000 BCE to 2017 CE.
 - **48 historical boundary snapshots**, from 3000 BCE to 2010 CE, plus two deliberately schematic early farming zones.
 - **13 migration corridors** and **27 curated historical records**, with denser coverage of Europe and the Mediterranean. Themes include migration, urban society, writing, industrial technology, religions and polytheistic traditions, famines, and plague.
+- **1,248 UNESCO heritage properties** in a searchable catalog, with **33 reviewed historical phases at 30 sites**. A separate heritage layer marks phases matching the selected year; undated catalog entries remain searchable.
 - Study-specific ancestry illustrations for early farmers, German Corded Ware, and Beaker-period Britain. Other routes explain qualitative genetic or archaeological evidence.
 - Seven geographic views; exact-year entry; chapter navigation; previous/next event; layer controls; shared URLs; and local research imports.
 - Global or regional snapshot charts, with SVG, population-grid CSV, and contextual JSON downloads. A separate OWID world-population series provides a comparison without altering the map.
@@ -26,6 +27,8 @@ Click the large date for exact-year entry. With the globe focused, **Space** tog
 The default view uses **0.5° resolution and 50% spike visibility**. Saved URLs retain their explicitly selected settings. Under **Population appearance**, use **Spike visibility** (0–100%) to reveal territory colors beneath the population layer, and **Spike height** (0.05–10×) to adjust magnification continuously. The population toggle still turns the layer off without losing these settings. **Population resolution** selects a real source aggregation; the frame-rate readout runs during playback.
 
 The URL records the date, selected region, height mapping, magnification, spike visibility, population resolution, and layer visibility. Imported records remain in the current tab only and are not included in a shared URL.
+
+**Find a heritage site** opens the UNESCO catalog. Search by name, modern country label, or UNESCO ID; names also match without accents. Filter for reviewed dates, all sites, dates awaiting review, or the selected time and region. Select **Explore this period** to pause, jump to a reviewed phase's midpoint, and focus its location. **Locate on globe** keeps the current year, including for undated records. Amber rings distinguish site markers from historical-event diamonds. The **Heritage sites** toggle controls these rings independently.
 
 ## How to read the map
 
@@ -88,11 +91,23 @@ The circular sending/receiving footprints and intermediate color fractions are v
 
 Snapshots use the **selected named geographic region**, not the current camera frustum or the clicked cell. The context follows the selected theme filter. On phones, swipe the chart horizontally to read it at full size. SVG charts show the longer population trajectory with the snapshot date marked; their population axis is logarithmic and their time axis is era weighted. The JSON contains source URLs, event intervals, active migrations, boundary status, and limits. Its active migration list is explicitly global context, not clipped to the snapshot region. CSV rows identify the two population source dates and interpolation weight. CSV export is disabled before the population record begins.
 
+### Heritage sites and date review
+
+The user-supplied UNESCO **2025** CSV contains 1,248 properties and English descriptions, as well as coordinates, modern country labels and World Heritage inscription years. The catalog preserves these distinct fields. One property (ID 1567) has no coordinates; it remains searchable without a guessed map point. Serial properties often have only one representative coordinate, not the locations of every component. Heritage designation is selective and is not a census of historical settlement.
+
+The first editorial pass supplies **30 sites / 33 phases**, including Jericho, Göbekli Tepe, both mounds at Çatalhöyük, Choirokoitia, Liangzhu, Dholavira, Hattusha, Sardis, Delphi, Olympia, Cahokia and Tiwanaku. Review checks the meaning of dates against the supplied English description; it is **not an independent archaeological redating** or a claim of current scholarly consensus. Each phase retains the exact date phrase, date precision, interpretation, source link and review date in `data/unesco-phases.json` and the generated catalog.
+
+Jericho's **9th–8th millennia BCE** phase describes an already substantial Neolithic settlement. Its indexing interval is 9000–7001 BCE; those bounds do not establish a foundation or abandonment year. Its **2023** inscription is unrelated to ancient occupation. Construction, religious importance, peak activity and occupation are separately labeled phases. A site's marker matches any reviewed phase at the selected year; overlapping phases make only one marker. Century-wide dating can mean uncertainty about when activity occurred, not a century of uninterrupted occupation. The full site does not disappear historically when a reviewed phase ends: our coverage of that phase ends.
+
+Automatic extraction found date mentions in **718 descriptions**. These are visible under **automatically detected date mentions** in the catalog, with surrounding text. They remain **unreviewed**, have no normalized year bounds, and never create markers or migration routes. The parser deliberately leaves many formats unresolved. It does not assume that an excavation date is an occupation date, subtract an unanchored “years ago” from today, or treat radiocarbon BP as calibrated calendar BCE. Durations and named periods without absolute dates require further evidence. Natural properties remain searchable but are not automatically converted to human-history sites.
+
+The site inspector and snapshot context use reviewed phases. Unlike the historical-moment list, this layer has no extra contextual time window. The nearby sidebar can narrow to 1,800 km from a selected place; the catalog's time filter and snapshot use the named region. JSON snapshots carry matching phases, inscription years, source URLs, attribution, license statements and coverage limits. Population SVG/CSV exports remain population charts/data. Heritage dates and descriptive headcounts never modify HYDE values or establish genetic migration.
+
 ## Sources and expansion
 
 Full source records and URLs are in [`history.mjs`](history.mjs) and **Sources & methods** in the app. Integrated data, curated literature, and candidate datasets have different statuses.
 
-See [`DATA_REVIEW.md`](DATA_REVIEW.md) for the four user-suggested sources: TimelineConsortium, History Explorer, and the two Kaggle collections. Their raw text and event claims have not been silently merged into the curated map.
+See [`DATA_REVIEW.md`](DATA_REVIEW.md) for TimelineConsortium, History Explorer, the two Kaggle collections, and the integrated UNESCO catalog. The first four collections remain research candidates.
 
 Priority extensions are native-resolution HYDE tiles for close zoom; published paleodemographic ranges before 10,000 BCE; paleocoastlines; AADR sample metadata with publication-specific ancestry models; Seshat polity attributes; Pleiades places; and reviewed, geocoded event records. The existing import format supports additional events and qualitative migration routes now.
 
@@ -160,14 +175,25 @@ The script sums all 75 population bands in row blocks, computes spherical areas,
 
 `population.json` includes source-year totals and the SHA-256 of `population.f32`. Each optional `population-0.5/` and `population-0.25/` directory contains `index.json` with cell locations, areas, frame totals and SHA-256 hashes, plus 75 Float32 date files. Use `--population-detail-only` with `--population-tif` to rebuild just the optional grids without downloading geography. `borders.json` includes each original GeoJSON's SHA-256.
 
+The UNESCO catalog adds **1.47 MB**, loaded separately after the core atlas; a failed catalog request does not prevent playback or population snapshots. To reproduce it, download the [2025 CSV](https://ihp-wins.unesco.org/dataset/88c8eff6-b94d-4826-bb13-7107ac4c02a9/resource/2f46f6b2-45f9-402b-ace9-1e02c9c97a3d/download/whc-sites-2025.csv) outside the repository and run this standard-library-only preparation:
+
+```sh
+python3 scripts/prepare-human-atlas-sites.py --csv /path/to/whc-sites-2025.csv
+```
+
+The CSV SHA-256 is pinned to `56aaa4e3ba16e526f758729d93d2850457d9e37974192bc601b1bb7e93357804`; changed downloads fail before writing. To expand coverage, add explicitly interpreted phases in `data/unesco-phases.json` keyed by UNESCO ID and rerun preparation. Each `quote` must occur in the HTML-stripped English description. Extra sources or new dating claims require extending the provenance model, not disguising an outside date as a CSV quotation. The output records a checksum of the reviewed phase file. Neither the raw multilingual CSV nor external APIs are needed by the deployed app.
+
 ## Validation
 
 ```sh
 node --test scripts/test-human-atlas.mjs
+python3 -B scripts/test-human-atlas-sites.py
 npm run build
 ```
 
 Tests also check all finer-grid date checksums and totals, conservation within every original cell, lazy detail loading, interpolation, request cancellation, and error handling without repeated requests. Browser checks include both sliders, resolution switching, shared settings, mobile controls, delayed/failed boundary loads, smooth transitions, stale responses, and consistent snapshot totals. The original tests check the full binary checksum, every source-year total, nonnegative/finite cells, population-conserving interpolation, unavailable dates, region sums, fixed height mapping, timeline inversion, date-line/hole selection, all 48 boundary files, narrative source references, import validation, and snapshot provenance/CSV scope. Browser checks cover playback, date entry, globe picking, filters, layers, studies, downloads, imports, keyboard controls, responsive layout, and the WebGL fallback.
+
+Heritage checks cover phase/source-phrase consistency, independent inscription dates, date precision and bounds, overlap deduplication, regional selection, accent-insensitive search, missing coordinates, snapshot attribution, and conservative extraction of date leads.
 
 ## Attribution and licenses
 

@@ -1,6 +1,6 @@
 # Review of the suggested datasets
 
-Inspected **2026-09-29**, including repository files and actual downloadable CSVs. These are research candidates in **Sources & methods**; their claims have not been merged wholesale into the population or event layers.
+Inspected **2026-09-29**, including repository files and actual downloadable CSVs. The first four collections remain research candidates. The separately supplied UNESCO CSV is integrated as a searchable catalog with a limited set of reviewed historical phases.
 
 | Source | Actual contents inspected | Best use | Work before map integration |
 | --- | --- | --- | --- |
@@ -10,6 +10,26 @@ Inspected **2026-09-29**, including repository files and actual downloadable CSV
 | [World Important Events – Ancient to Modern](https://www.kaggle.com/datasets/saketk511/world-important-events-ancient-to-modern) | Version 7, 1,096 rows with incident names, dates, country/place names, categories, impact, affected-population prose, people, and outcome. No citation or coordinate fields. | A broad list of topics to research and independently source. | Verify every retained event, repair text, deduplicate, geocode, and replace subjective outcome labels with factual descriptions. |
 
 ## Findings that affect interpretation
+
+### UNESCO World Heritage Site List (2025) · integrated
+
+The [supplied CSV](https://ihp-wins.unesco.org/dataset/88c8eff6-b94d-4826-bb13-7107ac4c02a9/resource/2f46f6b2-45f9-402b-ace9-1e02c9c97a3d/download/whc-sites-2025.csv) contains **1,248 records**: 972 cultural, 235 natural and 41 mixed properties. Contrary to a coordinates-only gazetteer, it also contains English descriptions, several translated descriptions, heritage criteria and inscription metadata. All 1,248 are searchable; one property has missing coordinates and receives no map point. Multi-part properties can have only one representative coordinate.
+
+The structured `date_inscribed` field dates **World Heritage inscription**, not occupation, construction or cultural origin. `secondary_dates`, danger-list dates and `date_end` likewise are not ancient settlement dates. They are never inputs to historical phases.
+
+The first editorial pass interprets **33 phases at 30 sites**, retaining source phrases, precision and notes. This is review of the supplied description's meaning, not independent verification of archaeological chronology. Jericho's description says a substantial permanent settlement existed by the **9th–8th millennia BCE**. Its 2023 inscription remains separate. Çatalhöyük's eastern mound (7400–6200 BCE) and western mound (6200–5200 BCE) are separate phases. Hegra's dates concern tomb facades; Tiwanaku's concern its apogee; those must not become whole-settlement lifespans.
+
+Automatic phrase extraction finds candidates in **718 descriptions**, exposed with context in the site browser. They remain unreviewed and never generate timeline entries. Examples of why review is necessary:
+
+- The Vézère description gives **1940 for the discovery** of Lascaux, not the paintings' creation.
+- Chauvet mixes **30,000–32,000 BP**, a closure date, discovery in 1994, and counts of images and animal remains. The supplied BP phrase alone does not settle radiocarbon calibration or support automatic calendar conversion.
+- An unanchored “5,000 years ago” or a duration of “8,000 years” is not an absolute start/end interval.
+- Nemrut's parenthetical ruler dates and Lumbini's traditional birth claim need subject-specific interpretation.
+- Some descriptions contain malformed text or dated interpretations. The source remains accessible for inspection; the atlas does not present every phrase as a resolved fact.
+
+The catalog adds evidence of places and cultural phases, **not migratory routes or ancestry fractions**. Its selective heritage coverage cannot measure settlement density. Country labels are modern search aids, not historical jurisdictions.
+
+[IHP-WINS metadata](https://ihp-wins.unesco.org/api/3/action/package_show?id=88c8eff6-b94d-4826-bb13-7107ac4c02a9) declares **CC BY-SA** without a version; UNESCO English property descriptions carry **CC BY-SA 3.0 IGO**. Attribution, links, the source checksum and adaptation notices are retained; see [THIRD_PARTY.md](THIRD_PARTY.md). Preparation and the date-review process are documented in [README.md](README.md#heritage-sites-and-date-review).
 
 ### Timeline-Data
 
