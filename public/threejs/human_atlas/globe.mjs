@@ -13,6 +13,8 @@ const SUPERSEDED_BORDERS = new Set(['Ur','Semites','Canaan','Judea']);
 // The land sphere writes depth at radius 1. Territory colors are translucent
 // overlays, so floor markers can sit close to land and draw after those layers.
 const POINT_FLOOR_RADIUS = 1.0025;
+const COAST_LINE_RADIUS = 1.003;
+const BORDER_LINE_RADIUS = 1.004;
 const BASE_PALETTES = {
   forest:{sea:'#182b25',land:'#3b4932',shore:'#778064',grid:'#c1caa10c',specular:'#263c2e',haze:[.34,.56,.43]},
   tidal:{sea:'#172c3b',land:'#3d5b62',shore:'#80a9af',grid:'#b3d8de0c',specular:'#2f4c58',haze:[.31,.55,.64]},
@@ -23,7 +25,9 @@ export function latLonVector(lat, lon, radius = 1) {
   return new THREE.Vector3(radius * Math.cos(lat * R) * Math.cos(lon * R), radius * Math.sin(lat * R), -radius * Math.cos(lat * R) * Math.sin(lon * R));
 }
 function vectorLatLon(p) { return { lat: Math.asin(clamp(p.y / p.length(), -1, 1)) / R, lon: Math.atan2(-p.z, p.x) / R }; }
-function textureCanvas(width = 2048) { const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = width / 2; return canvas; }
+// A 4K equirectangular texture keeps coastlines and historical boundaries
+// legible at the atlas's closest viewing distance.
+function textureCanvas(width = 4096) { const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = width / 2; return canvas; }
 function polygonPath(ctx, geometry, width, height) {
   const polys = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.type === 'MultiPolygon' ? geometry.coordinates : [];
   ctx.beginPath();
@@ -39,11 +43,39 @@ function polygonPath(ctx, geometry, width, height) {
     ctx.closePath();
   }
 }
+function geometryRings(geometry) {
+  const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.type === 'MultiPolygon' ? geometry.coordinates : [];
+  return polygons.flatMap(polygon => polygon);
+}
+function sphericalLineGeometry(features, radius, excludedNames = null) {
+  const positions = [];
+  for (const feature of features) {
+    if (excludedNames?.has(feature.properties?.name)) continue;
+    for (const ring of geometryRings(feature.geometry)) for (let index = 1; index < ring.length; index++) {
+      const from = latLonVector(ring[index - 1][1], ring[index - 1][0], radius);
+      const to = latLonVector(ring[index][1], ring[index][0], radius);
+      const steps = Math.max(1, Math.ceil(from.angleTo(to) / (Math.PI / 180)));
+      let previous = from;
+      for (let step = 1; step <= steps; step++) {
+        const next = from.clone().lerp(to, step / steps).normalize().multiplyScalar(radius);
+        positions.push(previous.x, previous.y, previous.z, next.x, next.y, next.z);
+        previous = next;
+      }
+    }
+  }
+  return new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+}
+function sphericalLines(features, radius, color, opacity, excludedNames = null) {
+  const line = new THREE.LineSegments(sphericalLineGeometry(features, radius, excludedNames), new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
+  line.renderOrder = 2.5;
+  return line;
+}
+function disposeBorderLines(pair) { for (const line of pair?.lines ?? []) { line.geometry.dispose(); line.material.dispose(); } }
 function nameColor(name) {
   let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) | 0;
   return `hsl(${((h >>> 0) % 360)}, 26%, 49%)`;
 }
-function canvasTexture(canvas) { const t = new THREE.CanvasTexture(canvas); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
+function canvasTexture(canvas) { const t = new THREE.CanvasTexture(canvas); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; }
 function paintBaseMap(ctx, land, palette) {
   const {width,height}=ctx.canvas;
   ctx.fillStyle=palette.sea;ctx.fillRect(0,0,width,height);
@@ -153,6 +185,7 @@ export class HistoryGlobe {
     this.baseMapContext=ctx;paintBaseMap(ctx,land,palette);
     this.surface = new THREE.Mesh(new THREE.SphereGeometry(1,128,64), new THREE.MeshPhongMaterial({ map:canvasTexture(canvas), specular:palette.specular, shininess:12 }));
     this.scene.add(this.surface);
+    this.coastLines=sphericalLines(land.features,COAST_LINE_RADIUS,palette.shore,.85);this.scene.add(this.coastLines);
     this.atmosphere = new THREE.Mesh(new THREE.SphereGeometry(1.017,96,48),new THREE.ShaderMaterial({
       uniforms:{tint:{value:new THREE.Vector3(...palette.haze)}},vertexShader:'varying vec3 vNormal; varying vec3 vView; void main(){ vec4 p=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vView=normalize(-p.xyz);gl_Position=projectionMatrix*p;}',
       fragmentShader:'uniform vec3 tint; varying vec3 vNormal; varying vec3 vView; void main(){float a=pow(1.0-abs(dot(normalize(vNormal),normalize(vView))),4.0);gl_FragColor=vec4(tint,a*0.19);}',
@@ -202,6 +235,7 @@ export class HistoryGlobe {
     this.regionTexture=null;this.regionPrevious=null;this.regionPending=null;this.regionFade=1;this.regionKey=null;
     this.europeCatalog=null;this.europeLayer=null;
     this.textureCache=new Map();this.displayBorder=null;this.previousBorder=null;this.pendingBorder=null;this.borderFade=1;
+    this.borderLines=[];this.previousBorderLines=[];
     this.earlyMesh = new THREE.Mesh(this.surface.geometry.clone(),new THREE.MeshBasicMaterial({transparent:true,opacity:.38,depthWrite:false}));this.earlyMesh.scale.setScalar(1.002);this.scene.add(this.earlyMesh);
     this.geoCache = new Map(); this.borderKey = null; this.borderData = null; this.borderRequest = 0;
     this.dotObject = new THREE.Object3D();this.color = new THREE.Color();this.up = new THREE.Vector3(0,1,0);
@@ -235,6 +269,7 @@ export class HistoryGlobe {
     paintBaseMap(this.baseMapContext,this.land,palette);
     this.surface.material.map.needsUpdate=true;
     this.surface.material.specular.set(palette.specular);
+    this.coastLines.material.color.set(palette.shore);
     this.atmosphere.material.uniforms.tint.value.set(...palette.haze);
     this.dirty=true;
   }
@@ -402,12 +437,14 @@ export class HistoryGlobe {
   }
   beginBorder(pair){
     this.previousBorder=this.displayBorder;this.displayBorder=pair;this.borderFade=0;
+    this.previousBorderLines=this.borderLines;this.borderLines=pair.lines;
+    for(const line of this.borderLines)this.scene.add(line);
     const u=this.borderUniforms,old=this.previousBorder;
     u.oldA.value=old?.textures[0]??this.emptyBorder;u.oldB.value=old?.textures[1]??this.emptyBorder;u.oldWeight.value=u.weight.value;
     u.mapA.value=pair.textures[0];u.mapB.value=pair.textures[1];u.weight.value=pair.bracket?.t??0;u.transition.value=0;
     this.updateBordersOpacity();
   }
-  queueBorder(pair){if(this.borderFade<1)this.pendingBorder=pair;else this.beginBorder(pair);}
+  queueBorder(pair){if(this.borderFade<1){disposeBorderLines(this.pendingBorder);this.pendingBorder=pair;}else this.beginBorder(pair);}
   advanceBorders(dt){
     const target=this.displayBorder?.bracket?.t??0,delta=target-this.borderUniforms.weight.value;
     if(Math.abs(delta)>.00001){this.borderUniforms.weight.value+=delta*(1-Math.exp(-dt*18));this.dirty=true;}
@@ -416,10 +453,11 @@ export class HistoryGlobe {
     this.borderUniforms.transition.value=this.borderFade*this.borderFade*(3-2*this.borderFade);this.dirty=true;
     if(this.borderFade===1){
       this.previousBorder=null;
+      for(const line of this.previousBorderLines){this.scene.remove(line);line.geometry.dispose();line.material.dispose();}this.previousBorderLines=[];
       this.borderUniforms.oldA.value=this.borderUniforms.mapA.value;this.borderUniforms.oldB.value=this.borderUniforms.mapB.value;
       if(this.pendingBorder){const next=this.pendingBorder;this.pendingBorder=null;this.beginBorder(next);}
       const used=new Set([this.emptyBorder,...[this.displayBorder,this.previousBorder,this.pendingBorder].flatMap(p=>p?.textures??[])]);
-      for(const [key,texture] of this.textureCache){if(this.textureCache.size<=6)break;if(!used.has(texture)){texture.dispose();this.textureCache.delete(key);}}
+      for(const [key,texture] of this.textureCache){if(this.textureCache.size<=4)break;if(!used.has(texture)){texture.dispose();this.textureCache.delete(key);}}
       this.updateBordersOpacity();
     }
   }
@@ -432,7 +470,7 @@ export class HistoryGlobe {
     const early=EARLY_ZONES.filter(z=>year>=z.start&&year<=z.end),earlyKey=early.map(z=>z.name).join('|');
     if(earlyKey!==this.earlyKey){this.earlyKey=earlyKey;const canvas=textureCanvas(),ctx=canvas.getContext('2d');for(const zone of early){polygonPath(ctx,zone.geometry,canvas.width,canvas.height);ctx.fillStyle=zone.color;ctx.fill('evenodd');ctx.strokeStyle=zone.color;ctx.setLineDash([3,3]);ctx.lineWidth=1.5;ctx.stroke();}this.earlyMesh.material.map?.dispose();this.earlyMesh.material.map=canvasTexture(canvas);this.earlyMesh.material.needsUpdate=true;}
     if(!b){
-      if(this.borderKey!==null){this.borderRequest++;this.borderKey=null;this.borderData=null;this.borderError=null;this.pendingBorder=null;this.queueBorder({key:null,bracket:null,data:null,textures:[this.emptyBorder,this.emptyBorder]});}
+      if(this.borderKey!==null){this.borderRequest++;this.borderKey=null;this.borderData=null;this.borderError=null;disposeBorderLines(this.pendingBorder);this.pendingBorder=null;this.queueBorder({key:null,bracket:null,data:null,textures:[this.emptyBorder,this.emptyBorder],lines:[]});}
       this.updateBordersOpacity();this.callbacks.onBorders?.({early});return;
     }
     const key=`${b.a}/${b.b}`;
@@ -441,20 +479,23 @@ export class HistoryGlobe {
     if(b.t>.5&&b.b+1<this.borders.snapshots.length)this.loadGeo(b.b+1).catch(()=>{});
     if(key===this.borderKey){this.updateBordersOpacity();this.callbacks.onBorders?.({bracket:b,ready:!!this.borderData,loading:!this.borderData&&!this.borderError,error:this.borderError});return;}
     // Preserve the complete displayed pair until the replacement is ready.
-    this.borderKey=key;this.borderData=null;this.borderError=null;this.pendingBorder=null;
+    this.borderKey=key;this.borderData=null;this.borderError=null;disposeBorderLines(this.pendingBorder);this.pendingBorder=null;
     const request=++this.borderRequest;this.updateBordersOpacity();this.callbacks.onBorders?.({bracket:b,loading:true});
     try{
       const data=await Promise.all([this.loadGeo(b.a),this.loadGeo(b.b)]);
       if(request!==this.borderRequest||this.disposed)return;
       this.borderData=data;
       const textures=[this.textureFor(b.a,data[0]),this.textureFor(b.b,data[1])];
-      this.queueBorder({key,bracket:this.currentBorderBracket,data,textures});
+      const lines=data.map(snapshot=>sphericalLines(snapshot.features,BORDER_LINE_RADIUS,'#ddd7b2',0,!!this.nearEast?SUPERSEDED_BORDERS:null));
+      this.queueBorder({key,bracket:this.currentBorderBracket,data,textures,lines});
       this.updateBordersOpacity();this.callbacks.onBorders?.({bracket:this.currentBorderBracket,ready:true});
     }catch(error){if(request===this.borderRequest&&!this.disposed){this.borderError=error.message+' Keeping the last available map. Select another era and return, or reload, to retry.';this.callbacks.onBorders?.({error:this.borderError});}}
   }
   updateBordersOpacity(){
     this.dirty=true;
     this.territoryMesh.visible=this.layers.territories&&!!(this.displayBorder?.data||this.previousBorder?.data);
+    for(const line of this.borderLines)line.visible=this.layers.territories;
+    for(const line of this.previousBorderLines)line.visible=this.layers.territories;
     this.earlyMesh.visible=this.layers.territories&&!this.currentBorderBracket;
     this.regionMesh.visible=this.layers.territories&&!!this.regionTexture&&(this.regionTexture!==this.emptyRegion||this.regionFade<1);
     this.europeLayer?.setVisible(this.layers.territories);
@@ -505,7 +546,11 @@ export class HistoryGlobe {
   render(dt,playing){
     if(this.disposed)return;
     if(this.destination){this.camera.position.lerp(this.destination,1-Math.exp(-dt*5));if(this.camera.position.distanceTo(this.destination)<.001)this.destination=null;}
-    this.advanceBorders(dt);this.advanceRegion(dt);if(this.europeLayer?.advance(dt))this.dirty=true;this.controls.update();
+    this.advanceBorders(dt);this.advanceRegion(dt);
+    const u=this.borderUniforms,oldWeight=u.oldWeight.value,weight=u.weight.value,transition=u.transition.value;
+    for(const [index,line] of this.previousBorderLines.entries())line.material.opacity=.72*(index?oldWeight:1-oldWeight)*(1-transition);
+    for(const [index,line] of this.borderLines.entries())line.material.opacity=.72*(index?weight:1-weight)*transition;
+    if(this.europeLayer?.advance(dt))this.dirty=true;this.controls.update();
     const cameraDistance=this.camera.position.length();
     if(this.burialDots.setVisible(!!this.layers.archaeology,cameraDistance))this.dirty=true;
     if(this.levantDots.setVisible(!!this.layers.archaeology,cameraDistance))this.dirty=true;

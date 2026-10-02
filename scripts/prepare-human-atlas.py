@@ -13,8 +13,6 @@ import math
 from pathlib import Path
 import urllib.request
 
-import numpy as np
-import rasterio
 from shapely.geometry import shape, mapping
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +46,9 @@ def region(lat, lon):
 
 
 def population(tif):
+    import numpy as np
+    import rasterio
+
     # Sum people, never average density or normalize to the largest year.
     # Read all interleaved bands in row blocks, not 75 complete raster passes.
     factor = 12
@@ -82,6 +83,9 @@ def population(tif):
 
 
 def population_detail(tif):
+    import numpy as np
+    import rasterio
+
     """Real finer aggregations, with separate date files for bounded downloads."""
     with rasterio.open(tif) as src:
         assert (src.width, src.height, src.count) == (4320, 2160, 75)
@@ -128,8 +132,8 @@ def rounded(value):
 
 
 def geography(cache):
-    url = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_land.geojson'
-    land = json.loads(download(url, cache / 'land.geojson').read_text())
+    url = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson'
+    land = json.loads(download(url, cache / 'land-50m.geojson').read_text())
     for feature in land['features']:
         feature['properties'] = {}
         feature['geometry']['coordinates'] = rounded(feature['geometry']['coordinates'])
