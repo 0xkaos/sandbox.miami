@@ -52,6 +52,22 @@ export function inRegion(cell, region) {
   if (region.bounds) return cell[1] >= region.bounds[0] && cell[0] >= region.bounds[1] && cell[1] <= region.bounds[2] && cell[0] <= region.bounds[3];
   return region.indices ? region.indices.includes(cell[3]) : cell[3] === region.index;
 }
+// Match the analytical bins used to label population cells in
+// scripts/prepare-human-atlas.py. These are fixed geographic groupings, not
+// historical borders or language ranges.
+export function geographicBin(lat, lon) {
+  if (lon < -30) return lat >= 13 ? 3 : 4;
+  if ((lon >= 110 && lat < -10) || lon > 155) return 5;
+  if (lon >= -20 && lon < 53 && lat >= -36 && lat < 36 && !(lon > 34 && lat > 12)) return 0;
+  if (lat >= 36 && lon >= -30 && lon < 45) return 1;
+  return 2;
+}
+export function pointInAtlasRegion(lat, lon, region) {
+  if (!region) return true;
+  const selection = region.bounds || region.index != null || region.indices
+    ? region : REGIONS.find(candidate => candidate.id === region.id) ?? region;
+  return inRegion([lat, lon, 0, geographicBin(lat, lon)], selection);
+}
 export function summarize(meta, populations, region) {
   if (!populations) return { total: null, area: 0, cells: 0, regions: [], peak: null };
   const bins = meta.regions.map(name => ({ name, population: 0 }));

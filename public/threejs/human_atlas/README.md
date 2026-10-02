@@ -8,7 +8,11 @@ The main story covers 50,000+ years, with a timeline extending to 70,000 BCE for
 
 - A rotatable, zoomable globe with **52,498 population cells at the default 0.5° resolution, optional 1° and 0.25° grids, and 75 dates**, using actual HYDE 3.2 gridded reconstructions from 10,000 BCE to 2017 CE.
 - **48 historical boundary snapshots**, from 3000 BCE to 2010 CE, plus two deliberately schematic early farming zones.
+- **159 dated European people/polity source intervals** for 20 named peoples and kingdoms, plus ten approximate Germanic ethnonym label points. This regional layer crossfades independently of the global basemap.
 - **13 migration corridors** and **27 curated historical records**, with denser coverage of Europe and the Mediterranean. Themes include migration, urban society, writing, industrial technology, religions and polytheistic traditions, famines, and plague.
+- **967 radiocarbon-dated Corded Ware and Bell Beaker burial events**, **5,587 geocoded South Levant survey site records with 14,268 phase rows**, and **21,380 searchable Pleiades ancient places**. Their dates and location precision have different meanings.
+- **4,756 EUROEVOL European site records** with 2,807 source culture/phase rows. Of these, 2,806 are attached to searchable, geocoded sites; one source phase has no matching site coordinate. The source table does not give calendar dates for those associations, so they do not appear on the time map.
+- **6,683 modern Glottolog language points with family hierarchies** at the atlas endpoint and **20 selected dated Latin/Ancient Greek inscriptions** in their historical windows. Points do not define language territories.
 - **1,248 UNESCO heritage properties** in a searchable catalog, with **33 reviewed historical phases at 30 sites**. A separate heritage layer marks phases matching the selected year; undated catalog entries remain searchable.
 - Study-specific ancestry illustrations for early farmers, German Corded Ware, and Beaker-period Britain. Other routes explain qualitative genetic or archaeological evidence.
 - Seven geographic views; exact-year entry; chapter navigation; previous/next event; layer controls; shared URLs; and local research imports.
@@ -29,6 +33,10 @@ The default view uses **0.5° resolution and 50% spike visibility**. Saved URLs 
 The URL records the date, selected region, height mapping, magnification, spike visibility, population resolution, and layer visibility. Imported records remain in the current tab only and are not included in a shared URL.
 
 **Find a heritage site** opens the UNESCO catalog. Search by name, modern country label, or UNESCO ID; names also match without accents. Filter for reviewed dates, all sites, dates awaiting review, or the selected time and region. Select **Explore this period** to pause, jump to a reviewed phase's midpoint, and focus its location. **Locate on globe** keeps the current year, including for undated records. Amber rings distinguish site markers from historical-event diamonds. The **Heritage sites** toggle controls these rings independently.
+
+**Explore archaeological evidence** searches individual dated burials, South Levant survey phases, Pleiades ancient places, and undated EUROEVOL culture associations. Pleiades searches include certain source name variants, so a query such as “Rome” can find Roma. Filter by collection, current year and region, or geographic region alone. A record keeps the original site name, reported type, source link, dating basis, and available description; **Locate** moves to an associated period when one is available. The archaeology layer displays dated burial and survey points at regional zoom and precise Pleiades place points only at closer zoom. Pleiades time-map points, snapshot counts, and time-scoped search stop at 1700 CE: the source's Modern associations often date a current name or location, not ancient activity. Those records remain searchable. The source intervals are not continuous occupation claims.
+
+**Language evidence** shows selected dated EDH inscriptions from about 130 BCE to 565 CE. At the atlas's **2017 endpoint**, it instead shows Glottolog 5.3 catalog coordinates and a family/subfamily selector. The 2026 catalog is intentionally placed at the last available atlas year as a modern reference; it is not a 2017 survey or a back-projection to prehistory. The language layer is off by default.
 
 ## How to read the map
 
@@ -73,9 +81,27 @@ The viewer **crossfades two dated polygon maps on one surface**. Alpha is blende
 
 The **Near East** focus adds 57 dated or explicitly schematic areas and 14 selected city points to southern Mesopotamia, Assyria, Canaan, Israel/Judah, and later Judea. It uses selected Cliopatria/Seshat polygons with editorial date corrections, alongside hand-drawn schematic cultural areas and cores. Pleiades supplies selected city coordinates and stable place links. This is a selective regional edition, not a complete inventory of states or settlements. Its regional textures cover only 25–60°E, 20–43°N at finer display resolution; rendering changes crossfade over 280 ms. A city marker's displayed years are a useful viewing window, **not** its foundation and abandonment dates. Near East cards, marker clicks, local inspection, and JSON snapshots report the source and role at the chosen date where reviewed.
 
+The European detail uses a separate cropped texture for dated Cliopatria areas of Goths, Saxons, Vandals, Franks, related named peoples, and successor kingdoms. The 159 features are dated source intervals for **20 names**, not 159 independent civilizations or surveyed ethnic borders. Ten Pleiades ethnonym points help locate names such as Cherusci and Suebi; their coordinates are labels, not capitals or territories. Polygons, ethnonym points, burial traditions, and genetic ancestry are separate layers of interpretation.
+
 Ur is a city marker within the Sumer cultural region. The political area changes from Sumerian city-states to Akkadian rule to the schematic Ur III core; the broad "Ur" polygon in the 3000 and 2000 BCE global snapshots is suppressed. The similarly broad global labels "Semites," "Canaan," and "Judea" are suppressed where this regional edition supplies more precise meanings. Canaan and Judea appear as geographic/cultural regions, with light fills. Schematic outlines are dashed. Israel ends at the fall of Samaria around 722 BCE; Samaria's marker then identifies its Assyrian provincial role. A later Judah core is schematic because the source polygon sequence stops at 701 BCE. These dates and outlines remain approximate. Some imperial reconstructions include subordinate states or campaign zones, so overlapping colors should be read with the inspector rather than as simultaneous direct administration.
 
 Snapshot regions use explicit fixed geographic bins, defined in the preparation script, and a Mediterranean bounding box. They are approximate analytical areas, not historical nations or an official continent classification. Political-territory population totals are not calculated. Simply moving the camera does not silently redefine the selected region.
+
+### Archaeological sites and findings
+
+The dated Corded Ware and Bell Beaker points come from Bourgeois et al.'s compiled **967 radiocarbon-dated burials**. Each record retains a modelled mean, 68.3% and 95.4% date intervals, a lab identifier, a cited source, and any reported grave description or goods. Published sample IDs and haplogroup labels appear where supplied; these are individual markers, not ancestry fractions. A point appears when its 95.4% modelled range contains the selected year; this represents uncertainty about a burial date, **not ongoing activity every year in that span**. Sixteen low model-agreement rows remain searchable but are excluded from default time views. A burial tradition cannot establish a person's ancestry or language.
+
+The South Levant survey adds **5,587 geocoded source site records** and **14,268 phase rows** from surveyed parts of Samaria and Judah. Its broad archaeological periods index reported activity; they cannot establish uninterrupted occupation, state membership, or a complete inventory of finds. Source types such as “sherd scatter” are site classifications, not itemized artefacts. The local panel counts **sites with matching phases**, not phase rows.
+
+Pleiades adds **21,380 geocoded western-focus gazetteer places**, including settlements, archaeological sites, and built or funerary places. Only records with a **certain period association** and **precise representative point** appear as small map dots at close zoom; the search includes less certain and rough records with warnings. A date may come from a place's location record or, when that lacks dates, a dated name. Neither is evidence of continuous occupation; a dated name does not date construction. The detail view retains source accuracy radius, place type, and archaeological-remains tags where supplied. The latter are pooled across location records and not assigned to the selected year or a particular find.
+
+EUROEVOL supplies Neolithic European site names and culture/subculture associations for broad browsing, including Corded Ware, Bell Beaker, Linearbandkeramik, Funnel Beaker, and Globular Amphora entries. The imported CommonPhases rows contain period codes but **no calendar start/end**. They stay in the searchable directory and off the timeline. Assigning one generic lifespan to every culture would manufacture site dates; calibrating linked radiocarbon samples with context review is a future step.
+
+### Languages and written attestations
+
+Glottolog 5.3 provides a classification and representative language coordinates. The atlas includes 6,683 spoken-L1 language points with coordinates and a non-extinct AES category, plus the family/subfamily hierarchy used by the selector. It does not supply historical speaker ranges, ancient family homelands, or population counts. Its points are shown only at the 2017 endpoint as a modern reference. The count is a selected geocoded subset, not the number of all known languages or families.
+
+A separate small EDH layer contains **20 selected Latin and Ancient Greek inscription records**, each with a dated interval, findspot, EDH ID, and record link. The interval dates an object, not the duration of language use. The point is an approximate findspot; some are city centroids. This sample makes historical written evidence inspectable but is not a map of all ancient languages west of the Indus, and absence of a point says nothing about where a language was spoken.
 
 ### Migration and ancestry
 
@@ -93,7 +119,7 @@ The circular sending/receiving footprints and intermediate color fractions are v
 
 “Near this time” includes events within a stated contextual time window. It can include events before or after the selected year; every card supplies its actual date interval. Selecting a place narrows nearby records to 1,800 km. Empty lists are coverage gaps, not a historical claim. Religious points mark places discussed in the cited source, not distributions or counts of believers. The 1918 pandemic marker does not claim its geographic origin.
 
-Snapshots use the **selected named geographic region**, not the current camera frustum or the clicked cell. The context follows the selected theme filter. On phones, swipe the chart horizontally to read it at full size. SVG charts show the longer population trajectory with the snapshot date marked; their population axis is logarithmic and their time axis is era weighted. The JSON contains source URLs, event intervals, active migrations, boundary status, and limits. Its active migration list is explicitly global context, not clipped to the snapshot region. CSV rows identify the two population source dates and interpolation weight. CSV export is disabled before the population record begins.
+Snapshots use the **selected named geographic region**, not the current camera frustum or the clicked cell. The context follows the selected theme filter. On phones, swipe the chart horizontally to read it at full size. SVG charts show the longer population trajectory with the snapshot date marked; their population axis is logarithmic and their time axis is era weighted. The JSON contains source URLs, event intervals, active migrations, boundary status, and limits, plus bounded archaeological, ancient-place, European-area, and language samples with full counts and source metadata. Its active migration list is explicitly global context, not clipped to the snapshot region. CSV rows identify the two population source dates and interpolation weight. CSV export is disabled before the population record begins.
 
 ### Heritage sites and date review
 
@@ -113,7 +139,7 @@ Full source records and URLs are in [`history.mjs`](history.mjs) and **Sources &
 
 See [`DATA_REVIEW.md`](DATA_REVIEW.md) for TimelineConsortium, History Explorer, the two Kaggle collections, and the integrated UNESCO catalog. The first four collections remain research candidates.
 
-Priority extensions are native-resolution HYDE tiles for close zoom; published paleodemographic ranges before 10,000 BCE; paleocoastlines; AADR sample metadata with publication-specific ancestry models; broader Seshat polity attributes; additional reviewed Pleiades places; and reviewed, geocoded event records. The existing import format supports additional events and qualitative migration routes now.
+Priority extensions are native-resolution HYDE tiles for close zoom; published paleodemographic ranges before 10,000 BCE; paleocoastlines; AADR sample metadata with publication-specific ancestry models; broader Seshat polity attributes; per-site review of Pleiades dating and EUROEVOL radiocarbon contexts; and reviewed, geocoded event records. The existing import format supports additional events and qualitative migration routes now.
 
 ### Local research format
 
@@ -161,7 +187,7 @@ The example coordinates illustrate the format only. Replace the placeholder sour
 
 ## Data preparation
 
-The deployed atlas data total roughly 91 MB including optional finer grids. The 1° reference population/geography needs roughly 5 MB plus the local Three.js module; the default 0.5° view adds its metadata and adjoining dates. Finer metadata (about 1.4 MB at 0.5° or 4.9 MB at 0.25°) and individual dates are fetched only when needed. Boundary files also load by date. No individual file exceeds Cloudflare's 25 MiB asset limit. Raw source archives are not shipped.
+The deployed atlas data total roughly 100 MB including optional finer grids and the new research catalogs. The 1° reference population/geography needs roughly 5 MB plus the local Three.js module; the default 0.5° view adds its metadata and adjoining dates. Finer metadata (about 1.4 MB at 0.5° or 4.9 MB at 0.25°) and individual dates are fetched only when needed. Boundary files also load by date. The archaeology, ancient-place, and language catalogs load separately after the core globe; one failed catalog request does not stop playback. No individual file exceeds Cloudflare's 25 MiB asset limit. Raw source archives are not shipped.
 
 The committed artifacts allow normal builds with **no Python or network dependency**. To reproduce them, use a separate Python environment with `numpy`, `rasterio`, and `shapely`:
 
@@ -181,6 +207,19 @@ The script sums all 75 population bands in row blocks, computes spherical areas,
 
 The Near East overlay is about 90 KB and can be rebuilt separately with `python scripts/prepare-human-atlas-region.py` in an environment with `shapely`. The script downloads a pinned, checksum-verified Cliopatria archive into `/tmp/human-atlas-source`, selects and simplifies the reviewed polygons, and adds the documented schematic regions and selected Pleiades city points. Review editorial date and geometry changes in the script and [`THIRD_PARTY.md`](THIRD_PARTY.md) before expanding it.
 
+The new regional and evidence catalogs are committed as generated JSON. Regenerate them with the following pinned, checksum-verified scripts; all cache raw inputs outside the repository under `/tmp/human-atlas-source`. Only the European-area generator requires `shapely`; the others use the Python standard library:
+
+```sh
+python3 -B scripts/prepare-human-atlas-europe.py
+python3 -B scripts/prepare-human-atlas-burials.py
+python3 -B scripts/prepare-human-atlas-levant.py
+python3 -B scripts/prepare-human-atlas-pleiades.py
+python3 -B scripts/prepare-human-atlas-languages.py
+python3 -B scripts/prepare-human-atlas-language-attestations.py
+```
+
+The European script also writes the undated EUROEVOL site index. Each generated file records its source revision, license, input checksums, selection, and chronology caveats. The Pleiades download is limited to geocoded western-focus places; it does not claim complete ancient-world coverage. Do not replace source period associations with inferred site occupation dates during regeneration.
+
 The UNESCO catalog adds **1.47 MB**, loaded separately after the core atlas; a failed catalog request does not prevent playback or population snapshots. To reproduce it, download the [2025 CSV](https://ihp-wins.unesco.org/dataset/88c8eff6-b94d-4826-bb13-7107ac4c02a9/resource/2f46f6b2-45f9-402b-ace9-1e02c9c97a3d/download/whc-sites-2025.csv) outside the repository and run this standard-library-only preparation:
 
 ```sh
@@ -193,6 +232,7 @@ The CSV SHA-256 is pinned to `56aaa4e3ba16e526f758729d93d2850457d9e37974192bc601
 
 ```sh
 node --test scripts/test-human-atlas.mjs
+node --test scripts/test-human-atlas-europe.mjs scripts/test-human-atlas-research.mjs
 python3 -B scripts/test-human-atlas-sites.py
 npm run build
 ```

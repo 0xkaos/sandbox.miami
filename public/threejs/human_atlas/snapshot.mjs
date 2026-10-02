@@ -7,7 +7,7 @@ export function populationSeries(meta, values, region) {
     return [year, total];
   });
 }
-export function makeSnapshot({ meta, populations, values, year, region, events, migrations, sources, comparison, borderStatus, heritage = null, regional = null }) {
+export function makeSnapshot({ meta, populations, values, year, region, events, migrations, sources, comparison, borderStatus, heritage = null, regional = null, european = null, burials = null, levant = null, gazetteer = null, languages = null, attestations = null }) {
   const stats = summarize(meta, populations, region), b = bracket(meta.years, year);
   const bins = [0, .1, 1, 10, 100, 1000, Infinity];
   const density = bins.slice(0, -1).map((n, i) => ({ label: i === 5 ? '1,000+' : `${n}–${bins[i + 1]}`, population: 0 }));
@@ -22,12 +22,20 @@ export function makeSnapshot({ meta, populations, values, year, region, events, 
   const sourceIds = new Set(['hyde', 'archive', 'basemaps', 'naturalearth', ...(compare ? ['owid'] : []), ...events.flatMap(e => e.sources), ...migrations.flatMap(e => e.sources)]);
   if(heritage?.records.length)sourceIds.add('unesco');
   for(const item of regional?.records??[])for(const source of item.sources)sourceIds.add(source);
+  for(const item of european?.records??[])for(const source of item.sources)sourceIds.add(source);
+  if(burials?.totalEvents)sourceIds.add('burial-rituals');
+  if(levant?.totalActiveSites)sourceIds.add('levant-survey');
+  if(gazetteer?.totalAssociatedPlaces)sourceIds.add('pleiades');
+  if(languages?.catalogLanguageCount)sourceIds.add('glottolog');
+  if(attestations?.attestationCount)sourceIds.add('edh');
   const result = {
     schemaVersion: 1, title: `${region.name} · ${formatYear(year)}`, year, region: { ...region },
     population: stats.total, comparisonPopulation: comparisonValue, geographicBins: stats.regions, densityBins: density,
     populationProvenance: b ? { status: b.a === b.b ? 'source reconstruction' : 'linear interpolation', fromYear: meta.years[b.a], toYear: meta.years[b.b], weight: b.t, source: 'HYDE 3.2 baseline' } : { status: 'unavailable before 10000 BCE' },
     boundaries: borderStatus, nearbyEvents: events, activeMigrations: migrations, migrationScope: 'Global context; routes are not clipped to the snapshot region.',
-    heritageSites: heritage, nearEastDetail: regional,
+    heritageSites: heritage, nearEastDetail: regional, europeanDetail: european,
+    archaeology: { datedBurials: burials, southernLevantSites: levant, ancientPlaces: gazetteer },
+    languageEvidence: { historicalAttestations: attestations, modernReference: languages },
     sources: sources.filter(s => sourceIds.has(s.id)),
     limitations: [
       'Population is a historical reconstruction. No statistical confidence interval is bundled.',
@@ -38,6 +46,10 @@ export function makeSnapshot({ meta, populations, values, year, region, events, 
       'Nearby events can precede or follow the selected year. Their dates are included. The event collection favors Europe and the Mediterranean.',
       'Coarse population dates may smooth over famine or plague. Events do not apply an extra loss factor to HYDE.',
       'Modern coastlines are held constant; ice sheets and exposed land bridges are not represented.',
+      'Burial modeled intervals and broad archaeological phases express different kinds of temporal uncertainty; neither proves continuous activity.',
+      'EUROEVOL site culture associations are searchable but lack calendar-year ranges in the selected source table, so they are not placed in dated snapshots.',
+      'Pleiades period associations and representative coordinates are approximate. Modern-period names and locations are kept in search but excluded from the dated map and snapshot at 1700 CE and later. A gazetteer place is not necessarily an excavated site or continuously occupied settlement.',
+      'Historical inscription findspots do not define language territories. The Glottolog catalog is a modern reference shown only at the 2017 endpoint.',
     ],
   };
   return { data: result, svg: snapshotSVG(result, series, compare) };
@@ -50,7 +62,16 @@ export function sparklinePath(series, width, height, margin = 0) {
   return { path, min, max };
 }
 function snapshotSVG(data, series, comparison) {
-  const W = 740, H = 690, left = 42, right = 698, top = 214, bottom = 365;
+  const languageSources = [];
+  if (data.languageEvidence.modernReference?.catalogLanguageCount) languageSources.push({
+    label: 'Glottolog 5.3 (2026) · CC BY 4.0 · glottolog.org/meta/downloads',
+    url: 'https://glottolog.org/meta/downloads', license: 'https://creativecommons.org/licenses/by/4.0/',
+  });
+  if (data.languageEvidence.historicalAttestations?.attestationCount) languageSources.push({
+    label: 'Epigraphic Database Heidelberg · CC BY-SA 4.0 · edh.ub.uni-heidelberg.de',
+    url: 'https://github.com/epigraphic-database-heidelberg/data', license: 'https://creativecommons.org/licenses/by-sa/4.0/',
+  });
+  const W = 740, H = 690 + languageSources.length * 18, left = 42, right = 698, top = 214, bottom = 365;
   const validSeries = series.filter(p => p[1] > 0), minLog = validSeries.length ? Math.floor(Math.min(...validSeries.map(p => Math.log10(p[1])))) : 0;
   const maxLog = Math.ceil(Math.max(...series.map(p => Math.log10(Math.max(1, p[1]))), 1));
   const x = year => left + (yearToPosition(year) - yearToPosition(-10000)) / (1 - yearToPosition(-10000)) * (right - left);
@@ -58,7 +79,7 @@ function snapshotSVG(data, series, comparison) {
   const path = s => s.filter(p => p[0] >= -10000 && p[0] <= 2017 && p[1] > 0).map(([yr, p], i) => `${i ? 'L' : 'M'}${x(yr).toFixed(1)},${y(p).toFixed(1)}`).join(' ');
   const bars = data.region.id === 'world' ? data.geographicBins : data.densityBins;
   const maxBar = Math.max(...bars.map(b => b.population), 1);
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(data.title)} population snapshot"><rect width="740" height="690" fill="#142019"/><g font-family="Arial, sans-serif">`;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(data.title)} population snapshot"><desc>${esc(languageSources.map(source => `${source.label}; source ${source.url}; license ${source.license}`).join(' | '))}</desc><rect width="740" height="${H}" fill="#142019"/><g font-family="Arial, sans-serif">`;
   svg += svgText(42, 35, 'HUMAN ATLAS / SNAPSHOT', 10, '#90a38f', 'letter-spacing="2"');
   svg += svgText(42, 78, data.title, 28, '#e6dec1', 'font-family="Georgia, serif"');
   svg += svgText(42, 140, formatPeople(data.population), 47, '#e5cd99', 'font-family="Georgia, serif"');
@@ -78,11 +99,18 @@ function snapshotSVG(data, series, comparison) {
     svg += svgText(698, yy + 8, formatPeople(b.population), 10, '#cbd3bd', 'text-anchor="end"');
   });
   else svg += svgText(42, 454, 'Migration and archaeological context are available; population bars are intentionally absent.', 11);
+  svg += svgText(42, 574, `Evidence: ${data.archaeology.datedBurials?.totalEvents??0} dated burials · ${data.archaeology.southernLevantSites?.totalActiveSites??0} Levant sites · ${data.archaeology.ancientPlaces?.totalAssociatedPlaces??0} Pleiades places`, 10, '#d7b88a');
+  const modern = data.languageEvidence.modernReference;
+  const modernLabel = modern?.familyFilter?.name ? `${modern.familyFilter.name.slice(0, 24)} catalog points` : 'modern language points';
+  svg += svgText(42, 588, `${data.europeanDetail?.records.length??0} European area records · ${data.languageEvidence.historicalAttestations?.attestationCount??0} inscriptions · ${modern?.catalogLanguageCount??0} ${modernLabel}`, 10, '#d7b88a');
   const p = data.populationProvenance;
-  svg += svgText(42, 598, p.fromYear != null ? `${p.status} · ${formatYear(p.fromYear)} → ${formatYear(p.toYear)}` : 'Population unavailable · no extrapolated headcounts', 10, '#d1c59f');
-  svg += svgText(42, 619, '1° cells; fixed modern coastlines. Approximate regions. No bundled confidence interval.', 10);
-  svg += svgText(42, 638, 'Sources: HYDE doi:10.5194/essd-9-927-2017 · archive doi:10.7910/DVN/E3H3AK', 10);
-  svg += svgText(42, 657, comparison ? 'Dashed mint: ourworldindata.org/grapher/population (separate series). Gold: HYDE 3.2.' : 'Full sources, nearby events, and methodological limits accompany the JSON export.', 10);
+  svg += svgText(42, 608, p.fromYear != null ? `${p.status} · ${formatYear(p.fromYear)} → ${formatYear(p.toYear)}` : 'Population unavailable · no extrapolated headcounts', 10, '#d1c59f');
+  svg += svgText(42, 629, '1° cells; fixed modern coastlines. Approximate regions. No bundled confidence interval.', 10);
+  svg += svgText(42, 648, 'Sources: HYDE doi:10.5194/essd-9-927-2017 · archive doi:10.7910/DVN/E3H3AK', 10);
+  svg += svgText(42, 667, comparison ? 'Dashed mint: ourworldindata.org/grapher/population (separate series). Gold: HYDE 3.2.' : 'Full sources, nearby events, and methodological limits accompany the JSON export.', 10);
+  languageSources.forEach((source, index) => {
+    svg += `<a href="${esc(source.url)}">${svgText(42, 686 + index * 18, source.label, 9, '#b9cdb9')}</a>`;
+  });
   return svg + '</g></svg>';
 }
 export function snapshotCSV(meta, populations, region, year) {
