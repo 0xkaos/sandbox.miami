@@ -33,6 +33,7 @@ test('point evidence uses the same geographic bins and named regions as the popu
 
 test('modern family selection carries into regional snapshots without entering earlier years', () => {
   assert.equal(activeLanguages(languages, 2016).length, 0);
+  assert.deepEqual(languagesForRegion(null, 2017, europe, 'germ1287'), []);
   const germanic = languagesForRegion(languages, 2017, europe, 'germ1287');
   const snapshot = languageSnapshot(languages, 2017, europe, 5, 'germ1287');
   assert.ok(germanic.length > 0);

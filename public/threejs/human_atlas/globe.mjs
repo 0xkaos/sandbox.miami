@@ -10,6 +10,7 @@ import { PointEvidenceLayer } from './point-evidence-layer.mjs';
 const R = Math.PI / 180;
 const NEAR_EAST_BOUNDS = { west:25, south:20, east:60, north:43 };
 const SUPERSEDED_BORDERS = new Set(['Ur','Semites','Canaan','Judea']);
+const POINT_FLOOR_RADIUS = 1.006;
 const BASE_PALETTES = {
   forest:{sea:'#182b25',land:'#3b4932',shore:'#778064',grid:'#c1caa10c',specular:'#263c2e',haze:[.34,.56,.43]},
   tidal:{sea:'#172c3b',land:'#3d5b62',shore:'#80a9af',grid:'#b3d8de0c',specular:'#2f4c58',haze:[.31,.55,.64]},
@@ -200,8 +201,8 @@ export class HistoryGlobe {
     this.burialDots=new PointEvidenceLayer(this.scene,{size:4,radius:1.024,zoomLimit:2.2,opacity:.82});
     this.levantDots=new PointEvidenceLayer(this.scene,{size:2.6,radius:1.023,zoomLimit:1.43,opacity:.68});
     // Keep gazetteer points just above the highest regional color surface.
-    this.pleiadesDots=new PointEvidenceLayer(this.scene,{size:2.7,radius:1.006,zoomLimit:1.58,opacity:.68});
-    this.languageDots=new PointEvidenceLayer(this.scene,{size:4,radius:1.027,zoomLimit:2.2,opacity:.8});
+    this.pleiadesDots=new PointEvidenceLayer(this.scene,{size:2.7,radius:POINT_FLOOR_RADIUS,zoomLimit:1.58,opacity:.68});
+    this.languageDots=new PointEvidenceLayer(this.scene,{size:4,radius:1.027,stemBaseRadius:POINT_FLOOR_RADIUS,stemOpacity:.58,zoomLimit:2.2,opacity:.8});
     this.regionalLabels=[];
     this.selection = new THREE.Mesh(new THREE.RingGeometry(.017,.019,48),new THREE.MeshBasicMaterial({color:0xe7d4a0,side:THREE.DoubleSide,transparent:true,opacity:.85,depthWrite:false}));this.selection.visible=false;this.scene.add(this.selection);
     this.raycaster = new THREE.Raycaster();this.pointer = new THREE.Vector2();

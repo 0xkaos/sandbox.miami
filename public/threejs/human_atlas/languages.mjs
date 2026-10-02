@@ -41,7 +41,7 @@ export function languageAt(catalog, year, lat, lon, radiusKm = 35) {
 export function languagesForRegion(catalog, year, region, groupId = null) {
   const selected = activeLanguages(catalog, year)
     .filter(language => pointInAtlasRegion(language.lat, language.lon, region));
-  if (!groupId) return selected.sort((a, b) => a.name.localeCompare(b.name));
+  if (!groupId || !catalog) return selected.sort((a, b) => a.name.localeCompare(b.name));
   const byId = new Map(catalog.groups.map(group => [group.id, group]));
   const belongs = language => {
     let next = language.parentId || language.familyId;
