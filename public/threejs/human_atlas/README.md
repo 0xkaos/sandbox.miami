@@ -116,7 +116,7 @@ Ancestry illustrations have deliberately narrow scopes:
 - Haak et al. (2015): approximately **75% Yamnaya-related ancestry in sampled German Corded Ware individuals**.
 - Olalde et al. (2018): approximately **90% ancestry turnover in Britain** over several centuries.
 
-The circular sending/receiving footprints and intermediate color fractions are visual assumptions. With ancestry colors enabled, ordinary population growth changes spike height without changing its hue; migration progress controls the study blend separately. Counts are never changed by these colors. Tint is shown only during each study's configured time window, not carried into modern populations. Colors do not encode race, citizenship, language, or a claim of homogeneous ancient peoples. The AADR sample-level dataset has been researched but **is not imported**.
+The circular sending/receiving footprints and intermediate color fractions are visual assumptions. With ancestry colors enabled, ordinary population growth changes spike height without changing its hue; migration progress controls the study blend separately. Counts are never changed by these colors. Tint is shown only during each study's configured time window, not carried into modern populations. Colors do not encode race, citizenship, language, or a claim of homogeneous ancient peoples. The archaeology layer includes a selected AADR public-annotation subset as dated ancient individual samples at named source localities; it does not bundle raw genomes or individual-level ancestry estimates.
 
 ### Historical moments and exports
 

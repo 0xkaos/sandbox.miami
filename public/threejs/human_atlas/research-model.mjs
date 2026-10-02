@@ -6,7 +6,7 @@ export { pointInAtlasRegion };
 
 const normalize = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
 
-export function buildResearchIndex({ burials = null, levant = null, euroevol = null, pleiades = null, contexts = null } = {}) {
+export function buildResearchIndex({ burials = null, levant = null, euroevol = null, pleiades = null, contexts = null, aadr = null } = {}) {
   const rows = [];
   for (const event of burials?.events ?? []) rows.push({
     id: `burial:${event.id}`, kind: 'burial', title: event.site,
@@ -64,6 +64,14 @@ export function buildResearchIndex({ burials = null, levant = null, euroevol = n
     lat: record.lat, lon: record.lon, ranges: [[record.start, record.end]],
     search: normalize([record.name, record.convention, record.association, record.evidenceKind,
       record.region, record.note].filter(Boolean).join(' ')),
+    record,
+  });
+  for (const record of aadr?.records ?? []) rows.push({
+    id: `aadr:${record.id}`, kind: 'aadr', title: record.site || record.id,
+    subtitle: `${record.sourceLabel} · AADR ancient individual`,
+    lat: record.lat, lon: record.lon, ranges: [record.dateRange],
+    search: normalize([record.id, record.site, record.country, record.sourceLabel, record.fullDate,
+      record.dateType, record.publication, record.skeletalElement].filter(Boolean).join(' ')),
     record,
   });
   return rows;

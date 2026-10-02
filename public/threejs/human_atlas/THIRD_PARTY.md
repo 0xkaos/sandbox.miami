@@ -36,6 +36,10 @@ Ten additional ethnonym reference points use **Pleiades GIS**, **CC BY 3.0**, at
 
 ## South Levant survey sites
 
+## Allen Ancient DNA Resource samples
+
+`data/aadr-archaeological-samples.json` derives from the Allen Ancient DNA Resource (AADR) [public annotation dataset](https://doi.org/10.7910/DVN/FFIDCW), v66.1 file `v66.p1_1240K.aadr.PUB.anno`, **CC0 1.0**. `scripts/prepare-human-atlas-aadr.py` records the source URL, Harvard Dataverse file ID, and source-file SHA-256, then selects geocoded, named-locality rows whose source `Group ID` contains Yamnaya, Catacomb, Sintashta, Urnfield, Hallstatt, La Tene, Wielbark, Mycenaean, Phoenician, Punic, Etruscan, or Roman. It retains the source label verbatim, date text/method, citation DOI, sample ID, and skeletal metadata. Each row is one ancient individual sample at a source locality; a Group ID is not a culture boundary, population, language, or route. Raw genomes and ancestry estimates are not bundled.
+
 ## Selected archaeological contexts
 
 `data/archaeological-contexts.json` is an original, hand-curated starter gazetteer of named steppe, European, and Mediterranean evidence contexts. It does not redistribute external tabular data. Each row supplies a direct source link, broad display bounds, a coordinate for the named context, an evidence kind, and a caution about interpretation. The linked scholarly, museum, and UNESCO sources retain their own terms. The selection is not a corpus or a comprehensive chronology. Archaeological conventions, later historical associations, and material labels are retained as search aids and are never rendered as population identities, language ranges, ancestry, borders, or routes.
