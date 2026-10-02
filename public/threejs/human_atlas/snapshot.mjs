@@ -7,7 +7,7 @@ export function populationSeries(meta, values, region) {
     return [year, total];
   });
 }
-export function makeSnapshot({ meta, populations, values, year, region, events, migrations, sources, comparison, borderStatus, heritage = null, regional = null, european = null, burials = null, levant = null, gazetteer = null, languages = null, attestations = null }) {
+export function makeSnapshot({ meta, populations, values, year, region, events, migrations, sources, comparison, borderStatus, heritage = null, regional = null, european = null, burials = null, levant = null, contexts = null, gazetteer = null, languages = null, attestations = null }) {
   const stats = summarize(meta, populations, region), b = bracket(meta.years, year);
   const bins = [0, .1, 1, 10, 100, 1000, Infinity];
   const density = bins.slice(0, -1).map((n, i) => ({ label: i === 5 ? '1,000+' : `${n}–${bins[i + 1]}`, population: 0 }));
@@ -25,6 +25,7 @@ export function makeSnapshot({ meta, populations, values, year, region, events, 
   for(const item of european?.records??[])for(const source of item.sources)sourceIds.add(source);
   if(burials?.totalEvents)sourceIds.add('burial-rituals');
   if(levant?.totalActiveSites)sourceIds.add('levant-survey');
+  if(contexts?.totalRecords)sourceIds.add('archaeological-contexts');
   if(gazetteer?.totalAssociatedPlaces)sourceIds.add('pleiades');
   if(languages?.catalogLanguageCount)sourceIds.add('glottolog');
   if(attestations?.attestationCount)sourceIds.add('edh');
@@ -34,7 +35,7 @@ export function makeSnapshot({ meta, populations, values, year, region, events, 
     populationProvenance: b ? { status: b.a === b.b ? 'source reconstruction' : 'linear interpolation', fromYear: meta.years[b.a], toYear: meta.years[b.b], weight: b.t, source: 'HYDE 3.2 baseline' } : { status: 'unavailable before 10000 BCE' },
     boundaries: borderStatus, nearbyEvents: events, activeMigrations: migrations, migrationScope: 'Global context; routes are not clipped to the snapshot region.',
     heritageSites: heritage, nearEastDetail: regional, europeanDetail: european,
-    archaeology: { datedBurials: burials, southernLevantSites: levant, ancientPlaces: gazetteer },
+    archaeology: { datedBurials: burials, southernLevantSites: levant, selectedContexts: contexts, ancientPlaces: gazetteer },
     languageEvidence: { historicalAttestations: attestations, modernReference: languages },
     sources: sources.filter(s => sourceIds.has(s.id)),
     limitations: [
@@ -99,7 +100,7 @@ function snapshotSVG(data, series, comparison) {
     svg += svgText(698, yy + 8, formatPeople(b.population), 10, '#cbd3bd', 'text-anchor="end"');
   });
   else svg += svgText(42, 454, 'Migration and archaeological context are available; population bars are intentionally absent.', 11);
-  svg += svgText(42, 574, `Evidence: ${data.archaeology.datedBurials?.totalEvents??0} dated burials · ${data.archaeology.southernLevantSites?.totalActiveSites??0} Levant sites · ${data.archaeology.ancientPlaces?.totalAssociatedPlaces??0} Pleiades places`, 10, '#d7b88a');
+  svg += svgText(42, 574, `Evidence: ${data.archaeology.datedBurials?.totalEvents??0} dated burials · ${data.archaeology.southernLevantSites?.totalActiveSites??0} Levant sites · ${data.archaeology.selectedContexts?.totalRecords??0} selected contexts · ${data.archaeology.ancientPlaces?.totalAssociatedPlaces??0} Pleiades places`, 10, '#d7b88a');
   const modern = data.languageEvidence.modernReference;
   const modernLabel = modern?.familyFilter?.name ? `${modern.familyFilter.name.slice(0, 24)} catalog points` : 'modern language points';
   svg += svgText(42, 588, `${data.europeanDetail?.records.length??0} European area records · ${data.languageEvidence.historicalAttestations?.attestationCount??0} inscriptions · ${modern?.catalogLanguageCount??0} ${modernLabel}`, 10, '#d7b88a');

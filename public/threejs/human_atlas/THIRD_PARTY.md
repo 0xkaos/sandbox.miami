@@ -36,6 +36,10 @@ Ten additional ethnonym reference points use **Pleiades GIS**, **CC BY 3.0**, at
 
 ## South Levant survey sites
 
+## Selected archaeological contexts
+
+`data/archaeological-contexts.json` is an original, hand-curated starter gazetteer of named steppe, European, and Mediterranean evidence contexts. It does not redistribute external tabular data. Each row supplies a direct source link, broad display bounds, a coordinate for the named context, an evidence kind, and a caution about interpretation. The linked scholarly, museum, and UNESCO sources retain their own terms. The selection is not a corpus or a comprehensive chronology. Archaeological conventions, later historical associations, and material labels are retained as search aids and are never rendered as population identities, language ranges, ancestry, borders, or routes.
+
 `data/levant-sites.json` adapts Titolo, A. and Palmisano, A., [*From Villages to Empires: Archaeological Settlements of the South Levant*](https://doi.org/10.5334/joad.158) and its [open dataset](https://github.com/UnitoAssyrianGovernance/villages-to-empire-dataset), **CC BY 4.0**. Pinned revision `a3537c67cc736fb929291c50a4928a0cd7136dd9`; source CSV SHA-256 `baabd1a5d6da2b7fdfca70662b3de03563c4a9b4d238ee6018022eaad66939c9`. `scripts/prepare-human-atlas-levant.py` normalizes and compresses 5,587 geocoded source-site records and 14,268 dated phase rows from surveyed parts of Samaria and Judah. Source types, morphology, sizes, citations, and location-quality codes remain in the generated data. Some source rows share a source ID; generated unique IDs preserve the separate records. A broad phase indicates reported archaeological evidence within a period, not uninterrupted occupation; type labels do not make an itemized finds catalog.
 
 ## EUROEVOL European sites and phases
