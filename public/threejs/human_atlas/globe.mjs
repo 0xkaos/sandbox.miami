@@ -10,7 +10,9 @@ import { PointEvidenceLayer } from './point-evidence-layer.mjs';
 const R = Math.PI / 180;
 const NEAR_EAST_BOUNDS = { west:25, south:20, east:60, north:43 };
 const SUPERSEDED_BORDERS = new Set(['Ur','Semites','Canaan','Judea']);
-const POINT_FLOOR_RADIUS = 1.006;
+// The land sphere writes depth at radius 1. Territory colors are translucent
+// overlays, so floor markers can sit close to land and draw after those layers.
+const POINT_FLOOR_RADIUS = 1.0025;
 const BASE_PALETTES = {
   forest:{sea:'#182b25',land:'#3b4932',shore:'#778064',grid:'#c1caa10c',specular:'#263c2e',haze:[.34,.56,.43]},
   tidal:{sea:'#172c3b',land:'#3d5b62',shore:'#80a9af',grid:'#b3d8de0c',specular:'#2f4c58',haze:[.31,.55,.64]},
@@ -91,6 +93,14 @@ function regionalTexture(areas) {
 }
 function disposeGroup(group) {
   for (const child of [...group.children]) { child.geometry?.dispose(); if (Array.isArray(child.material)) child.material.forEach(m => m.dispose()); else child.material?.dispose(); group.remove(child); }
+}
+function setMarkerPickRadius(marker,radius){
+  marker.raycast=(raycaster,hits)=>{
+    const sphere=new THREE.Sphere(marker.getWorldPosition(new THREE.Vector3()),radius);
+    const point=raycaster.ray.intersectSphere(sphere,new THREE.Vector3());if(!point)return;
+    const distance=raycaster.ray.origin.distanceTo(point);
+    if(distance>=raycaster.near&&distance<=raycaster.far)hits.push({distance,point,object:marker});
+  };
 }
 function routePoints(route) {
   const controls = [latLonVector(...route.points[0])];
@@ -198,13 +208,12 @@ export class HistoryGlobe {
     this.spikeUniforms={heightGain:{value:1},linearHeight:{value:0},studyColors:{value:1},lowDensityColor:{value:new THREE.Color('#766846')},highDensityColor:{value:new THREE.Color('#ffe6ac')}};
     this.setPopulationGrid(meta);
     this.routeGroup = new THREE.Group();this.eventGroup = new THREE.Group();this.siteGroup = new THREE.Group();this.regionalPlaceGroup=new THREE.Group();this.scene.add(this.routeGroup,this.eventGroup,this.siteGroup,this.regionalPlaceGroup);
-    this.burialDots=new PointEvidenceLayer(this.scene,{size:4,radius:1.024,zoomLimit:2.2,opacity:.82});
-    this.levantDots=new PointEvidenceLayer(this.scene,{size:2.6,radius:1.023,zoomLimit:1.43,opacity:.68});
-    // Keep gazetteer points just above the highest regional color surface.
+    this.burialDots=new PointEvidenceLayer(this.scene,{size:4,radius:POINT_FLOOR_RADIUS,zoomLimit:2.2,opacity:.82});
+    this.levantDots=new PointEvidenceLayer(this.scene,{size:2.6,radius:POINT_FLOOR_RADIUS,zoomLimit:1.43,opacity:.68});
     this.pleiadesDots=new PointEvidenceLayer(this.scene,{size:2.7,radius:POINT_FLOOR_RADIUS,zoomLimit:1.58,opacity:.68});
     this.languageDots=new PointEvidenceLayer(this.scene,{size:4,radius:1.027,stemBaseRadius:POINT_FLOOR_RADIUS,stemOpacity:.58,zoomLimit:2.2,opacity:.8});
     this.regionalLabels=[];
-    this.selection = new THREE.Mesh(new THREE.RingGeometry(.017,.019,48),new THREE.MeshBasicMaterial({color:0xe7d4a0,side:THREE.DoubleSide,transparent:true,opacity:.85,depthWrite:false}));this.selection.visible=false;this.scene.add(this.selection);
+    this.selection = new THREE.Mesh(new THREE.RingGeometry(.017,.019,48),new THREE.MeshBasicMaterial({color:0xe7d4a0,side:THREE.DoubleSide,transparent:true,opacity:.85,depthWrite:false}));this.selection.renderOrder=6;this.selection.visible=false;this.scene.add(this.selection);
     this.raycaster = new THREE.Raycaster();this.pointer = new THREE.Vector2();
     this.hoverAt = 0;
     this.onDown = e => {this.down={x:e.clientX,y:e.clientY};};
@@ -214,7 +223,7 @@ export class HistoryGlobe {
     const el=this.renderer.domElement;el.addEventListener('pointerdown',this.onDown);el.addEventListener('pointerup',this.onUp);el.addEventListener('pointermove',this.onMove);el.addEventListener('pointerleave',this.onLeave);
     this.onContextLost=e=>{e.preventDefault();this.callbacks.onError?.('The graphics context was lost. Reload this page to restore the globe. Your browser may be low on graphics memory.');};el.addEventListener('webglcontextlost',this.onContextLost);
     this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(container);this.resize();
-    this.labels = [['EUROPE',54,15],['NILE VALLEY',24,31],['ANATOLIA',39,34],['SAHARA',23,0],['SOUTH ASIA',21,79],['EAST ASIA',36,112],['SAHUL',-24,133],['NORTH AMERICA',43,-106],['SOUTH AMERICA',-15,-60]].map(([name,lat,lon])=>{const el=document.createElement('span');el.className='globe-label';el.textContent=name;document.querySelector('#map-labels').appendChild(el);return{el,position:latLonVector(lat,lon,1.023)};});
+    this.labels = [['EUROPE',54,15],['NILE VALLEY',24,31],['ANATOLIA',39,34],['SAHARA',23,0],['SOUTH ASIA',21,79],['EAST ASIA',36,112],['SAHUL',-24,133],['NORTH AMERICA',43,-106],['SOUTH AMERICA',-15,-60]].map(([name,lat,lon])=>{const el=document.createElement('span');el.className='globe-label';el.textContent=name;document.querySelector('#map-labels').appendChild(el);return{el,position:latLonVector(lat,lon,POINT_FLOOR_RADIUS)};});
   }
   resize(){const {width,height}=this.container.getBoundingClientRect();if(!width||!height)return;this.width=width;this.height=height;this.camera.aspect=width/height;this.camera.updateProjectionMatrix();this.renderer.setSize(width,height);this.dirty=true;}
   focus(region){this.destination=latLonVector(region.lat,region.lon,Math.min(6,region.distance/Math.min(1,this.camera.aspect)));}
@@ -322,20 +331,17 @@ export class HistoryGlobe {
       }
     }
     const eventKey=events.map(e=>e.id).join('|');
-    if(this.eventKey!==eventKey){this.eventKey=eventKey;disposeGroup(this.eventGroup);for(const event of events){const normal=latLonVector(event.lat,event.lon);const m=new THREE.Mesh(new THREE.OctahedronGeometry(.008),new THREE.MeshBasicMaterial({color:CATEGORY_COLORS[event.kind]??'#e2c794'}));m.position.copy(normal).multiplyScalar(1.025);m.userData.event=event;this.eventGroup.add(m);}}
+    if(this.eventKey!==eventKey){this.eventKey=eventKey;disposeGroup(this.eventGroup);for(const event of events){
+      const m=new THREE.Mesh(new THREE.RingGeometry(.0045,.009,4),new THREE.MeshBasicMaterial({color:CATEGORY_COLORS[event.kind]??'#e2c794',side:THREE.DoubleSide,transparent:true,depthWrite:false}));
+      m.position.copy(latLonVector(event.lat,event.lon,POINT_FLOOR_RADIUS));m.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),m.position.clone().normalize());
+      m.renderOrder=5.4;m.userData.event=event;setMarkerPickRadius(m,.012);this.eventGroup.add(m);
+    }}
     const siteKey=sites.map(s=>s.id).join('|');
     if(this.siteKey!==siteKey){this.siteKey=siteKey;disposeGroup(this.siteGroup);for(const site of sites){
-      const marker=new THREE.Mesh(new THREE.TorusGeometry(.010,.0025,6,20),new THREE.MeshBasicMaterial({color:'#f0bb83'}));
-      marker.position.copy(latLonVector(site.lat,site.lon,1.016));marker.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),marker.position.clone().normalize());
-      // Pick the whole badge, including its hollow center. The globe surface
-      // remains a ray target so markers on the far side cannot be selected.
-      marker.geometry.computeBoundingSphere();
-      marker.raycast=(raycaster,hits)=>{
-        const sphere=marker.geometry.boundingSphere.clone().applyMatrix4(marker.matrixWorld);
-        const point=raycaster.ray.intersectSphere(sphere,new THREE.Vector3());if(!point)return;
-        const distance=raycaster.ray.origin.distanceTo(point);
-        if(distance>=raycaster.near&&distance<=raycaster.far)hits.push({distance,point,object:marker});
-      };
+      const marker=new THREE.Mesh(new THREE.RingGeometry(.008,.012,24),new THREE.MeshBasicMaterial({color:'#f0bb83',side:THREE.DoubleSide,transparent:true,depthWrite:false}));
+      marker.position.copy(latLonVector(site.lat,site.lon,POINT_FLOOR_RADIUS));marker.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),marker.position.clone().normalize());marker.renderOrder=5.3;
+      // The hollow center is selectable; the land sphere blocks the far side.
+      setMarkerPickRadius(marker,.014);
       marker.userData.site=site;this.siteGroup.add(marker);
     }}
     this.updateBordersOpacity();
@@ -366,16 +372,11 @@ export class HistoryGlobe {
       this.regionalPlaceKey=placeKey;disposeGroup(this.regionalPlaceGroup);
       for(const label of this.regionalLabels)label.el.remove();this.regionalLabels=[];
       for(const place of allPlaces){
-        const point=latLonVector(place.lat,place.lon,1.02);
-        const marker=new THREE.Mesh(new THREE.SphereGeometry(.0065,10,8),new THREE.MeshBasicMaterial({color:place.color??(place.kind==='ethnonym'?'#c8a9c3':'#e5d39c'),depthWrite:false}));
-        marker.position.copy(point);marker.renderOrder=4;marker.userData.regionalPlace=place;
+        const point=latLonVector(place.lat,place.lon,POINT_FLOOR_RADIUS);
+        const marker=new THREE.Mesh(new THREE.CircleGeometry(.0065,12),new THREE.MeshBasicMaterial({color:place.color??(place.kind==='ethnonym'?'#c8a9c3':'#e5d39c'),side:THREE.DoubleSide,transparent:true,depthWrite:false}));
+        marker.position.copy(point);marker.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),point.clone().normalize());marker.renderOrder=4.8;marker.userData.regionalPlace=place;
         // Give the small dot a usable hit area without selecting the far side.
-        marker.raycast=(raycaster,hits)=>{
-          const sphere=new THREE.Sphere(marker.getWorldPosition(new THREE.Vector3()),.014);
-          const hit=raycaster.ray.intersectSphere(sphere,new THREE.Vector3());if(!hit)return;
-          const distance=raycaster.ray.origin.distanceTo(hit);
-          if(distance>=raycaster.near&&distance<=raycaster.far)hits.push({distance,point:hit,object:marker});
-        };
+        setMarkerPickRadius(marker,.014);
         this.regionalPlaceGroup.add(marker);
         const el=document.createElement('span');el.className='globe-label near-east-label';el.textContent=place.name;document.querySelector('#map-labels').appendChild(el);
         this.regionalLabels.push({el,position:point});
@@ -473,7 +474,7 @@ export class HistoryGlobe {
     }return regional.concat(out);
   }
   nearestCell(lat,lon){let best=-1,bestDistance=Infinity;for(let i=0;i<this.meta.cells.length;i++){const c=this.meta.cells[i];if(Math.abs(c[0]-lat)>this.meta.resolutionDegrees*2)continue;const d=distanceKm(lat,lon,c[0],c[1]);if(d<bestDistance){bestDistance=d;best=i;}}return bestDistance<170*this.meta.resolutionDegrees?best:-1;}
-  selectLocation(lat,lon){this.selection.position.copy(latLonVector(lat,lon,1.011));this.selection.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),this.selection.position.clone().normalize());this.selection.visible=true;}
+  selectLocation(lat,lon){this.selection.position.copy(latLonVector(lat,lon,POINT_FLOOR_RADIUS));this.selection.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),this.selection.position.clone().normalize());this.selection.visible=true;}
   clearSelection(){this.selection.visible=false;}
   pick(event,click){
     const rect=this.renderer.domElement.getBoundingClientRect();this.pointer.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);this.raycaster.setFromCamera(this.pointer,this.camera);
