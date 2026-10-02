@@ -209,7 +209,17 @@ function evidenceHTML(item, compact=false) {
     const place=record,matching=place.matchingTemporalAssociations.length?place.matchingTemporalAssociations:place.temporalAssociations;
     const remains=place.archaeologicalRemains.filter(tag=>tag!=='notapplicable')
       .map(tag=>({notvisible:'not visible',substantive:'substantive remains',restored:'restored remains'}[tag]??tag));
-    return `<span class="section-label">PLEIADES · ${esc(place.kind.toUpperCase())}</span><h2>${esc(place.title)}</h2><p>${place.lat.toFixed(4)}°, ${place.lon.toFixed(4)}° · ${esc(place.locationPrecision)} location${place.accuracyRadiusMeters!=null?` · largest linked-location accuracy radius ${Math.round(place.accuracyRadiusMeters).toLocaleString('en-US')} m`:''}</p><p class="context-note">Gazetteer period associations are broad and may come from a dated name when a location date is absent. They do not prove continuous occupation. Modern source periods may describe present names or locations and remain searchable, but do not appear on the dated map. A place can be a settlement or built location rather than an excavated archaeological site.</p>${place.types.length?`<p>Types: ${esc(place.types.map(type=>type.label).join(' · '))}</p>`:''}${place.description?`<p>${esc(compact?place.description.slice(0,430):place.description)}${compact&&place.description.length>430?'…':''}</p>`:''}${matching.slice(0,compact?3:Infinity).map(period=>`<div class="research-phase"><b>${esc(period.name||'Period association')} · ${formatYear(period.start)}–${formatYear(period.end)}</b><small>${esc(period.basis)} record · ${esc(period.associationCertainty)} association</small></div>`).join('')}${remains.length?`<p>Source archaeological-remains tags: ${esc(remains.join(' · '))}. These are pooled across location records, not dated to the selected year.</p>`:''}<a href="${esc(place.placeUrl)}" target="_blank" rel="noopener">Pleiades place ${esc(place.id)} ↗</a>${sourceHTML(['pleiades'])}`;
+    const types=place.types.map(type=>type.label).filter(Boolean);
+    const description=compact?place.description.slice(0,430):place.description;
+    return `<span class="section-label">PLEIADES · ${esc(place.kind.toUpperCase())}</span>
+      <h2>${esc(place.title)}</h2>
+      <p class="evidence-types"><strong>${types.length?'Types:':'Place class:'}</strong> ${esc(types.length?types.join(' · '):place.kind)}</p>
+      ${description?`<p class="evidence-description">${esc(description)}${compact&&place.description.length>430?'…':''}</p>`:''}
+      <p class="evidence-location">${place.lat.toFixed(4)}°, ${place.lon.toFixed(4)}° · ${esc(place.locationPrecision)} location${place.accuracyRadiusMeters!=null?` · largest linked-location accuracy radius ${Math.round(place.accuracyRadiusMeters).toLocaleString('en-US')} m`:''}</p>
+      ${matching.slice(0,compact?3:Infinity).map(period=>`<div class="research-phase"><b>${esc(period.name||'Period association')} · ${formatYear(period.start)}–${formatYear(period.end)}</b><small>${esc(period.basis)} record · ${esc(period.associationCertainty)} association</small></div>`).join('')}
+      ${remains.length?`<p class="evidence-remains">Source archaeological-remains tags: ${esc(remains.join(' · '))}.</p>`:''}
+      <details class="evidence-method"><summary>About Pleiades dates and place types</summary><p>Gazetteer period associations are broad and may come from a dated name when a location date is absent. They do not prove continuous occupation. Modern source periods may describe present names or locations and remain searchable, but do not appear on the dated map. A place can be a settlement or built location rather than an excavated archaeological site. Archaeological-remains tags are pooled across location records, not dated to the selected year.</p></details>
+      <a href="${esc(place.placeUrl)}" target="_blank" rel="noopener">Pleiades place ${esc(place.id)} ↗</a>${sourceHTML(['pleiades'])}`;
   }
   return '';
 }
@@ -567,7 +577,15 @@ function onHover(hit) {
   if (hit.event) html = `<strong>${esc(hit.event.title)}</strong><small>${formatYear(hit.event.start)} – ${formatYear(hit.event.end)} · click to read</small>`;
   else if (hit.site) html = `<strong>${esc(hit.site.title)}</strong><small>${phasesAt(hit.site,Math.round(state.year)).map(p=>esc(p.dateLabel)).join(' · ')} · click to read</small>`;
   else if (hit.regionalPlace) html=`<strong>${esc(hit.regionalPlace.name)}</strong><small>${esc(nearEastRole(hit.regionalPlace,Math.round(state.year))??(hit.regionalPlace.kind==='ethnonym'?'Ethnonym reference point':'Ancient city'))} · click to read</small>`;
-  else if (hit.evidence){const e=hit.evidence;html=`<strong>${esc(e.kind==='burial-site'?e.record.site:e.kind==='levant'?levantCatalog?.sites[e.index]?.[2]??'Surveyed site':e.kind==='pleiades'?pleiadesCatalog?.places[e.index]?.[1]??'Ancient place':e.record?.site??'Archaeological evidence')}</strong><small>${e.kind==='burial-site'?`${e.record.eventCount} dated burial records`:e.kind==='levant'?'Dated survey phases':e.kind==='pleiades'?'Broad Pleiades period association':'Excavated evidence'} · click to read</small>`;}
+  else if (hit.evidence){
+    const e=hit.evidence;
+    if(e.kind==='pleiades'){
+      const row=pleiadesCatalog?.places[e.index];
+      const types=row?.[6].map(index=>pleiadesCatalog.dictionary.types[index]?.label).filter(Boolean)??[];
+      const typeSummary=types.length?`Types: ${types.slice(0,3).join(' · ')}${types.length>3?` +${types.length-3} more`:''}`:`Place class: ${pleiadesCatalog?.dictionary.kinds[row?.[5]]??'ancient place'}`;
+      html=`<strong>${esc(row?.[1]??'Ancient place')}</strong><small>${esc(typeSummary)}</small><small>Broad period association · click to read</small>`;
+    }else html=`<strong>${esc(e.kind==='burial-site'?e.record.site:e.kind==='levant'?levantCatalog?.sites[e.index]?.[2]??'Surveyed site':e.record?.site??'Archaeological evidence')}</strong><small>${e.kind==='burial-site'?`${e.record.eventCount} dated burial records`:e.kind==='levant'?'Dated survey phases':'Excavated evidence'} · click to read</small>`;
+  }
   else if (hit.language){const item=hit.language;html=`<strong>${esc(item.kind==='attestation'?item.record.languages.map(language=>language.name).join(' / '):item.record.name)}</strong><small>${item.kind==='attestation'?`Dated inscription · ${formatYear(item.record.start)}–${formatYear(item.record.end)}`:`${esc(item.record.familyName)} · modern reference point`} · click to read</small>`;}
   else {
     const grid=globe?.meta??meta, shown=globe?globe.populations:populations;
@@ -640,6 +658,7 @@ function initializeControls() {
   $('#import-data').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>4e6)throw new Error('Please use a file smaller than 4 MB.');const extra=validateResearch(JSON.parse(await file.text()),data);data.sources.push(...extra.sources);data.events.push(...extra.events);data.migrations.push(...extra.migrations);renderCatalog();renderTimelineMarkers();lastEventKey=null;lastRouteKey=null;renderState();$('#import-status').textContent=`Added ${extra.events.length} events and ${extra.migrations.length} routes from ${file.name}. They remain in this tab only.`;}catch(error){$('#import-status').textContent=`Could not import: ${error.message}`;}e.target.value='';};
   addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.target.closest('input,select,textarea,button,a,summary'))return;if(e.code==='Space'){e.preventDefault();setPlaying(!state.playing);}if(e.code==='ArrowLeft'||e.code==='ArrowRight'){e.preventDefault();const step=state.year < -10000?1000:state.year<0?100:10;setYear(state.year+(e.code==='ArrowLeft'?-step:step),true);}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)setPlaying(false);});
+  document.addEventListener('site-theme-change',event=>globe?.setTheme(event.detail.theme));
   addEventListener('hashchange',()=>{setPlaying(false);readHash();for(const key in state.layers)$(`#layer-${key}`).checked=state.layers[key];if(languageCatalog)populateLanguageFamilies();$('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;setPopulationResolution(state.resolution);globe?.setPopulationOpacity(state.opacity);globe?.setLayers(state.layers);globe?.setScale(state.scale,state.gain);setRegion(state.region);});
 }
 async function loadJSON(name) {const r=await fetch(`./data/${name}`);if(!r.ok)throw new Error(`${name} could not load (${r.status}).`);return r.json();}

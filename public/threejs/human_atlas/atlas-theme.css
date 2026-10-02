@@ -1,0 +1,64 @@
+/* The atlas keeps data-layer colors fixed while its surrounding controls
+   follow the shared Sandbox palette. */
+.sidebar .site-theme-control--mobile { display: none; }
+.header-actions .site-theme-control--header { margin-right: 2px; }
+
+button:hover { color: var(--site-ink); }
+select,
+.date-form input,
+.date-form select,
+.site-directory input,
+.site-directory select,
+#language-options select { background-color: var(--site-control); border-color: var(--site-line); color: var(--site-ink); }
+.outline-button { border-color: var(--site-line); }
+.outline-button:hover { background: color-mix(in srgb, var(--site-accent) 8%, transparent); }
+.layer-list label { color: var(--site-muted); }
+.chapter:before { border-color: var(--site-line); }
+.chapter.active:before { box-shadow: 0 0 9px color-mix(in srgb, var(--site-accent) 35%, transparent); }
+input[type=checkbox] { border-color: var(--site-line); background: var(--site-control); }
+input[type=checkbox]:before { background: var(--site-muted); }
+input[type=checkbox]:checked { border-color: var(--site-secondary); background: var(--site-surface-raised); }
+input[type=checkbox]:checked:before { background: var(--site-ink); }
+
+.map-stage { background: radial-gradient(ellipse at 50% 42%, var(--site-stage-center) 0%, var(--site-stage-mid) 55%, var(--site-stage-edge) 85%); }
+.region-nav button { background: color-mix(in srgb, var(--site-bg) 55%, transparent); }
+.region-nav button.active { border-color: var(--site-line); background: var(--site-surface-raised); color: var(--site-ink); }
+.map-tools { background: color-mix(in srgb, var(--site-surface) 80%, transparent); }
+#tooltip { background: color-mix(in srgb, var(--site-surface-raised) 94%, transparent); border-color: var(--site-line); }
+.globe-label { color: color-mix(in srgb, var(--site-ink) 72%, transparent); background: color-mix(in srgb, var(--site-bg) 20%, transparent); }
+.loading,.map-error { background: var(--site-bg); }
+.inspector { background: color-mix(in srgb, var(--site-surface) 28%, transparent); }
+.status-pill { border-color: var(--site-line); color: var(--site-muted); }
+.population-number { color: color-mix(in srgb, var(--site-ink) 65%, var(--site-accent)); }
+.event-card { border-bottom-color: var(--site-line); }
+.timeline { background: var(--site-surface); }
+.timeline-track input::-webkit-slider-runnable-track { background: linear-gradient(90deg, var(--site-accent) var(--progress,58%), var(--site-line) var(--progress,58%)); }
+.timeline-track input::-moz-range-track { background: var(--site-line); }
+.timeline-track input::-webkit-slider-thumb { background: var(--site-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--site-accent) 10%, transparent); }
+.legend-dot { background: var(--site-accent); }
+.legend-dash { border-color: var(--site-accent); }
+
+dialog,.dialog-close { background: var(--site-surface); }
+dialog { border-color: var(--site-line); }
+.primary-button { color: var(--site-accent-ink); }
+.primary-button:hover { background: var(--site-accent-strong); color: var(--site-accent-ink); }
+.site-result[aria-pressed=true] { background: color-mix(in srgb, var(--site-accent) 6%, transparent); border-left-color: var(--site-accent); }
+.site-result:hover { background: color-mix(in srgb, var(--site-ink) 3%, transparent); }
+.regional-card { border-bottom-color: var(--site-line); }
+
+@media(max-width:900px) {
+  .header-actions .site-theme-control--header { display: none; }
+  .sidebar .site-theme-control--mobile { display: flex; flex-direction: column; align-items: stretch; gap: 7px; margin: -4px 0 20px; }
+  .sidebar .site-theme-control--mobile select { width: 100%; }
+  .sidebar { background: color-mix(in srgb, var(--site-surface) 98%, transparent); }
+}
+
+@media(max-width:375px) {
+  .timeline { height: 174px; }
+  .time-topline { flex-wrap: wrap; gap: 2px; }
+  .epoch { flex: 0 0 100%; min-width: 0; }
+  .epoch button { font-size: 20px; }
+  .transport { width: 100%; justify-content: flex-start; gap: 6px; }
+  .timeline-track { margin-top: 5px; }
+  .timeline-bottom { margin-top: 5px; }
+}

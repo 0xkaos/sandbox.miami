@@ -6,20 +6,24 @@
   <meta name="theme-color" content="#101714">
   <meta name="description" content="Explore 50,000+ years of human history on an interactive globe: reconstructed population, migrations, ancestry studies, historical territories, and local stories.">
   <title>Human Atlas — 50,000 Years in Motion</title>
+  <script src="/site-theme.js?v=1"></script>
   <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="/site-theme.css?v=1">
+  <link rel="stylesheet" href="./atlas-theme.css">
   <script type="importmap">{"imports":{"three":"../acoustic_chamber/vendor/three.module.js","three/addons/controls/OrbitControls.js":"../acoustic_chamber/vendor/OrbitControls.js"}}</script>
 </head>
 <body>
   <header class="topbar">
     <a class="back" href="/" aria-label="Back to Sandbox Miami">↖ <span>Sandbox</span></a>
     <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12"/><ellipse cx="16" cy="16" rx="5" ry="12"/><path d="M4 16h24M7 8q9 5 18 0M7 24q9-5 18 0"/></svg><div>HUMAN ATLAS<span>50,000+ years in motion</span></div></div>
-    <div class="header-actions"><button id="mobile-controls" aria-expanded="false">Controls</button><button id="sources-button">Sources & methods <span>↗</span></button><button id="snapshot-button" class="outline-button">↗ <span>Make a snapshot</span></button></div>
+    <div class="header-actions"><label class="site-theme-control site-theme-control--header"><span>Theme</span><select data-site-theme-picker aria-label="Color theme"><option value="forest">Forest</option><option value="tidal">Tidal</option><option value="violet">Violet</option><option value="ember">Ember</option></select></label><button id="mobile-controls" aria-expanded="false">Controls</button><button id="sources-button">Sources & methods <span>↗</span></button><button id="snapshot-button" class="outline-button">↗ <span>Make a snapshot</span></button></div>
   </header>
 
   <main class="workspace">
     <aside class="sidebar" id="controls-panel" aria-label="Atlas controls">
       <div class="section-label">01 / Find a moment</div>
       <h1>One species.<br>Countless journeys.</h1>
+      <label class="site-theme-control site-theme-control--mobile"><span>Color theme</span><select data-site-theme-picker aria-label="Color theme"><option value="forest">Forest</option><option value="tidal">Tidal</option><option value="violet">Violet</option><option value="ember">Ember</option></select></label>
       <nav class="chapters" id="chapters" aria-label="Historical chapters"></nav>
       <div class="layers-heading section-label">02 / Read the map</div>
       <div class="layer-list">

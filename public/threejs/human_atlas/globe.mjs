@@ -10,6 +10,12 @@ import { PointEvidenceLayer } from './point-evidence-layer.mjs';
 const R = Math.PI / 180;
 const NEAR_EAST_BOUNDS = { west:25, south:20, east:60, north:43 };
 const SUPERSEDED_BORDERS = new Set(['Ur','Semites','Canaan','Judea']);
+const BASE_PALETTES = {
+  forest:{sea:'#182b25',land:'#3b4932',shore:'#778064',grid:'#c1caa10c',specular:'#263c2e',haze:[.34,.56,.43]},
+  tidal:{sea:'#172c3b',land:'#3d5b62',shore:'#80a9af',grid:'#b3d8de0c',specular:'#2f4c58',haze:[.31,.55,.64]},
+  violet:{sea:'#30263b',land:'#534657',shore:'#9b869f',grid:'#d7b8e30c',specular:'#493451',haze:[.51,.39,.61]},
+  ember:{sea:'#30261e',land:'#604c38',shore:'#ae926a',grid:'#e3c29a0c',specular:'#49382c',haze:[.64,.43,.31]},
+};
 export function latLonVector(lat, lon, radius = 1) {
   return new THREE.Vector3(radius * Math.cos(lat * R) * Math.cos(lon * R), radius * Math.sin(lat * R), -radius * Math.cos(lat * R) * Math.sin(lon * R));
 }
@@ -35,6 +41,19 @@ function nameColor(name) {
   return `hsl(${((h >>> 0) % 360)}, 26%, 49%)`;
 }
 function canvasTexture(canvas) { const t = new THREE.CanvasTexture(canvas); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
+function paintBaseMap(ctx, land, palette) {
+  const {width,height}=ctx.canvas;
+  ctx.fillStyle=palette.sea;ctx.fillRect(0,0,width,height);
+  for(const feature of land.features){
+    polygonPath(ctx,feature.geometry,width,height);
+    ctx.fillStyle=palette.land;ctx.fill('evenodd');
+    ctx.strokeStyle=palette.shore;ctx.lineWidth=.6;ctx.stroke();
+  }
+  // Graticule is part of the base map, so it follows the chosen palette.
+  ctx.strokeStyle=palette.grid;ctx.lineWidth=1;
+  for(let lon=0;lon<=360;lon+=15){ctx.beginPath();ctx.moveTo(lon/360*width,0);ctx.lineTo(lon/360*width,height);ctx.stroke();}
+  for(let lat=0;lat<=180;lat+=15){ctx.beginPath();ctx.moveTo(0,lat/180*height);ctx.lineTo(width,lat/180*height);ctx.stroke();}
+}
 function borderTexture(data, hasRegionalDetail = false) {
   const canvas = textureCanvas(), ctx = canvas.getContext('2d');
   for (const feature of data.features) {
@@ -98,7 +117,9 @@ function along(points, t) { const f = clamp(t, 0, 1) * (points.length - 1), i = 
 
 export class HistoryGlobe {
   constructor(container, meta, land, borders, nearEast, callbacks = {}) {
-    this.container = container; this.meta = meta; this.borders = borders; this.nearEast = nearEast; this.callbacks = callbacks;
+    this.container = container; this.meta = meta; this.borders = borders; this.nearEast = nearEast; this.land=land; this.callbacks = callbacks;
+    this.theme=window.SandboxTheme?.get()??'forest';
+    const palette=BASE_PALETTES[this.theme]??BASE_PALETTES.forest;
     this.layers = { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true, archaeology: true, languages: false };
     this.scale = 'log'; this.gain = 1; this.populationOpacity = 1; this.year = -3000; this.routes = []; this.phase = 0; this.disposed = false; this.dirty = true;
     this.scene = new THREE.Scene();
@@ -118,19 +139,14 @@ export class HistoryGlobe {
     const light = new THREE.DirectionalLight(0xe5e2c1, 2.1); light.position.set(3,4,2); this.scene.add(light);
     const fill = new THREE.DirectionalLight(0x527e69, 1.1); fill.position.set(-3,-1,-2); this.scene.add(fill);
     const canvas = textureCanvas(), ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#182b25'; ctx.fillRect(0,0,canvas.width,canvas.height);
-    for (const feature of land.features) { polygonPath(ctx, feature.geometry, canvas.width,canvas.height); ctx.fillStyle='#3b4932'; ctx.fill('evenodd'); ctx.strokeStyle='#778064';ctx.lineWidth=.6;ctx.stroke(); }
-    // Quiet cartographic graticule, fixed to the globe rather than the viewport.
-    ctx.strokeStyle='#c1caa10c';ctx.lineWidth=1;
-    for(let lon=0;lon<=360;lon+=15){ctx.beginPath();ctx.moveTo(lon/360*canvas.width,0);ctx.lineTo(lon/360*canvas.width,canvas.height);ctx.stroke();}
-    for(let lat=0;lat<=180;lat+=15){ctx.beginPath();ctx.moveTo(0,lat/180*canvas.height);ctx.lineTo(canvas.width,lat/180*canvas.height);ctx.stroke();}
-    this.surface = new THREE.Mesh(new THREE.SphereGeometry(1,128,64), new THREE.MeshPhongMaterial({ map:canvasTexture(canvas), specular:0x263c2e, shininess:12 }));
+    this.baseMapContext=ctx;paintBaseMap(ctx,land,palette);
+    this.surface = new THREE.Mesh(new THREE.SphereGeometry(1,128,64), new THREE.MeshPhongMaterial({ map:canvasTexture(canvas), specular:palette.specular, shininess:12 }));
     this.scene.add(this.surface);
-    const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(1.017,96,48),new THREE.ShaderMaterial({
-      uniforms:{},vertexShader:'varying vec3 vNormal; varying vec3 vView; void main(){ vec4 p=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vView=normalize(-p.xyz);gl_Position=projectionMatrix*p;}',
-      fragmentShader:'varying vec3 vNormal; varying vec3 vView; void main(){float a=pow(1.0-abs(dot(normalize(vNormal),normalize(vView))),4.0);gl_FragColor=vec4(0.34,0.56,0.43,a*0.19);}',
+    this.atmosphere = new THREE.Mesh(new THREE.SphereGeometry(1.017,96,48),new THREE.ShaderMaterial({
+      uniforms:{tint:{value:new THREE.Vector3(...palette.haze)}},vertexShader:'varying vec3 vNormal; varying vec3 vView; void main(){ vec4 p=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vView=normalize(-p.xyz);gl_Position=projectionMatrix*p;}',
+      fragmentShader:'uniform vec3 tint; varying vec3 vNormal; varying vec3 vView; void main(){float a=pow(1.0-abs(dot(normalize(vNormal),normalize(vView))),4.0);gl_FragColor=vec4(tint,a*0.19);}',
       transparent:true,depthWrite:false,side:THREE.FrontSide,
-    })); this.scene.add(atmosphere);
+    })); this.scene.add(this.atmosphere);
     // A single surface blends premultiplied colors, avoiding both z-fighting
     // between shells and the dark pulse caused by stacking two alpha layers.
     this.emptyBorder = canvasTexture(textureCanvas(2));
@@ -183,7 +199,8 @@ export class HistoryGlobe {
     this.routeGroup = new THREE.Group();this.eventGroup = new THREE.Group();this.siteGroup = new THREE.Group();this.regionalPlaceGroup=new THREE.Group();this.scene.add(this.routeGroup,this.eventGroup,this.siteGroup,this.regionalPlaceGroup);
     this.burialDots=new PointEvidenceLayer(this.scene,{size:4,radius:1.024,zoomLimit:2.2,opacity:.82});
     this.levantDots=new PointEvidenceLayer(this.scene,{size:2.6,radius:1.023,zoomLimit:1.43,opacity:.68});
-    this.pleiadesDots=new PointEvidenceLayer(this.scene,{size:2.7,radius:1.024,zoomLimit:1.58,opacity:.68});
+    // Keep gazetteer points just above the highest regional color surface.
+    this.pleiadesDots=new PointEvidenceLayer(this.scene,{size:2.7,radius:1.006,zoomLimit:1.58,opacity:.68});
     this.languageDots=new PointEvidenceLayer(this.scene,{size:4,radius:1.027,zoomLimit:2.2,opacity:.8});
     this.regionalLabels=[];
     this.selection = new THREE.Mesh(new THREE.RingGeometry(.017,.019,48),new THREE.MeshBasicMaterial({color:0xe7d4a0,side:THREE.DoubleSide,transparent:true,opacity:.85,depthWrite:false}));this.selection.visible=false;this.scene.add(this.selection);
@@ -201,6 +218,16 @@ export class HistoryGlobe {
   resize(){const {width,height}=this.container.getBoundingClientRect();if(!width||!height)return;this.width=width;this.height=height;this.camera.aspect=width/height;this.camera.updateProjectionMatrix();this.renderer.setSize(width,height);this.dirty=true;}
   focus(region){this.destination=latLonVector(region.lat,region.lon,Math.min(6,region.distance/Math.min(1,this.camera.aspect)));}
   zoom(factor){this.destination=null;this.camera.position.setLength(clamp(this.camera.position.length()*factor,1.13,6));this.controls.update();}
+  setTheme(theme){
+    const palette=BASE_PALETTES[theme]??BASE_PALETTES.forest;
+    if(this.theme===theme)return;
+    this.theme=theme;
+    paintBaseMap(this.baseMapContext,this.land,palette);
+    this.surface.material.map.needsUpdate=true;
+    this.surface.material.specular.set(palette.specular);
+    this.atmosphere.material.uniforms.tint.value.set(...palette.haze);
+    this.dirty=true;
+  }
   setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.siteGroup.visible=this.layers.sites;this.regionalPlaceGroup.visible=this.layers.territories;this.burialDots.setVisible(!!this.layers.archaeology,this.camera.position.length());this.levantDots.setVisible(!!this.layers.archaeology,this.camera.position.length());this.pleiadesDots.setVisible(!!this.layers.archaeology,this.camera.position.length());this.languageDots.setVisible(!!this.layers.languages,this.camera.position.length());this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);}
   setEuropeanCatalog(catalog){
     this.europeLayer?.dispose();this.europeCatalog=catalog;this.europeLayer=null;

@@ -3,33 +3,38 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#101113">
+    <meta name="theme-color" content="#101714">
     <meta name="description" content="A collection of browser experiments, newest first.">
     <title>Sandbox Miami</title>
+    <script src="/site-theme.js?v=1"></script>
+    <link rel="stylesheet" href="/site-theme.css?v=1">
     <style>
         :root {
             color-scheme: dark;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            color: #d9dadd;
-            background: #101113;
+            color: var(--site-ink);
+            background: var(--site-bg);
             font-synthesis: none;
         }
         * { box-sizing: border-box; }
-        body { margin: 0; }
+        body { margin: 0; min-height: 100dvh; background: radial-gradient(ellipse 80% 55% at 0 0, var(--site-stage-center), var(--site-bg)); }
         main { max-width: 848px; margin: 0 auto; padding: 64px 32px 80px; }
-        h1 { margin: 0 0 36px; color: #f0f0f1; font-size: 22px; font-weight: 500; letter-spacing: -0.6px; }
+        .site-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 36px; }
+        h1 { margin: 0; color: var(--site-ink); font-size: 22px; font-weight: 500; letter-spacing: -0.6px; }
         ul { margin: 0; padding: 0; list-style: none; }
-        li { border-bottom: 1px solid #25272b; }
-        li:first-child { border-top: 1px solid #25272b; }
+        li { border-bottom: 1px solid var(--site-line); }
+        li:first-child { border-top: 1px solid var(--site-line); }
         a { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; padding: 18px 0; color: inherit; text-decoration: none; line-height: 1.5; }
         .title { min-width: 0; font-size: 16px; overflow-wrap: anywhere; }
-        time { flex-shrink: 0; color: #858a94; font-size: 12px; font-variant-numeric: tabular-nums; }
-        a:hover .title { color: #fff; text-decoration: underline; text-underline-offset: 4px; }
-        a:focus-visible { outline: 2px solid #b8c4d7; outline-offset: 5px; border-radius: 2px; }
-        #message, noscript { color: #a0a5ae; font-size: 14px; line-height: 1.6; }
+        time { flex-shrink: 0; color: var(--site-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+        a:hover .title { color: var(--site-accent-strong); text-decoration: underline; text-underline-offset: 4px; }
+        a:focus-visible { outline: 2px solid var(--site-secondary); outline-offset: 5px; border-radius: 2px; }
+        #message, noscript { color: var(--site-muted); font-size: 14px; line-height: 1.6; }
         @media (max-width: 540px) {
             main { padding: 36px 22px 56px; }
-            h1 { margin-bottom: 28px; font-size: 20px; }
+            .site-header { align-items: flex-start; margin-bottom: 28px; }
+            h1 { font-size: 20px; }
+            .site-theme-control > span { display: none; }
             a { gap: 16px; padding: 16px 0; }
             .title { font-size: 15px; }
             time { font-size: 11px; }
@@ -38,7 +43,10 @@
 </head>
 <body>
     <main>
-        <h1>Sandbox Miami</h1>
+        <div class="site-header">
+            <h1>Sandbox Miami</h1>
+            <label class="site-theme-control"><span>Color theme</span><select data-site-theme-picker aria-label="Color theme"><option value="forest">Forest</option><option value="tidal">Tidal</option><option value="violet">Violet</option><option value="ember">Ember</option></select></label>
+        </div>
         <ul id="demos" role="list" aria-label="Experiments, newest first" aria-busy="true"></ul>
         <p id="message" role="status" hidden></p>
         <noscript>Enable JavaScript to view the experiments.</noscript>

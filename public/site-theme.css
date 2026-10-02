@@ -1,0 +1,108 @@
+:root {
+  color-scheme: dark;
+  --site-bg: #101714;
+  --site-surface: #131b17;
+  --site-surface-raised: #253124;
+  --site-ink: #e1e5d6;
+  --site-muted: #9aa69b;
+  --site-subtle: #68796f;
+  --site-line: #2b3830;
+  --site-accent: #e2c794;
+  --site-accent-strong: #f0dbae;
+  --site-accent-ink: #18231a;
+  --site-secondary: #81cfbf;
+  --site-control: #18231c;
+  --site-stage-center: #1d2a20;
+  --site-stage-mid: #111b16;
+  --site-stage-edge: #101714;
+}
+
+:root[data-site-theme="tidal"] {
+  --site-bg: #101924;
+  --site-surface: #15212e;
+  --site-surface-raised: #203341;
+  --site-ink: #e6eef4;
+  --site-muted: #a2b2be;
+  --site-subtle: #728999;
+  --site-line: #304454;
+  --site-accent: #8ed9df;
+  --site-accent-strong: #b2edf0;
+  --site-accent-ink: #092228;
+  --site-secondary: #e5b68d;
+  --site-control: #1b2a37;
+  --site-stage-center: #213849;
+  --site-stage-mid: #152530;
+  --site-stage-edge: #101924;
+}
+
+:root[data-site-theme="violet"] {
+  --site-bg: #191520;
+  --site-surface: #201a29;
+  --site-surface-raised: #30263a;
+  --site-ink: #eee8f2;
+  --site-muted: #b8aec0;
+  --site-subtle: #8b7995;
+  --site-line: #46394e;
+  --site-accent: #dbb9ee;
+  --site-accent-strong: #f0d4fc;
+  --site-accent-ink: #26132f;
+  --site-secondary: #e8b0bc;
+  --site-control: #2b2234;
+  --site-stage-center: #37263f;
+  --site-stage-mid: #241b2e;
+  --site-stage-edge: #191520;
+}
+
+:root[data-site-theme="ember"] {
+  --site-bg: #201711;
+  --site-surface: #281d17;
+  --site-surface-raised: #3a2a20;
+  --site-ink: #f1e8dd;
+  --site-muted: #bdab9a;
+  --site-subtle: #917e6c;
+  --site-line: #4e3a2e;
+  --site-accent: #f1b77e;
+  --site-accent-strong: #ffcf9b;
+  --site-accent-ink: #321c11;
+  --site-secondary: #d8c491;
+  --site-control: #32241b;
+  --site-stage-center: #412b20;
+  --site-stage-mid: #2a1c17;
+  --site-stage-edge: #201711;
+}
+
+.site-theme-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+  color: var(--site-muted);
+  font: 11px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  white-space: nowrap;
+}
+
+.site-theme-control > span {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.site-theme-control select[data-site-theme-picker] {
+  min-width: 106px;
+  min-height: 34px;
+  margin: 0;
+  padding: 6px 27px 6px 10px;
+  border: 1px solid var(--site-line);
+  border-radius: 5px;
+  background-color: var(--site-control);
+  color: var(--site-ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.site-theme-control select[data-site-theme-picker]:hover { border-color: var(--site-accent); }
+.site-theme-control select[data-site-theme-picker]:focus-visible { outline: 2px solid var(--site-secondary); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .site-theme-control select[data-site-theme-picker] { transition: border-color 140ms ease, background-color 140ms ease; }
+}
