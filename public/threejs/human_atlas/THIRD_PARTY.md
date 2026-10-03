@@ -60,9 +60,21 @@ Ten additional ethnonym reference points use **Pleiades GIS**, **CC BY 3.0**, at
 
 `data/language-attestations.json` selects 20 dated, geolocated Latin and Ancient Greek inscriptions from the [Epigraphic Database Heidelberg open dump](https://github.com/epigraphic-database-heidelberg/data), **CC BY-SA 4.0**. Pinned revision `45f166654ab4551a1954617a0df8e56fa7724ccb`; the generated file records the geography-table and every selected TEI XML checksum, EDH ID, source and geography URL, language tag, date label, and findspot. `scripts/prepare-human-atlas-language-attestations.py` extracts and rounds representative coordinates. These dates estimate objects, not language-use lifespans; representative findspots can be city centroids. The selection is illustrative and is not an ancient-language census. The adapted EDH data retain their CC BY-SA terms, separate from the MIT application code.
 
+## PaleoHumans
+
+`data/paleohumans-remains.json` derives from the [PaleoHumans Dataset](https://paleohumans.org/dataset), associated with Arenas del Amo, Armentano Oller, Daura, and Sanz (2024), [*Overview of the European Upper Palaeolithic: The Homo sapiens bone record*](https://doi.org/10.1016/j.jasrep.2024.104391). **CC BY 4.0**. The exported ZIP is retrieved from `https://api.paleohumans.org/api/dataset/download` and pinned to SHA-256 `ea528877d0c04505619020069c96f7a64770c0e2cc0523a7b5822dcfa82092ea`. The generated catalog retains only radiocarbon results linked through the source's relational tables to a geocoded site and archaeological context. Source ages are uncalibrated BP; the atlas's $1950 - (BP \pm dates\_range)$ timeline placement is for browsing only and is not a calibrated date.
+
+## EUPPAD
+
+`data/euppad-calibrated-dates.json` derives from Böckenförde (2026), [*The European Upper Palaeolithic Palaeoecological and Archaeological Dataset for sites north of 50°N*](https://doi.org/10.5281/zenodo.19930467). **CC BY 4.0**. The Zenodo v1 archive `EUPPAD_data.zip` is pinned to MD5 `4fb11e02f5079f6484f4949e4194c174` and SHA-256 `53f0f1dfd198b4e8a065254b74337faf14e377b559bb09186f09dd5ddee65f46`. The generated catalog calibrates all 471 rows in the source's `euppad_radiocarbon_dates_selected.csv` separately using Bchron 4.7.8 and IntCal20. It stores raw BP age and standard deviation, the posterior median, target-95.4% highest-density calendar segments, and the discrete coverage achieved by the posterior grid. Multi-modal segments are retained. A result dates a sampled material, not continuous occupation or a cultural, biological, linguistic, or territorial boundary.
+
 ## Natural Earth
 
-Natural Earth contributors, 1:110m physical land. **Public domain**. <https://www.naturalearthdata.com/about/terms-of-use/>. Input: <https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_land.geojson>. Properties removed and coordinates rounded to three decimals. Modern land geometry is reused without reconstructing historical coastlines.
+Natural Earth contributors, 1:50m physical land and rivers/lake centerlines. **Public domain**. <https://www.naturalearthdata.com/about/terms-of-use/>. Inputs: <https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_50m_land.geojson> and <https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_50m_rivers_lake_centerlines.geojson>. Properties removed and coordinates rounded to three decimals. Modern land geometry and rivers are reused without reconstructing historical coastlines or hydrology.
+
+## NOAA ETOPO1
+
+NOAA National Centers for Environmental Information, **ETOPO1 Ice Surface** global relief model. **Public domain**. <https://www.ngdc.noaa.gov/mgg/global/global.html>. Input: <https://www.ngdc.noaa.gov/mgg/global/relief/ETOPO1/data/ice_surface/grid_registered/netcdf/ETOPO1_Ice_g_gmt4.grd.gz>. `physical.json` retains sparse modern 500–4,000 m land contours derived from a decimated source grid; these are orientation aids, not historical terrain reconstruction.
 
 ## Our World in Data comparison
 

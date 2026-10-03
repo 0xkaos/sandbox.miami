@@ -15,14 +15,16 @@ import { languageAttestationsForRegion, languageAttestationSnapshot } from './la
 import { buildResearchIndex, searchResearchIndex } from './research-model.mjs';
 import { contextsAt, nearbyContexts, archaeologicalContextsSnapshot } from './archaeological-contexts.mjs';
 import { aadrSamplesAt, nearbyAadrSamples, aadrSamplesSnapshot } from './aadr-samples.mjs';
+import { paleohumansRemainsAt, nearbyPaleohumansRemains, paleohumansRemainsSnapshot } from './paleohumans-remains.mjs';
+import { euppadDatesAt, nearbyEuppadDates, euppadDatesSnapshot } from './euppad-dates.mjs';
 
 const $ = selector => document.querySelector(selector);
-const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: 1, opacity: .5, resolution: .5, languageFamily: 'all', layers: { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true, archaeology: true, languages: false } };
+const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: 1, opacity: .5, resolution: .5, languageFamily: 'all', layers: { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true, archaeology: true, languages: false, rivers: false, contours: false } };
 const data = { sources: [...SOURCES], events: [...EVENTS], migrations: [...MIGRATIONS] };
 let meta, values, comparison, borders, nearEastCatalog, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
 let detailGrid=null, resolutionRequest=0, resolutionError=null, displayedPopulationYear=null;
 let siteCatalog=null, siteLoadError=null, lastSiteKey=null, catalogSelection=null, siteResultLimit=40;
-let europeCatalog=null, burialCatalog=null, levantCatalog=null, euroevolCatalog=null, contextCatalog=null, aadrCatalog=null, pleiadesCatalog=null, languageCatalog=null, languageAttestationCatalog=null;
+let europeCatalog=null, burialCatalog=null, levantCatalog=null, euroevolCatalog=null, contextCatalog=null, aadrCatalog=null, paleohumansCatalog=null, euppadCatalog=null, pleiadesCatalog=null, languageCatalog=null, languageAttestationCatalog=null;
 let researchIndex=[], researchById=new Map(), researchSelection=null, researchResultLimit=40, researchLoadErrors=[], evidenceKey=null, pleiadesKey=null, catalogRevision=0;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -219,6 +221,13 @@ function evidenceHTML(item, compact=false) {
     const sample=record;
     return `<span class="section-label">AADR ANCIENT INDIVIDUAL · SOURCE LABEL</span><h2>${esc(sample.site||sample.id)}</h2><p><strong>Source Group ID:</strong> ${esc(sample.sourceLabel)} · ${esc(sample.country||'country not recorded')}</p><p><strong>AADR date:</strong> ${formatYear(sample.dateRange[0])}–${formatYear(sample.dateRange[1])} · ${esc(sample.dateBasis)}.</p><p class="context-note">This is one ancient individual sample at the source locality. The retained Group ID is a source label, not a culture boundary, population, language, or route. Its range expresses source date uncertainty, not continuous site activity.</p>${!compact?`<div class="research-phase"><b>${esc(sample.id)}</b><small>${esc(sample.skeletalElement||'skeletal element not recorded')}${sample.skeletalCode?` · ${esc(sample.skeletalCode)}`:''}</small><p>${esc(sample.fullDate||'No full source date text recorded.')}</p><small>${esc(sample.dateType||'Date method not recorded')}</small></div><p>Publication: ${sample.publicationDOI?`<a href="${esc(sample.publicationDOI)}" target="_blank" rel="noopener">${esc(sample.publication||sample.publicationDOI)} ↗</a>`:esc(sample.publication||'not recorded')}.</p>`:''}<a href="${esc(aadrCatalog?.source.repository??'https://doi.org/10.7910/DVN/FFIDCW')}" target="_blank" rel="noopener">Allen Ancient DNA Resource source ↗</a>`;
   }
+  if(item.kind==='paleohumans'){
+    return `<span class="section-label">PALEOHUMANS · DATED HUMAN REMAINS</span><h2>${esc(record.site)}</h2><p><strong>Published radiocarbon result:</strong> ${esc(record.radiocarbonBP)} ± ${esc(record.radiocarbonRange)} BP${record.material?` · ${esc(record.material)}`:''}${record.datingType?` · ${esc(record.datingType)}`:''}.</p><p><strong>Timeline placement:</strong> approximately ${formatYear(record.displayRange[0])}–${formatYear(record.displayRange[1])}, calculated as 1950 CE − (BP ± the source’s reported range).</p><p class="context-note">This is an uncalibrated BP result, not a calibrated calendar interval. It is used only to place a dated human-remains observation on the atlas timeline. It does not establish continuous occupation, a culture boundary, ancestry, language, or population.</p>${!compact?`<div class="research-phase"><b>${esc(record.culture||'Culture unspecified')}</b><small>${esc(record.culturePhase||'phase not recorded')}${record.stratigraphicContext?` · ${esc(record.stratigraphicContext)}`:''}</small><p>${esc(record.country||'country not recorded')}${record.region?` · ${esc(record.region)}`:''}${record.municipality?` · ${esc(record.municipality)}`:''}</p></div>`:''}<a href="${esc(paleohumansCatalog?.source.url??'https://paleohumans.org/dataset')}" target="_blank" rel="noopener">PaleoHumans dataset ↗</a>${sourceHTML(['paleohumans'])}`;
+  }
+  if(item.kind==='euppad'){
+    const ranges=record.calibratedRanges95.map(([start,end])=>`${formatYear(start)}–${formatYear(end)}`).join(' · ');
+    return `<span class="section-label">EUPPAD · CALIBRATED RADIOCARBON DATE</span><h2>${esc(record.site)}</h2><p><strong>Published result:</strong> ${esc(record.radiocarbonBP)} ± ${esc(record.radiocarbonSd)} BP${record.material?` · ${esc(record.material)}`:''}${record.method?` · ${esc(record.method)}`:''}${record.labId?` · lab ${esc(record.labId)}`:''}.</p><p><strong>IntCal20 calibration:</strong> target-95.4% highest-density interval${record.calibratedRanges95.length===1?'':'s'} ${ranges}. ${record.calibratedRanges95.length>1?'Separate segments preserve the multi-modal posterior.':''}</p><p class="context-note">Each date was independently calibrated with Bchron and IntCal20. It dates one sampled material, not continuous occupation, a culture boundary, ancestry, language, or population.</p>${!compact?`<div class="research-phase"><b>${esc(record.siteId)}</b><small>${esc(record.feature||'feature not recorded')}</small><p>${esc(record.references||'Reference not recorded')}</p></div>`:''}<a href="${esc(euppadCatalog?.source.doi??'https://doi.org/10.5281/zenodo.19930467')}" target="_blank" rel="noopener">EUPPAD dataset ↗</a>${sourceHTML(['euppad'])}`;
+  }
   if(item.kind==='pleiades'){
     const place=record,matching=place.matchingTemporalAssociations.length?place.matchingTemporalAssociations:place.temporalAssociations;
     const remains=place.archaeologicalRemains.filter(tag=>tag!=='notapplicable')
@@ -239,9 +248,9 @@ function evidenceHTML(item, compact=false) {
 }
 function renderResearchDirectory() {
   const results=searchResearchIndex(researchIndex,{query:$('#research-search').value,kind:$('#research-kind').value,scope:$('#research-scope').value,year:Math.round(state.year),region:state.region});
-  const loaded=[burialCatalog,levantCatalog,euroevolCatalog,contextCatalog,aadrCatalog,pleiadesCatalog].filter(Boolean).length;
-  $('#research-results-status').textContent=`${results.length.toLocaleString('en-US')} matches · ${loaded}/6 collections loaded${$('#research-scope').value==='time'?` · ${state.region.name}, ${formatYear(state.year)}`:''}${researchLoadErrors.length?` · ${researchLoadErrors.join(' ')}`:''}`;
-  $('#research-results').innerHTML=results.slice(0,researchResultLimit).map(row=>`<button class="site-result" data-research-record="${esc(row.id)}" aria-pressed="${row.id===researchSelection}"><b>${esc(row.title)}</b><small>${esc(row.subtitle)} · ${row.kind==='burial'?`modelled 95.4% ${formatYear(row.ranges[0][0])}–${formatYear(row.ranges[0][1])}${row.lowAgreement?' · low model agreement':''}`:row.kind==='levant'?`${row.ranges.length} broad dated phases`:row.kind==='context'||row.kind==='aadr'?`${formatYear(row.ranges[0][0])}–${formatYear(row.ranges[0][1])}`:row.kind==='pleiades'?`${row.roughLocation?'rough':'precise'} point`:'no calendar date'}</small></button>`).join('')||'<p class="empty-note">No matching records. Try a site name, culture, or wider filter.</p>';
+  const loaded=[burialCatalog,levantCatalog,euroevolCatalog,contextCatalog,aadrCatalog,paleohumansCatalog,euppadCatalog,pleiadesCatalog].filter(Boolean).length;
+  $('#research-results-status').textContent=`${results.length.toLocaleString('en-US')} matches · ${loaded}/8 collections loaded${$('#research-scope').value==='time'?` · ${state.region.name}, ${formatYear(state.year)}`:''}${researchLoadErrors.length?` · ${researchLoadErrors.join(' ')}`:''}`;
+  $('#research-results').innerHTML=results.slice(0,researchResultLimit).map(row=>`<button class="site-result" data-research-record="${esc(row.id)}" aria-pressed="${row.id===researchSelection}"><b>${esc(row.title)}</b><small>${esc(row.subtitle)} · ${row.kind==='burial'?`modelled 95.4% ${formatYear(row.ranges[0][0])}–${formatYear(row.ranges[0][1])}${row.lowAgreement?' · low model agreement':''}`:row.kind==='levant'?`${row.ranges.length} broad dated phases`:row.kind==='context'||row.kind==='aadr'?`${formatYear(row.ranges[0][0])}–${formatYear(row.ranges[0][1])}`:row.kind==='paleohumans'?`uncal. BP ± reported range · display ${formatYear(row.ranges[0][0])}–${formatYear(row.ranges[0][1])}`:row.kind==='euppad'?`IntCal20 target-95.4% · ${row.ranges.map(([start,end])=>`${formatYear(start)}–${formatYear(end)}`).join(' / ')}`:row.kind==='pleiades'?`${row.roughLocation?'rough':'precise'} point`:'no calendar date'}</small></button>`).join('')||'<p class="empty-note">No matching records. Try a site name, culture, or wider filter.</p>';
   $('#research-more').hidden=results.length<=researchResultLimit;
 }
 function historicalPleiadesRanges(row) {
@@ -251,7 +260,7 @@ function renderResearchRecord(row) {
   if(!row)return;
   researchSelection=row.id;
   const item=evidenceFromRow(row);
-  const locateLabel=row.kind==='burial'?'Go to modelled mean and locate':row.kind==='levant'?'Locate a dated phase':row.kind==='context'?'Locate this selected context':row.kind==='aadr'?'Locate this AADR sample':row.kind==='pleiades'?(historicalPleiadesRanges(row).length?'Locate in a historical association':'Locate place reference · no dated map point'):'Locate at current year · undated';
+  const locateLabel=row.kind==='burial'?'Go to modelled mean and locate':row.kind==='levant'?'Locate a dated phase':row.kind==='context'?'Locate this selected context':row.kind==='aadr'?'Locate this AADR sample':row.kind==='paleohumans'?'Locate uncalibrated-date placement':row.kind==='euppad'?'Locate calibrated-date placement':row.kind==='pleiades'?(historicalPleiadesRanges(row).length?'Locate in a historical association':'Locate place reference · no dated map point'):'Locate at current year · undated';
   $('#research-record').innerHTML=evidenceHTML(item)+`<button class="outline-button" data-research-locate="${esc(row.id)}">${locateLabel} →</button>`;
   renderResearchDirectory();
 }
@@ -272,6 +281,8 @@ function locateResearch(row) {
   if(row.kind==='levant'&&!row.ranges.some(([start,end])=>start<=year&&year<=end)&&row.ranges.length)setYear(Math.round((row.ranges[0][0]+row.ranges[0][1])/2),true);
   if(row.kind==='context'&&!row.ranges.some(([start,end])=>start<=year&&year<=end))setYear(Math.round((row.ranges[0][0]+row.ranges[0][1])/2),true);
   if(row.kind==='aadr'&&!row.ranges.some(([start,end])=>start<=year&&year<=end))setYear(Math.round((row.ranges[0][0]+row.ranges[0][1])/2),true);
+  if(row.kind==='paleohumans'&&!row.ranges.some(([start,end])=>start<=year&&year<=end))setYear(Math.round((row.ranges[0][0]+row.ranges[0][1])/2),true);
+  if(row.kind==='euppad'&&!row.ranges.some(([start,end])=>start<=year&&year<=end))setYear(Math.round((row.ranges[0][0]+row.ranges[0][1])/2),true);
   if(row.kind==='pleiades'){
     const ranges=historicalPleiadesRanges(row);
     if(ranges.length&&(year>=PLEIADES_MODERN_START_YEAR||!ranges.some(([start,end])=>start<=year&&year<=end))){
@@ -288,19 +299,23 @@ function renderArchaeologyPanel(year) {
   const levant=activeLevantSiteIndices(levantCatalog,year,state.region);
   const contexts=contextsAt(contextCatalog,year,state.region);
   const aadr=aadrSamplesAt(aadrCatalog,year,state.region);
+  const paleohumans=paleohumansRemainsAt(paleohumansCatalog,year,state.region);
+  const euppad=euppadDatesAt(euppadCatalog,year,state.region);
   const places=pleiadesPlaceIndicesAt(pleiadesCatalog,year,state.region,{onlyCertain:true,preciseOnly:true});
-  $('#archaeology-count').textContent=(burials.length+levant.length+contexts.length+aadr.length+places.length).toLocaleString('en-US');
-  const loaded=[burialCatalog,levantCatalog,euroevolCatalog,contextCatalog,aadrCatalog,pleiadesCatalog].filter(Boolean).length;
-  $('#archaeology-status').textContent=researchLoadErrors.length?researchLoadErrors.join(' '):loaded<6?'Loading archaeology and ancient-place collections…':`${burials.length} modelled burial dates, ${aadr.length} AADR ancient samples, ${levant.length} surveyed sites with matching phases, ${contexts.length} selected contexts, and ${places.length} Pleiades period-associated places match this year and region. These are source records, not a census of occupied sites.${year>=PLEIADES_MODERN_START_YEAR?' Pleiades Modern-period names and locations remain searchable but are hidden from the dated map.':''} EUROEVOL associations are searchable but undated.`;
+  $('#archaeology-count').textContent=(burials.length+levant.length+contexts.length+aadr.length+paleohumans.length+euppad.length+places.length).toLocaleString('en-US');
+  const loaded=[burialCatalog,levantCatalog,euroevolCatalog,contextCatalog,aadrCatalog,paleohumansCatalog,euppadCatalog,pleiadesCatalog].filter(Boolean).length;
+  $('#archaeology-status').textContent=researchLoadErrors.length?researchLoadErrors.join(' '):loaded<8?'Loading archaeology and ancient-place collections…':`${burials.length} modelled burial dates, ${aadr.length} AADR ancient samples, ${paleohumans.length} PaleoHumans uncalibrated-date placements, ${euppad.length} EUPPAD calibrated-date placements, ${levant.length} surveyed sites with matching phases, ${contexts.length} selected contexts, and ${places.length} Pleiades period-associated places match this year and region. These are source records, not a census of occupied sites. EUPPAD preserves all target-95.4% IntCal20 HDR segments; PaleoHumans placements use uncalibrated BP ± the source’s reported range, converted from 1950 CE for browsing.${year>=PLEIADES_MODERN_START_YEAR?' Pleiades Modern-period names and locations remain searchable but are hidden from the dated map.':''} EUROEVOL associations are searchable but undated.`;
   if(state.location){
     const nearby=[...nearbyBurialEvidence(burialCatalog,year,state.location.lat,state.location.lon,80,{limit:10}).map(event=>({id:`burial:${event.id}`,title:event.site,sub:event.tradition,distance:event.distanceKm})),
       ...nearbyLevantSites(levantCatalog,year,state.location.lat,state.location.lon,35,10).map(site=>({id:`levant:${site.id}`,title:site.name,sub:site.phases.map(phase=>phase.period).slice(0,2).join(' / '),distance:site.distanceKm})),
       ...nearbyContexts(contextCatalog,year,state.location.lat,state.location.lon,80,10).map(context=>({id:`context:${context.id}`,title:context.name,sub:`${context.evidenceKind} · ${context.convention}`,distance:context.distanceKm})),
       ...nearbyAadrSamples(aadrCatalog,year,state.location.lat,state.location.lon,80,10).map(sample=>({id:`aadr:${sample.id}`,title:sample.site||sample.id,sub:`AADR · ${sample.sourceLabel}`,distance:sample.distanceKm})),
+      ...nearbyPaleohumansRemains(paleohumansCatalog,year,state.location.lat,state.location.lon,80,10).map(record=>({id:`paleohumans:${record.id}`,title:record.site,sub:`PaleoHumans · ${record.radiocarbonBP} ± ${record.radiocarbonRange} BP`,distance:record.distanceKm})),
+      ...nearbyEuppadDates(euppadCatalog,year,state.location.lat,state.location.lon,80,10).map(record=>({id:`euppad:${record.id}`,title:record.site,sub:`EUPPAD · ${record.radiocarbonBP} ± ${record.radiocarbonSd} BP`,distance:record.distanceKm})),
       ...nearbyPleiadesPlaces(pleiadesCatalog,year,state.location.lat,state.location.lon,20,{onlyCertain:true,preciseOnly:true,limit:10}).map(place=>({id:`pleiades:${place.id}`,title:place.title,sub:`Pleiades · ${place.kind}`,distance:place.distanceKm}))]
       .sort((a,b)=>a.distance-b.distance).slice(0,6);
-    $('#archaeology-list').innerHTML=nearby.length?nearby.map(row=>`<button class="regional-card" data-evidence="${esc(row.id)}" style="--regional-color:${row.id.startsWith('burial:')?'#dbad77':row.id.startsWith('context:')?'#d19a7d':row.id.startsWith('aadr:')?'#b59ac7':row.id.startsWith('pleiades:')?'#b5a8d0':'#89b9a4'}"><i aria-hidden="true"></i><span><b>${esc(row.title)}</b><small>${esc(row.sub)} · ${Math.round(row.distance)} km away</small></span></button>`).join(''):'<p class="empty-note">No associated records from these collections near this point and year.</p>';
-  }else $('#archaeology-list').innerHTML=burials.length+levant.length+contexts.length+aadr.length+places.length?`<p class="context-note">${burials.filter(event=>event.tradition==='Corded Ware').length} Corded Ware burial dates · ${burials.filter(event=>event.tradition==='Bell Beaker').length} Bell Beaker burial dates · ${aadr.length} AADR ancient samples · ${contexts.length} selected contexts · ${levant.length} Levant sites · ${places.length} Pleiades place associations. Zoom in and select a point, or search the collections.</p>`:year>=PLEIADES_MODERN_START_YEAR?'<p class="empty-note">No dated burial, AADR sample, selected context, or Levant survey records match this year and region. Pleiades Modern-period place references remain available in search.</p>':'<p class="empty-note">No records from these dated collections match this year and region. This is a coverage gap.</p>';
+    $('#archaeology-list').innerHTML=nearby.length?nearby.map(row=>`<button class="regional-card" data-evidence="${esc(row.id)}" style="--regional-color:${row.id.startsWith('burial:')?'#dbad77':row.id.startsWith('context:')?'#d19a7d':row.id.startsWith('aadr:')?'#b59ac7':row.id.startsWith('paleohumans:')?'#d6bf87':row.id.startsWith('pleiades:')?'#b5a8d0':'#89b9a4'}"><i aria-hidden="true"></i><span><b>${esc(row.title)}</b><small>${esc(row.sub)} · ${Math.round(row.distance)} km away</small></span></button>`).join(''):'<p class="empty-note">No associated records from these collections near this point and year.</p>';
+  }else $('#archaeology-list').innerHTML=burials.length+levant.length+contexts.length+aadr.length+paleohumans.length+euppad.length+places.length?`<p class="context-note">${burials.filter(event=>event.tradition==='Corded Ware').length} Corded Ware burial dates · ${burials.filter(event=>event.tradition==='Bell Beaker').length} Bell Beaker burial dates · ${aadr.length} AADR ancient samples · ${paleohumans.length} PaleoHumans uncalibrated-date placements · ${euppad.length} EUPPAD calibrated-date placements · ${contexts.length} selected contexts · ${levant.length} Levant sites · ${places.length} Pleiades place associations. Zoom in and select a point, or search the collections.</p>`:year>=PLEIADES_MODERN_START_YEAR?'<p class="empty-note">No dated burial, AADR sample, PaleoHumans or EUPPAD result, selected context, or Levant survey record matches this year and region. Pleiades Modern-period place references remain available in search.</p>':'<p class="empty-note">No records from these dated collections match this year and region. This is a coverage gap.</p>';
 }
 function renderSiteDirectory() {
   if(!siteCatalog){$('#site-results-status').textContent=siteLoadError??'Loading the heritage catalog…';$('#site-more').hidden=true;return;}
@@ -332,7 +347,7 @@ async function loadSites() {
   renderState();if($('#sites-dialog').open)renderSiteDirectory();
 }
 function rebuildResearchIndex() {
-  researchIndex=buildResearchIndex({burials:burialCatalog,levant:levantCatalog,euroevol:euroevolCatalog,pleiades:pleiadesCatalog,contexts:contextCatalog,aadr:aadrCatalog});
+  researchIndex=buildResearchIndex({burials:burialCatalog,levant:levantCatalog,euroevol:euroevolCatalog,pleiades:pleiadesCatalog,contexts:contextCatalog,aadr:aadrCatalog,paleohumans:paleohumansCatalog,euppad:euppadCatalog});
   researchById=new Map(researchIndex.map(row=>[row.id,row]));
   if($('#research-dialog').open){renderResearchDirectory();if(researchSelection)renderResearchRecord(researchById.get(researchSelection));}
 }
@@ -344,6 +359,8 @@ async function loadResearch() {
     ['EUROEVOL','euroevol-sites.json',catalog=>{euroevolCatalog=catalog;}],
     ['Selected contexts','archaeological-contexts.json',catalog=>{contextCatalog=catalog;}],
     ['AADR samples','aadr-archaeological-samples.json',catalog=>{aadrCatalog=catalog;}],
+    ['PaleoHumans','paleohumans-remains.json',catalog=>{paleohumansCatalog=catalog;}],
+    ['EUPPAD','euppad-calibrated-dates.json',catalog=>{euppadCatalog=catalog;}],
     ['Pleiades','pleiades-places.json',catalog=>{pleiadesCatalog=catalog;}],
     ['Languages','languages.json',catalog=>{languageCatalog=catalog;populateLanguageFamilies();}],
     ['Inscriptions','language-attestations.json',catalog=>{languageAttestationCatalog=catalog;}],
@@ -369,6 +386,12 @@ function updateEvidenceView(year) {
   const aadrPoints=state.layers.archaeology?aadrSamplesAt(aadrCatalog,year).map(record=>({
     id:`aadr:${record.id}`,kind:'aadr',lat:record.lat,lon:record.lon,record,color:aadrColor(record.sourceLabel),
   })):[];
+  const paleohumansPoints=state.layers.archaeology?paleohumansRemainsAt(paleohumansCatalog,year).map(record=>({
+    id:`paleohumans:${record.id}`,kind:'paleohumans',lat:record.lat,lon:record.lon,record,color:'#d6bf87',
+  })) :[];
+  const euppadPoints=state.layers.archaeology?euppadDatesAt(euppadCatalog,year).map(record=>({
+    id:`euppad:${record.id}`,kind:'euppad',lat:record.lat,lon:record.lon,record,color:'#79b9c4',
+  })) :[];
   const levantPoints=state.layers.archaeology?activeLevantSiteIndices(levantCatalog,year).map(index=>{
     const row=levantCatalog.sites[index];return{id:`levant:${row[0]}`,kind:'levant',index,lat:row[5],lon:row[6],color:'#8fc0a6'};
   }):[];
@@ -378,7 +401,7 @@ function updateEvidenceView(year) {
   const modern=state.layers.languages?languagesForRegion(languageCatalog,year,REGIONS[0],state.languageFamily==='all'?null:state.languageFamily).map(record=>({
     id:record.id,kind:'modern-language',lat:record.lat,lon:record.lon,color:languageColor(record.familyName),record,
   })):[];
-  globe.setEvidencePoints(burialPoints.concat(contextPoints,aadrPoints),levantPoints,ancient.concat(modern));
+  globe.setEvidencePoints(burialPoints.concat(contextPoints,aadrPoints,paleohumansPoints,euppadPoints),levantPoints,ancient.concat(modern));
   const indices=state.layers.archaeology?pleiadesPlaceIndicesAt(pleiadesCatalog,year,null,{onlyCertain:true,preciseOnly:true}):[];
   const currentKey=indices.join(',');
   if(currentKey!==pleiadesKey){
@@ -581,10 +604,12 @@ function snapshot() {
   const levant=levantSitesSnapshot(levantCatalog,year,state.region,50);
   const contexts=archaeologicalContextsSnapshot(contextCatalog,year,state.region,50);
   const aadrSamples=aadrSamplesSnapshot(aadrCatalog,year,state.region,50);
+  const paleohumansRemains=paleohumansRemainsSnapshot(paleohumansCatalog,year,state.region,50);
+  const euppadDates=euppadDatesSnapshot(euppadCatalog,year,state.region,50);
   const gazetteer=pleiadesPlacesSnapshot(pleiadesCatalog,year,state.region,{onlyCertain:true,preciseOnly:true,limit:50});
   const languages=year>=2017?languageSnapshot(languageCatalog,year,state.region,80,state.languageFamily==='all'?null:state.languageFamily):null;
   const attestations=languageAttestationSnapshot(languageAttestationCatalog,year,state.region);
-  currentSnapshot = makeSnapshot({ meta, populations, values, year, region: state.region, events, migrations, sources: data.sources, comparison, borderStatus: boundaryDescription(), heritage, regional, european, burials, levant, contexts, aadrSamples, gazetteer, languages, attestations });
+  currentSnapshot = makeSnapshot({ meta, populations, values, year, region: state.region, events, migrations, sources: data.sources, comparison, borderStatus: boundaryDescription(), heritage, regional, european, burials, levant, contexts, aadrSamples, paleohumansRemains, euppadDates, gazetteer, languages, attestations });
   currentSnapshot.populations = populations?.slice() ?? null; currentSnapshot.region = state.region; currentSnapshot.year = year;
   $('#snapshot-title').textContent = currentSnapshot.data.title;
   $('#snapshot-subtitle').textContent = 'Population and context for the selected region. Charts and CSV use the fixed 1° reference grid at every display resolution.';
@@ -593,7 +618,7 @@ function snapshot() {
   $('#snapshot-notes').insertAdjacentHTML('beforeend',`<h3>Heritage sites · reviewed phases at this time</h3>${heritage.records.length?`<ul>${heritage.records.map(site=>`<li>${siteLinkHTML(site)} · ${site.phases.map(p=>esc(p.dateLabel)).join(' · ')}</li>`).join('')}</ul>`:`<p>${esc(siteLoadError??(siteCatalog?'No reviewed site phases match this region and year.':'Heritage catalog is still loading.'))}</p>`}<p>Site phases and UNESCO attribution accompany the JSON export. Dates describe selected evidence, not complete settlement lifespans.</p>`);
   if(regional?.records.length)$('#snapshot-notes').insertAdjacentHTML('beforeend',`<h3>Near East · dated places and areas</h3><ul>${regional.records.map(item=>`<li>${esc(item.name)} · ${esc(item.kind)}${item.confidence==='schematic'?' · schematic':''}</li>`).join('')}</ul><p>Area outlines are approximate; city windows are selected display periods. The JSON export includes dates and source attribution.</p>`);
   if(european?.records.length)$('#snapshot-notes').insertAdjacentHTML('beforeend',`<h3>Europe · peoples and polities</h3><ul>${european.records.slice(0,18).map(item=>`<li>${esc(item.name)} · ${esc(item.kind)} · ${formatYear(item.start)}–${formatYear(item.end)}</li>`).join('')}</ul>${european.records.length>18?`<p>Showing 18 of ${european.records.length} records here; all are included in JSON.</p>`:''}<p>These source areas are approximate and do not draw surveyed ethnic frontiers.</p>`);
-  if(burials?.totalEvents||levant?.totalActiveSites||contexts?.totalRecords||aadrSamples?.totalRecords)$('#snapshot-notes').insertAdjacentHTML('beforeend',`<h3>Archaeological evidence</h3><p>${burials?.totalEvents??0} modelled burial dates (${burials?.byTradition['Corded Ware']??0} Corded Ware, ${burials?.byTradition['Bell Beaker']??0} Bell Beaker); ${aadrSamples?.totalRecords??0} AADR ancient individual samples; ${contexts?.totalRecords??0} selected contexts; ${levant?.totalActiveSites??0} surveyed South Levant sites with matching broad phases. The JSON export includes up to 50 sample records from each collection and full source metadata.</p><p>A burial's 95.4% date interval, an AADR sample's published range, a selected context's cited display window, and a site's broad archaeological phase are different uncertainties, not continuous lifespans.</p>`);
+  if(burials?.totalEvents||levant?.totalActiveSites||contexts?.totalRecords||aadrSamples?.totalRecords||paleohumansRemains?.totalRecords||euppadDates?.totalRecords)$('#snapshot-notes').insertAdjacentHTML('beforeend',`<h3>Archaeological evidence</h3><p>${burials?.totalEvents??0} modelled burial dates (${burials?.byTradition['Corded Ware']??0} Corded Ware, ${burials?.byTradition['Bell Beaker']??0} Bell Beaker); ${aadrSamples?.totalRecords??0} AADR ancient individual samples; ${paleohumansRemains?.totalRecords??0} PaleoHumans uncalibrated-date placements; ${euppadDates?.totalRecords??0} EUPPAD IntCal20 calibrated-date placements; ${contexts?.totalRecords??0} selected contexts; ${levant?.totalActiveSites??0} surveyed South Levant sites with matching broad phases. The JSON export includes up to 50 sample records from each collection and full source metadata.</p><p>A burial's 95.4% date interval, an AADR sample's published range, a PaleoHumans uncalibrated BP ± reported-range placement, an EUPPAD target-95.4% IntCal20 HDR, a selected context's cited display window, and a site's broad archaeological phase are different uncertainties, not continuous lifespans.</p>`);
   if(gazetteer?.totalAssociatedPlaces)$('#snapshot-notes').insertAdjacentHTML('beforeend',`<h3>Ancient places · Pleiades</h3><p>${gazetteer.totalAssociatedPlaces.toLocaleString('en-US')} precise, certain gazetteer points have a broad period association that includes this year in this viewing region. ${gazetteer.byKind['archaeological site']??0} are classified archaeological sites; other entries include settlements and built places. The JSON includes 50 sample records and source metadata.</p><p>Period associations do not prove continuous occupation or precise foundation dates.</p>`);
   if(attestations?.attestationCount)$('#snapshot-notes').insertAdjacentHTML('beforeend',`<h3>Historical language attestations</h3><ul>${attestations.records.map(record=>`<li><a href="${esc(record.sourceUrl)}" target="_blank" rel="noopener">${esc(record.languages.map(language=>language.name).join(' / '))} · ${esc(record.placeLabel)} ↗</a> · ${formatYear(record.start)}–${formatYear(record.end)}</li>`).join('')}</ul><p>Inscription dating and findspots do not establish spoken-language borders.</p>`);
   if(languages?.catalogLanguageCount)$('#snapshot-notes').insertAdjacentHTML('beforeend',`<h3>Modern language reference</h3><p>${languages.catalogLanguageCount.toLocaleString('en-US')} ${languages.familyFilter?`${esc(languages.familyFilter.name)} `:''}Glottolog catalog points in this region at the atlas endpoint.${languages.familyFilter?'':` Largest families in this selection: ${esc(languages.familyCounts.slice(0,5).map(item=>`${item.name} ${item.count}`).join(' · '))}.`} These are not historical language ranges.</p>`);
@@ -621,7 +646,7 @@ function onHover(hit) {
       const label=e.kind==='burial-site'?e.record.site:e.kind==='levant'?levantCatalog?.sites[e.index]?.[2]??'Surveyed site':e.kind==='context'?e.record.name:e.record?.site??'Archaeological evidence';
       const detail=e.kind==='burial-site'?[`${e.record.eventCount} dated burial records`,burialCultures.length?`Culture: ${burialCultures.slice(0,3).join(' · ')}${burialCultures.length>3?` +${burialCultures.length-3} more`:''}`:''].filter(Boolean).join('<br>')
         :e.kind==='levant'?[`${levantPhases.length} dated survey phase${levantPhases.length===1?'':'s'}`,phaseTypes.length?`Type: ${phaseTypes.slice(0,3).join(' · ')}${phaseTypes.length>3?` +${phaseTypes.length-3} more`:''}`:''].filter(Boolean).join('<br>')
-        :e.kind==='context'?`${e.record.evidenceKind} · ${e.record.convention}`:e.kind==='aadr'?`AADR · ${e.record.sourceLabel}`:'Excavated evidence';
+        :e.kind==='context'?`${e.record.evidenceKind} · ${e.record.convention}`:e.kind==='aadr'?`AADR · ${e.record.sourceLabel}`:e.kind==='euppad'?`EUPPAD · IntCal20 calibrated date`:'Excavated evidence';
       html=`<strong>${esc(label)}</strong><small>${detail} · click to read</small>`;
     }
   }
@@ -704,12 +729,12 @@ async function loadJSON(name) {const r=await fetch(`./data/${name}`);if(!r.ok)th
 async function start() {
   readHash();
   try {
-    const results=await Promise.all([loadJSON('population.json'),fetch('./data/population.f32').then(r=>{if(!r.ok)throw new Error('Population grid could not load.');return r.arrayBuffer();}),loadJSON('land.json'),loadJSON('borders.json'),loadJSON('comparison.json'),loadJSON('near-east.json')]);
+    const results=await Promise.all([loadJSON('population.json'),fetch('./data/population.f32').then(r=>{if(!r.ok)throw new Error('Population grid could not load.');return r.arrayBuffer();}),loadJSON('land.json'),loadJSON('borders.json'),loadJSON('comparison.json'),loadJSON('near-east.json'),loadJSON('physical.json')]);
     [meta,, ,borders,comparison,nearEastCatalog]=results;values=new Float32Array(results[1]);
     if(values.length!==meta.years.length*meta.cells.length)throw new Error('Population grid is incomplete. Reload to retry.');
     buffer=new Float32Array(meta.cells.length);series=populationSeries(meta,values,state.region);
     try {
-      globe=new HistoryGlobe($('#globe'),meta,results[2],borders,nearEastCatalog,{
+      globe=new HistoryGlobe($('#globe'),meta,results[2],borders,nearEastCatalog,results[6],{
         onLocation:place=>{setPlaying(false);state.location=place;state.detail=null;lastEventKey=null;renderState();},onEvent:chooseEvent,onSite:chooseSite,onRegional:chooseRegional,onEvidence:chooseEvidence,onLanguage:chooseLanguage,onHover,
         onBorders:status=>{borderLoadStatus=status;if(ready){$('#territory-status').textContent=boundaryDescription(status);if(state.location)renderDetail();}},
         onError:message=>{$('#map-error').hidden=false;$('#map-error').textContent=message;setPlaying(false);},

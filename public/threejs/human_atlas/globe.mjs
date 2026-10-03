@@ -15,10 +15,10 @@ const SUPERSEDED_BORDERS = new Set(['Ur','Semites','Canaan','Judea']);
 const POINT_FLOOR_RADIUS = 1.0025;
 const COAST_LINE_RADIUS = 1.003;
 const BASE_PALETTES = {
-  forest:{sea:'#182b25',land:'#3b4932',shore:'#778064',grid:'#c1caa10c',specular:'#263c2e',haze:[.34,.56,.43]},
-  tidal:{sea:'#172c3b',land:'#3d5b62',shore:'#80a9af',grid:'#b3d8de0c',specular:'#2f4c58',haze:[.31,.55,.64]},
-  violet:{sea:'#30263b',land:'#534657',shore:'#9b869f',grid:'#d7b8e30c',specular:'#493451',haze:[.51,.39,.61]},
-  ember:{sea:'#30261e',land:'#604c38',shore:'#ae926a',grid:'#e3c29a0c',specular:'#49382c',haze:[.64,.43,.31]},
+  forest:{sea:'#182b25',land:'#3b4932',shore:'#778064',rivers:'#74b9c1',contours:'#a4b58b',grid:'#c1caa10c',specular:'#263c2e',haze:[.34,.56,.43]},
+  tidal:{sea:'#172c3b',land:'#3d5b62',shore:'#80a9af',rivers:'#8ecdd2',contours:'#adc29a',grid:'#b3d8de0c',specular:'#2f4c58',haze:[.31,.55,.64]},
+  violet:{sea:'#30263b',land:'#534657',shore:'#9b869f',rivers:'#91c3d1',contours:'#c1bd96',grid:'#d7b8e30c',specular:'#493451',haze:[.51,.39,.61]},
+  ember:{sea:'#30261e',land:'#604c38',shore:'#ae926a',rivers:'#8fc5d1',contours:'#c7b68d',grid:'#e3c29a0c',specular:'#49382c',haze:[.64,.43,.31]},
 };
 export function latLonVector(lat, lon, radius = 1) {
   return new THREE.Vector3(radius * Math.cos(lat * R) * Math.cos(lon * R), radius * Math.sin(lat * R), -radius * Math.cos(lat * R) * Math.sin(lon * R));
@@ -42,7 +42,9 @@ function polygonPath(ctx, geometry, width, height) {
     ctx.closePath();
   }
 }
-function geometryRings(geometry) {
+function geometryPaths(geometry) {
+  if (geometry.type === 'LineString') return [geometry.coordinates];
+  if (geometry.type === 'MultiLineString') return geometry.coordinates;
   const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.type === 'MultiPolygon' ? geometry.coordinates : [];
   return polygons.flatMap(polygon => polygon);
 }
@@ -50,7 +52,7 @@ function sphericalLineGeometry(features, radius, excludedNames = null) {
   const positions = [];
   for (const feature of features) {
     if (excludedNames?.has(feature.properties?.name)) continue;
-    for (const ring of geometryRings(feature.geometry)) for (let index = 1; index < ring.length; index++) {
+    for (const ring of geometryPaths(feature.geometry)) for (let index = 1; index < ring.length; index++) {
       const from = latLonVector(ring[index - 1][1], ring[index - 1][0], radius);
       const to = latLonVector(ring[index][1], ring[index][0], radius);
       const steps = Math.max(1, Math.ceil(from.angleTo(to) / (Math.PI / 180)));
@@ -64,9 +66,9 @@ function sphericalLineGeometry(features, radius, excludedNames = null) {
   }
   return new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 }
-function sphericalLines(features, radius, color, opacity, excludedNames = null) {
+function sphericalLines(features, radius, color, opacity, excludedNames = null, renderOrder = 2.5) {
   const line = new THREE.LineSegments(sphericalLineGeometry(features, radius, excludedNames), new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
-  line.renderOrder = 2.5;
+  line.renderOrder = renderOrder;
   return line;
 }
 function nameColor(name) {
@@ -157,11 +159,11 @@ function routePoints(route) {
 function along(points, t) { const f = clamp(t, 0, 1) * (points.length - 1), i = Math.min(points.length - 2, Math.floor(f)); return points[i].clone().lerp(points[i + 1], f - i); }
 
 export class HistoryGlobe {
-  constructor(container, meta, land, borders, nearEast, callbacks = {}) {
+  constructor(container, meta, land, borders, nearEast, physical = {}, callbacks = {}) {
     this.container = container; this.meta = meta; this.borders = borders; this.nearEast = nearEast; this.land=land; this.callbacks = callbacks;
     this.theme=window.SandboxTheme?.get()??'forest';
     const palette=BASE_PALETTES[this.theme]??BASE_PALETTES.forest;
-    this.layers = { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true, archaeology: true, languages: false };
+    this.layers = { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true, archaeology: true, languages: false, rivers: false, contours: false };
     this.scale = 'log'; this.gain = 1; this.populationOpacity = 1; this.year = -3000; this.routes = []; this.phase = 0; this.disposed = false; this.dirty = true;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(38, 1, .005, 30);
@@ -184,6 +186,8 @@ export class HistoryGlobe {
     this.surface = new THREE.Mesh(new THREE.SphereGeometry(1,128,64), new THREE.MeshPhongMaterial({ map:canvasTexture(canvas), specular:palette.specular, shininess:12 }));
     this.scene.add(this.surface);
     this.coastLines=sphericalLines(land.features,COAST_LINE_RADIUS,palette.shore,.85);this.scene.add(this.coastLines);
+    this.contourLines=sphericalLines(physical.contours?.features??[],1.0032,palette.contours,.22,null,2.3);this.contourLines.visible=false;this.scene.add(this.contourLines);
+    this.riverLines=sphericalLines(physical.rivers?.features??[],1.0035,palette.rivers,.68,null,2.4);this.riverLines.visible=false;this.scene.add(this.riverLines);
     this.atmosphere = new THREE.Mesh(new THREE.SphereGeometry(1.017,96,48),new THREE.ShaderMaterial({
       uniforms:{tint:{value:new THREE.Vector3(...palette.haze)}},vertexShader:'varying vec3 vNormal; varying vec3 vView; void main(){ vec4 p=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vView=normalize(-p.xyz);gl_Position=projectionMatrix*p;}',
       fragmentShader:'uniform vec3 tint; varying vec3 vNormal; varying vec3 vView; void main(){float a=pow(1.0-abs(dot(normalize(vNormal),normalize(vView))),4.0);gl_FragColor=vec4(tint,a*0.19);}',
@@ -267,10 +271,12 @@ export class HistoryGlobe {
     this.surface.material.map.needsUpdate=true;
     this.surface.material.specular.set(palette.specular);
     this.coastLines.material.color.set(palette.shore);
+    this.riverLines.material.color.set(palette.rivers);
+    this.contourLines.material.color.set(palette.contours);
     this.atmosphere.material.uniforms.tint.value.set(...palette.haze);
     this.dirty=true;
   }
-  setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.siteGroup.visible=this.layers.sites;this.regionalPlaceGroup.visible=this.layers.territories;this.burialDots.setVisible(!!this.layers.archaeology,this.camera.position.length());this.levantDots.setVisible(!!this.layers.archaeology,this.camera.position.length());this.pleiadesDots.setVisible(!!this.layers.archaeology,this.camera.position.length());this.languageDots.setVisible(!!this.layers.languages,this.camera.position.length());this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);}
+  setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.siteGroup.visible=this.layers.sites;this.regionalPlaceGroup.visible=this.layers.territories;this.riverLines.visible=this.layers.rivers;this.contourLines.visible=this.layers.contours;this.burialDots.setVisible(!!this.layers.archaeology,this.camera.position.length());this.levantDots.setVisible(!!this.layers.archaeology,this.camera.position.length());this.pleiadesDots.setVisible(!!this.layers.archaeology,this.camera.position.length());this.languageDots.setVisible(!!this.layers.languages,this.camera.position.length());this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);this.dirty=true;}
   setEuropeanCatalog(catalog){
     this.europeLayer?.dispose();this.europeCatalog=catalog;this.europeLayer=null;
     if(catalog){

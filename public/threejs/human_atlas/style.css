@@ -27,7 +27,7 @@ dialog{color:var(--ink);background:#16211a;border:1px solid #4a5a46;border-radiu
 .near-east-label{color:#f0dbad;text-shadow:0 1px 4px #0b150c,0 0 9px #0b150c;font-size:8px;letter-spacing:.5px;transform:translate(-50%,9px)}
 @media(max-width:900px){#near-east-panel,#europe-panel,#archaeology-panel,#language-panel{grid-column:1}}
 
-.swatch.archaeology{background:#dbad77;border-radius:50%}.swatch.languages{background:#91b8aa;transform:rotate(45deg)}
+.swatch.archaeology{background:#dbad77;border-radius:50%}.swatch.languages{background:#91b8aa;transform:rotate(45deg)}.swatch.rivers{background:#74b9c1;border-radius:50%}.swatch.contours{background:#a4b58b}
 .research-browse{width:100%;margin:7px 0 0;padding:10px 6px;font-size:10px}
 #language-options{padding:13px 0;border-top:1px solid var(--line);margin-top:13px}
 #language-options label{display:block;color:var(--muted);font-size:10px;margin-bottom:7px}

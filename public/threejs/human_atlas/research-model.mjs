@@ -6,7 +6,7 @@ export { pointInAtlasRegion };
 
 const normalize = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
 
-export function buildResearchIndex({ burials = null, levant = null, euroevol = null, pleiades = null, contexts = null, aadr = null } = {}) {
+export function buildResearchIndex({ burials = null, levant = null, euroevol = null, pleiades = null, contexts = null, aadr = null, paleohumans = null, euppad = null } = {}) {
   const rows = [];
   for (const event of burials?.events ?? []) rows.push({
     id: `burial:${event.id}`, kind: 'burial', title: event.site,
@@ -72,6 +72,23 @@ export function buildResearchIndex({ burials = null, levant = null, euroevol = n
     lat: record.lat, lon: record.lon, ranges: [record.dateRange],
     search: normalize([record.id, record.site, record.country, record.sourceLabel, record.fullDate,
       record.dateType, record.publication, record.skeletalElement].filter(Boolean).join(' ')),
+    record,
+  });
+  for (const record of paleohumans?.records ?? []) rows.push({
+    id: `paleohumans:${record.id}`, kind: 'paleohumans', title: record.site,
+    subtitle: `${record.culture ?? 'Culture unspecified'} · PaleoHumans dated remains`,
+    lat: record.lat, lon: record.lon, ranges: [record.displayRange],
+    search: normalize([record.site, record.country, record.region, record.municipality,
+      record.stratigraphicContext, record.culture, record.culturePhase, record.material,
+      record.datingType, record.radiocarbonBP, record.id].filter(Boolean).join(' ')),
+    record,
+  });
+  for (const record of euppad?.records ?? []) rows.push({
+    id: `euppad:${record.id}`, kind: 'euppad', title: record.site,
+    subtitle: `${record.siteId} · EUPPAD calibrated radiocarbon date`,
+    lat: record.lat, lon: record.lon, ranges: record.calibratedRanges95,
+    search: normalize([record.siteId, record.site, record.labId, record.method, record.feature,
+      record.material, record.references, record.radiocarbonBP, record.id].filter(Boolean).join(' ')),
     record,
   });
   return rows;

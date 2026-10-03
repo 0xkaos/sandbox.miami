@@ -9,6 +9,8 @@ import { validateResearch } from '../public/threejs/human_atlas/import.mjs';
 import { PopulationDetail } from '../public/threejs/human_atlas/population-detail.mjs';
 import { sitesAt, phasesAt, searchSites, siteSnapshot, hasSiteLocation } from '../public/threejs/human_atlas/sites.mjs';
 import { activeNearEast, nearEastAt, nearEastForRegion, nearEastSnapshot } from '../public/threejs/human_atlas/near-east.mjs';
+import { paleohumansRemainsAt, paleohumansRemainsSnapshot } from '../public/threejs/human_atlas/paleohumans-remains.mjs';
+import { euppadDatesAt, euppadDatesSnapshot } from '../public/threejs/human_atlas/euppad-dates.mjs';
 
 const dir = new URL('../public/threejs/human_atlas/data/', import.meta.url);
 const meta = JSON.parse(readFileSync(new URL('population.json', dir)));
@@ -19,6 +21,51 @@ const comparison = JSON.parse(readFileSync(new URL('comparison.json', dir)));
 const world = REGIONS[0];
 const heritage = JSON.parse(readFileSync(new URL('unesco-sites.json', dir)));
 const nearEast = JSON.parse(readFileSync(new URL('near-east.json', dir)));
+const paleohumans = JSON.parse(readFileSync(new URL('paleohumans-remains.json', dir)));
+const euppad = JSON.parse(readFileSync(new URL('euppad-calibrated-dates.json', dir)));
+
+test('PaleoHumans catalog preserves dated-result provenance without claiming calibration', () => {
+  assert.equal(paleohumans.schemaVersion, 1);
+  assert.equal(paleohumans.source.license, 'CC BY 4.0');
+  assert.equal(paleohumans.source.sha256, 'ea528877d0c04505619020069c96f7a64770c0e2cc0523a7b5822dcfa82092ea');
+  assert.equal(paleohumans.records.length, 134);
+  assert.equal(new Set(paleohumans.records.map(record => record.id)).size, paleohumans.records.length);
+  for (const record of paleohumans.records) {
+    assert.ok(Math.abs(record.lat) <= 90 && Math.abs(record.lon) <= 180, record.id);
+    assert.ok(record.displayRange[0] <= record.displayRange[1], record.id);
+    assert.ok(Number.isFinite(record.radiocarbonBP) && Number.isFinite(record.radiocarbonRange), record.id);
+  }
+  const active = paleohumansRemainsAt(paleohumans, -12000, world);
+  assert.ok(active.length > 0);
+  const snapshot = paleohumansRemainsSnapshot(paleohumans, -12000, world);
+  assert.equal(snapshot.source.sha256, paleohumans.source.sha256);
+  assert.equal(snapshot.totalRecords, active.length);
+  assert.match(snapshot.status, /uncalibrated/i);
+  assert.match(snapshot.status, /not a calibrated calendar interval/i);
+});
+
+test('EUPPAD preserves independently calibrated target-95.4% intervals', () => {
+  assert.equal(euppad.schemaVersion, 1);
+  assert.equal(euppad.source.license, 'CC BY 4.0');
+  assert.equal(euppad.source.sha256, '53f0f1dfd198b4e8a065254b74337faf14e377b559bb09186f09dd5ddee65f46');
+  assert.equal(euppad.source.inputRows, 471);
+  assert.equal(euppad.records.length, 471);
+  assert.equal(new Set(euppad.records.map(record => record.id)).size, euppad.records.length);
+  assert.equal(new Set(euppad.records.map(record => record.siteId)).size, 123);
+  assert.ok(euppad.records.some(record => record.calibratedRanges95.length > 1));
+  for (const record of euppad.records) {
+    assert.ok(Math.abs(record.lat) <= 90 && Math.abs(record.lon) <= 180, record.id);
+    assert.ok(record.calibrationCurve === 'IntCal20' && record.calibrationMethod === 'BchronCalibrate', record.id);
+    assert.ok(record.calibratedProbability >= .954 && record.calibratedProbability < .956, record.id);
+    for (const [start, end] of record.calibratedRanges95) assert.ok(Number.isFinite(start) && Number.isFinite(end) && start <= end, record.id);
+  }
+  const active = euppadDatesAt(euppad, -14000, world);
+  assert.ok(active.length > 0);
+  const snapshot = euppadDatesSnapshot(euppad, -14000, world);
+  assert.equal(snapshot.totalRecords, active.length);
+  assert.match(snapshot.status, /IntCal20/);
+  assert.match(snapshot.status, /not continuous occupation/i);
+});
 
 test('Near East layer distinguishes Ur the city, Sumer the region, and successive political rule', () => {
   assert.equal(nearEast.schemaVersion,1);
