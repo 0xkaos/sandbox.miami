@@ -64,3 +64,5 @@ dialog{color:var(--ink);background:#16211a;border:1px solid #4a5a46;border-radiu
 .site-description,.site-mentions{border-top:1px solid var(--line);padding:15px 0}.site-description summary,.site-mentions summary{cursor:pointer;font-size:11px;color:var(--accent)}.site-description p,.site-mentions p{font-size:11px;color:var(--muted)}.site-mentions article{border-left:1px solid var(--line);padding-left:12px;margin-top:18px}.site-mentions b{font-size:11px;font-weight:500}.site-mentions article p{margin:5px 0}.site-description a{font-size:11px}.site-attribution{font-size:10px;color:var(--muted);margin-top:28px;padding-top:18px;border-top:1px solid var(--line)}#site-more{margin-top:15px}#place-info #site-read-more{display:block;margin-bottom:10px}
 @media(max-width:900px){#site-panel{grid-column:1}.site-browser{gap:20px}}
 @media(max-width:620px){.site-browser{grid-template-columns:1fr}#site-results{max-height:220px}#site-record{border-top:1px solid var(--line);padding-top:20px}#sites-dialog .dialog-content{padding:30px 22px}#sites-dialog .dialog-content h2{font-size:26px}}
+
+.inspector .population-number{font-size:42px;letter-spacing:-1.5px}

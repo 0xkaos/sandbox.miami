@@ -22,7 +22,7 @@
   <main class="workspace">
     <aside class="sidebar" id="controls-panel" aria-label="Atlas controls">
       <div class="section-label">01 / Find a moment</div>
-      <h1>One species.<br>Countless journeys.</h1>
+      <h1>Eras</h1>
       <label class="site-theme-control site-theme-control--mobile"><span>Color theme</span><select data-site-theme-picker aria-label="Color theme"><option value="forest">Forest</option><option value="tidal">Tidal</option><option value="violet">Violet</option><option value="ember">Ember</option></select></label>
       <nav class="chapters" id="chapters" aria-label="Historical chapters"></nav>
       <div class="layers-heading section-label">02 / Read the map</div>
@@ -72,9 +72,9 @@
     <aside class="inspector" aria-label="Information for this place and time">
       <div class="inspector-top"><span class="section-label" id="focus-kicker">WORLD / ESTIMATED POPULATION</span><span class="status-pill" id="data-status">Reconstruction</span></div>
       <div class="population-number" id="population-number">—</div>
-      <div class="population-description" id="population-description">people in the selected region</div>
+      <div class="population-description" id="population-description">people worldwide</div>
       <svg class="sparkline" id="population-sparkline" viewBox="0 0 260 62" role="img" aria-label="Population through time"></svg>
-      <div class="sparkline-labels"><span>10,000 BCE</span><span>2017 CE</span></div>
+      <div class="sparkline-labels"><span>10,000 BCE</span><span id="sparkline-end">2017 CE</span></div>
       <p class="estimate-note" id="estimate-note"></p>
       <section id="place-info" hidden></section>
       <section class="territory-note"><div class="section-label">Territory record</div><p id="territory-status">Loading historical boundaries…</p></section>
@@ -112,6 +112,6 @@
   <dialog id="snapshot-dialog"><div class="dialog-content"><button class="dialog-close" data-close="snapshot-dialog" aria-label="Close snapshot">×</button><span class="section-label">A MOMENT, HELD STILL</span><h2 id="snapshot-title">World snapshot</h2><p id="snapshot-subtitle" class="dialog-intro"></p><div id="snapshot-chart"></div><div id="snapshot-notes"></div><div class="snapshot-actions"><button id="download-svg" class="primary-button">Download chart · SVG</button><button id="download-csv" class="outline-button">Grid data · CSV</button><button id="download-json" class="outline-button">Snapshot · JSON</button></div><p class="export-note">Exports include dates, sources, interpolation status, and coverage limits.</p></div></dialog>
   <div id="announcement" role="status" class="sr-only" aria-live="polite"></div>
   <noscript>This atlas requires JavaScript. Read the <a href="./README.md">field notes</a> for sources and data coverage.</noscript>
-  <script type="module" src="./app.mjs?width-control=3"></script>
+  <script type="module" src="./app.mjs?era-ranges=1"></script>
 </body>
 </html>

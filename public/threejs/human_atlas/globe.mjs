@@ -42,6 +42,19 @@ function polygonPath(ctx, geometry, width, height) {
     ctx.closePath();
   }
 }
+function softPolygonPath(ctx, geometry, width, height) {
+  const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.type === 'MultiPolygon' ? geometry.coordinates : [];
+  ctx.beginPath();
+  for (const polygon of polygons) for (const ring of polygon) {
+    const points = ring.slice(0, -1).map(([lon, lat]) => [(lon + 180) / 360 * width, (90 - lat) / 180 * height]);
+    if (points.length < 3) continue;
+    const midpoint = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const first = midpoint(points.at(-1), points[0]);
+    ctx.moveTo(...first);
+    points.forEach((point, index) => ctx.quadraticCurveTo(...point, ...midpoint(point, points[(index + 1) % points.length])));
+    ctx.closePath();
+  }
+}
 function geometryPaths(geometry) {
   if (geometry.type === 'LineString') return [geometry.coordinates];
   if (geometry.type === 'MultiLineString') return geometry.coordinates;
@@ -477,7 +490,7 @@ export class HistoryGlobe {
     if(b&&b.a===b.b&&b.b<this.borders.snapshots.length-1)b={...b,b:b.a+1,t:0};
     this.currentBorderBracket=b;
     const early=EARLY_ZONES.filter(z=>year>=z.start&&year<=z.end),earlyKey=early.map(z=>z.name).join('|');
-    if(earlyKey!==this.earlyKey){this.earlyKey=earlyKey;const canvas=textureCanvas(),ctx=canvas.getContext('2d');for(const zone of early){polygonPath(ctx,zone.geometry,canvas.width,canvas.height);ctx.fillStyle=zone.color;ctx.fill('evenodd');ctx.strokeStyle=zone.color;ctx.setLineDash([3,3]);ctx.lineWidth=1.5;ctx.stroke();}this.earlyMesh.material.map?.dispose();this.earlyMesh.material.map=canvasTexture(canvas);this.earlyMesh.material.needsUpdate=true;}
+    if(earlyKey!==this.earlyKey){this.earlyKey=earlyKey;const canvas=textureCanvas(),ctx=canvas.getContext('2d');for(const zone of early){const path=zone.softEdge?softPolygonPath:polygonPath;path(ctx,zone.geometry,canvas.width,canvas.height);ctx.fillStyle=zone.color;ctx.fill('evenodd');ctx.strokeStyle=zone.color;if(zone.softEdge){ctx.save();ctx.globalAlpha=.62;ctx.filter='blur(7px)';ctx.lineWidth=7;ctx.stroke();ctx.restore();path(ctx,zone.geometry,canvas.width,canvas.height);ctx.globalAlpha=.62;ctx.setLineDash([4,4]);ctx.lineWidth=.8;ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;}else{ctx.setLineDash([3,3]);ctx.lineWidth=1.5;ctx.stroke();ctx.setLineDash([]);}}this.earlyMesh.material.map?.dispose();this.earlyMesh.material.map=canvasTexture(canvas);this.earlyMesh.material.needsUpdate=true;}
     if(!b){
       if(this.borderKey!==null){this.borderRequest++;this.borderKey=null;this.borderData=null;this.borderError=null;this.pendingBorder=null;this.queueBorder({key:null,bracket:null,data:null,textures:[this.emptyBorder,this.emptyBorder]});}
       this.updateBordersOpacity();this.callbacks.onBorders?.({early});return;

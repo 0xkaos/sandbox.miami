@@ -67,7 +67,7 @@ function setYear(year, pause = false) {
 function setRegion(region, move = true) {
   state.region = region; state.location = null; state.detail = null; globe?.clearSelection();
   if (move) globe?.focus(region);
-  series = populationSeries(meta, values, region); lastEventKey = null;
+  series = populationSeries(meta, values, REGIONS[0]); lastEventKey = null;
   renderState(); saveHash();
 }
 function chooseEvent(event) {
@@ -492,22 +492,23 @@ function boundaryDescription(status = borderLoadStatus) {
   return regional.length?`${base} ${regional.join(' and ')} detail has its own dated intervals.`:base;
 }
 function renderSparkline(year) {
-  const { path } = sparklinePath(series, 260, 57, 2), x = clamp((yearToPosition(year) - yearToPosition(-10000)) / (1 - yearToPosition(-10000)), 0, 1) * 256 + 2;
-  $('#population-sparkline').innerHTML = `<defs><linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9b177" stop-opacity=".15"/><stop offset="1" stop-color="#c9b177" stop-opacity="0"/></linearGradient></defs><path d="${path} L258,62 L2,62Z" fill="url(#trend-fill)"/><path d="${path}" fill="none" stroke="#b9b580" stroke-width="1.3"/>${year >= -10000 ? `<path d="M${x},0 V62" stroke="#d9c392" stroke-width=".8" stroke-dasharray="2 3"/>` : ''}`;
-  $('#population-sparkline').setAttribute('aria-label', `${state.region.name} population through time, logarithmic vertical axis, era-weighted time axis.`);
+  const endYear=Math.max(-10000,year),{path}=sparklinePath(series,260,57,2,'linear',endYear);
+  $('#population-sparkline').innerHTML = `<defs><linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9b177" stop-opacity=".15"/><stop offset="1" stop-color="#c9b177" stop-opacity="0"/></linearGradient></defs>${path?`<path d="${path} L258,62 L2,62Z" fill="url(#trend-fill)"/><path d="${path}" fill="none" stroke="#b9b580" stroke-width="1.3"/>`:''}`;
+  $('#population-sparkline').setAttribute('aria-label', `Global population through ${formatYear(endYear)}, linear vertical axis, era-weighted time axis.`);
+  $('#sparkline-end').textContent=formatYear(endYear);
 }
 function renderState() {
   if (!ready) return;
   const year = Math.round(state.year); lastRenderedYear = year;
   populations = populationAt(meta, values, year, buffer);
-  const stats = summarize(meta, populations, state.region), b = bracket(meta.years, year);
+  const stats = summarize(meta, populations, REGIONS[0]), b = bracket(meta.years, year);
   $('#year-label').textContent = formatYear(year);
   const slider = $('#year-slider'); slider.value = Math.round(yearToPosition(year) * 10000); slider.style.setProperty('--progress', `${yearToPosition(year)*100}%`); slider.setAttribute('aria-valuetext', formatYear(year));
   $('#population-number').textContent = formatPeople(stats.total);
-  $('#focus-kicker').textContent = `${state.region.name.toUpperCase()} / ESTIMATED POPULATION`;
-  $('#population-description').textContent = stats.total == null ? 'people are present; headcounts are not known' : 'people in the selected geographic region';
+  $('#focus-kicker').textContent = 'GLOBAL / ESTIMATED POPULATION';
+  $('#population-description').textContent = stats.total == null ? 'people are present; headcounts are not known' : 'people worldwide';
   $('#data-status').textContent = !b ? 'No headcount' : b.a === b.b ? 'Reconstruction' : 'Interpolated';
-  $('#estimate-note').textContent = !b ? 'Migration and archaeological evidence extend into deep time. The quantitative grid starts at 10,000 BCE; no population is extrapolated backward.' : b.a === b.b ? 'HYDE baseline estimate, aggregated to 1°. Small chart: log population over era-weighted time. No confidence interval is bundled.' : `Interpolated between ${formatYear(meta.years[b.a])} and ${formatYear(meta.years[b.b])}. Coarse samples can smooth over crises. Small chart uses a log axis.`;
+  $('#estimate-note').textContent = !b ? 'Migration and archaeological evidence extend into deep time. The quantitative grid starts at 10,000 BCE; no population is extrapolated backward.' : b.a === b.b ? 'HYDE baseline estimate, aggregated to 1°. Small chart: global population on a linear axis over era-weighted time. No confidence interval is bundled.' : `Interpolated between ${formatYear(meta.years[b.a])} and ${formatYear(meta.years[b.b])}. Coarse samples can smooth over crises. Small chart uses a linear axis.`;
   $('#map-caption').textContent = !b ? 'Deep time · migration evidence · population unknown' : `${state.region.name} · ${meta.cells.length.toLocaleString('en-US')} population cells · ${b.a === b.b ? 'source reconstruction' : 'interpolated reconstruction'}`;
   $('#record-label').textContent = !b ? 'Before the population record · modern coastlines' : `HYDE 3.2 · ${b.a === b.b ? formatYear(year) : `${formatYear(meta.years[b.a])} → ${formatYear(meta.years[b.b])}`}`;
   $('#height-gain-output').textContent=`${Number(state.gain.toFixed(2))}×`;
@@ -662,7 +663,7 @@ function onHover(hit) {
   const stage = $('.map-stage').getBoundingClientRect(); tooltip.style.left = `${clamp(hit.x+15,8,stage.width-tooltip.offsetWidth-8)}px`; tooltip.style.top = `${clamp(hit.y+15,8,stage.height-tooltip.offsetHeight-8)}px`;
 }
 function initializeControls() {
-  $('#chapters').innerHTML = CHAPTERS.map(c=>`<button class="chapter" data-year="${c.year}" data-focus="${c.region}"><strong>${esc(c.title)}</strong><small>${esc(c.label)} · ${formatYear(c.year)}</small></button>`).join('');
+  $('#chapters').innerHTML = CHAPTERS.map(c=>`<button class="chapter" data-year="${c.year}" data-focus="${c.region}"><strong>${esc(c.title)}</strong><small>${esc(c.label)}</small></button>`).join('');
   $('#region-nav').innerHTML = REGIONS.map(r=>`<button data-region="${r.id}" aria-pressed="${r.id===state.region.id}">${r.name}</button>`).join('');
   $('#timeline-ticks').innerHTML = TIME_KNOTS.map((y,i)=>`<span style="left:${i/(TIME_KNOTS.length-1)*100}%">${y<0?`${Math.abs(y)>=1000?Math.abs(y)/1000+'k':Math.abs(y)} BCE`:y}</span>`).join('');
   renderTimelineMarkers(); renderCatalog();
@@ -736,7 +737,7 @@ async function start() {
     const results=await Promise.all([loadJSON('population.json'),fetch('./data/population.f32').then(r=>{if(!r.ok)throw new Error('Population grid could not load.');return r.arrayBuffer();}),loadJSON('land.json'),loadJSON('borders.json'),loadJSON('comparison.json'),loadJSON('near-east.json'),loadJSON('physical.json')]);
     [meta,, ,borders,comparison,nearEastCatalog]=results;values=new Float32Array(results[1]);
     if(values.length!==meta.years.length*meta.cells.length)throw new Error('Population grid is incomplete. Reload to retry.');
-    buffer=new Float32Array(meta.cells.length);series=populationSeries(meta,values,state.region);
+    buffer=new Float32Array(meta.cells.length);series=populationSeries(meta,values,REGIONS[0]);
     try {
       globe=new HistoryGlobe($('#globe'),meta,results[2],borders,nearEastCatalog,results[6],{
         onLocation:place=>{setPlaying(false);state.location=place;state.detail=null;lastEventKey=null;renderState();},onEvent:chooseEvent,onSite:chooseSite,onRegional:chooseRegional,onEvidence:chooseEvidence,onLanguage:chooseLanguage,onHover,

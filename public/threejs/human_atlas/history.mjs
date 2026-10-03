@@ -55,15 +55,15 @@ export const SOURCES = [
 ];
 
 export const CHAPTERS = [
-  { year: -60000, title: 'Out of Africa', label: 'Earlier context', region: 'africa' },
-  { year: -45000, title: 'A peopled planet', label: 'Deep time', region: 'world' },
-  { year: -6500, title: 'Seeds & settlements', label: 'Early farming', region: 'mediterranean' },
-  { year: -3000, title: 'Across the steppe', label: 'Copper & bronze', region: 'world' },
-  { year: 100, title: 'An age of empires', label: 'Classical world', region: 'mediterranean' },
-  { year: 1348, title: 'A world in crisis', label: 'Medieval worlds', region: 'europe' },
-  { year: 1700, title: 'Connected oceans', label: 'Early modern', region: 'world' },
-  { year: 1850, title: 'The great acceleration', label: 'Industrial age', region: 'europe' },
-  { year: 2017, title: 'Seven billion lives', label: 'Latest grid', region: 'world' },
+  { year: -45000, title: 'Upper Paleolithic', label: '45,000–10,000 BCE', region: 'world' },
+  { year: -10000, title: 'Mesolithic', label: '10,000–6,500 BCE', region: 'mediterranean' },
+  { year: -6500, title: 'Neolithic / Stone Age', label: '6,500–4,000 BCE', region: 'mediterranean' },
+  { year: -4000, title: 'Chalcolithic / Copper Age', label: '4,000–2,000 BCE', region: 'world' },
+  { year: -2000, title: 'Bronze Age', label: '2,000–800 BCE', region: 'mediterranean' },
+  { year: -800, title: 'Iron Age', label: '800 BCE–100 CE', region: 'mediterranean' },
+  { year: 100, title: 'Ancient history', label: '100–750 CE', region: 'mediterranean' },
+  { year: 750, title: 'Post-classical history', label: '750–2017 CE', region: 'europe' },
+  { year: 2017, title: 'Modern', label: '2017 CE', region: 'world' },
 ];
 
 const route = (id, title, start, end, points, source, color, detail, extra = {}) => ({ id, title, start, end, points, sources: [source], color, detail, hold: 0, ...extra });
@@ -116,6 +116,6 @@ export const EVENTS = [
 
 // Broad, deliberately overlapping zones of activity, not borders or ancestries.
 export const EARLY_ZONES = [
-  { name: 'Selected early farming communities · Anatolia', start: -7400, end: -3000, color: '#81cfbf', source: 'catal', geometry: { type: 'Polygon', coordinates: [[[27,36],[30,40],[36,40],[40,37],[36,35],[27,36]]] } },
-  { name: 'Spread of farming · southeastern Europe', start: -6500, end: -3000, color: '#c3b47d', source: 'farmers', geometry: { type: 'Polygon', coordinates: [[[20,37],[27,40],[28,45],[23,49],[16,48],[18,43],[20,37]]] } },
+  { name: 'Selected early farming communities · Anatolia', start: -7400, end: -3000, color: '#81cfbf', source: 'catal', softEdge: true, geometry: { type: 'Polygon', coordinates: [[[27,36],[30,40],[36,40],[40,37],[36,35],[27,36]]] } },
+  { name: 'Spread of farming · southeastern Europe', start: -6500, end: -3000, color: '#c3b47d', source: 'farmers', softEdge: true, geometry: { type: 'Polygon', coordinates: [[[20,37],[27,40],[28,45],[23,49],[16,48],[18,43],[20,37]]] } },
 ];

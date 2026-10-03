@@ -58,10 +58,16 @@ export function makeSnapshot({ meta, populations, values, year, region, events, 
   return { data: result, svg: snapshotSVG(result, series, compare) };
 }
 function svgText(x, y, text, size = 12, fill = '#a8b3a4', more = '') { return `<text x="${x}" y="${y}" font-size="${size}" fill="${fill}" ${more}>${esc(text)}</text>`; }
-export function sparklinePath(series, width, height, margin = 0) {
-  const ys = series.map(p => Math.log10(Math.max(1, p[1]))), min = Math.min(...ys), max = Math.max(...ys);
-  const left = yearToPosition(-10000), right = yearToPosition(2017);
-  const path = series.filter(p => p[0] >= -10000 && p[0] <= 2017).map(([year, count], i) => `${i ? 'L' : 'M'}${(margin + (yearToPosition(year) - left) / (right - left) * (width - margin * 2)).toFixed(2)},${(height - margin - (Math.log10(Math.max(1, count)) - min) / Math.max(.001, max - min) * (height - margin * 2)).toFixed(2)}`).join(' ');
+export function sparklinePath(series, width, height, margin = 0, scale = 'log', endYear = 2017) {
+  const visible = series.filter(([year]) => year >= -10000 && year <= endYear);
+  const next = series.find(([year]) => year > endYear);
+  if (visible.length && visible.at(-1)[0] !== endYear && next) {
+    const previous = visible.at(-1), weight = (endYear - previous[0]) / (next[0] - previous[0]);
+    visible.push([endYear, mix(previous[1], next[1], weight)]);
+  }
+  const ys = visible.map(([, count]) => scale === 'linear' ? Math.max(0, count) : Math.log10(Math.max(1, count))), min = scale === 'linear' ? 0 : Math.min(...ys), max = Math.max(...ys, 1);
+  const left = yearToPosition(-10000), right = yearToPosition(Math.max(-10000, endYear));
+  const path = visible.map(([year, count], i) => `${i ? 'L' : 'M'}${(margin + (yearToPosition(year) - left) / Math.max(.001, right - left) * (width - margin * 2)).toFixed(2)},${(height - margin - ((scale === 'linear' ? Math.max(0, count) : Math.log10(Math.max(1, count))) - min) / Math.max(.001, max - min) * (height - margin * 2)).toFixed(2)}`).join(' ');
   return { path, min, max };
 }
 function snapshotSVG(data, series, comparison) {
