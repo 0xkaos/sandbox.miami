@@ -42,9 +42,11 @@
       <button id="research-button" class="outline-button research-browse">Explore archaeological evidence ↗</button>
       <div id="language-options" hidden><label for="language-family">Modern language family</label><select id="language-family"><option value="all">All families</option></select><p class="context-note">Dated inscriptions appear in their historical windows. Modern Glottolog reference points appear at the 2017 endpoint only. Neither maps a language territory.</p></div>
       <details class="scale-settings" open><summary>Population appearance <span>Fixed over time</span></summary>
-        <label class="range-control" for="spike-opacity"><span>Spike visibility</span><output id="spike-opacity-output" for="spike-opacity">50%</output><input id="spike-opacity" type="range" min="0" max="100" step="1" value="50"></label>
-        <label class="range-control" for="height-gain"><span>Spike height</span><output id="height-gain-output" for="height-gain">1×</output><input id="height-gain" type="range" min="0.05" max="10" step="0.05" value="1"></label>
+        <label class="range-control" for="spike-opacity"><span>Spike visibility</span><output id="spike-opacity-output" for="spike-opacity">30%</output><input id="spike-opacity" type="range" min="0" max="100" step="1" value="30"></label>
+        <label class="range-control" for="spike-width"><span>Spike width</span><output id="spike-width-output" for="spike-width">150%</output><input id="spike-width" type="range" min="0" max="200" step="1" value="150"></label>
+        <label class="range-control" for="height-gain"><span>Spike height</span><output id="height-gain-output" for="height-gain">0.2×</output><input id="height-gain" type="range" min="0.05" max="2" step="0.05" value="0.2"></label>
         <label>Height mapping<select id="height-scale"><option value="log">Fixed logarithmic</option><option value="linear">Fixed linear</option></select></label>
+        <label>Density color<select id="density-colors"><option value="current">Relative · current range</option><option value="long" selected>Fixed spectrum · 0.01–1,000+</option></select></label>
         <label for="population-resolution">Population resolution</label>
         <select id="population-resolution" aria-describedby="resolution-status"><option value="1">1° · 15,098 cells</option><option value="0.5" selected>0.5° · 52,498 cells</option><option value="0.25">0.25° · 185,566 cells</option></select>
         <p id="resolution-status" role="status">Finer HYDE grids load on demand.</p>
@@ -110,6 +112,6 @@
   <dialog id="snapshot-dialog"><div class="dialog-content"><button class="dialog-close" data-close="snapshot-dialog" aria-label="Close snapshot">×</button><span class="section-label">A MOMENT, HELD STILL</span><h2 id="snapshot-title">World snapshot</h2><p id="snapshot-subtitle" class="dialog-intro"></p><div id="snapshot-chart"></div><div id="snapshot-notes"></div><div class="snapshot-actions"><button id="download-svg" class="primary-button">Download chart · SVG</button><button id="download-csv" class="outline-button">Grid data · CSV</button><button id="download-json" class="outline-button">Snapshot · JSON</button></div><p class="export-note">Exports include dates, sources, interpolation status, and coverage limits.</p></div></dialog>
   <div id="announcement" role="status" class="sr-only" aria-live="polite"></div>
   <noscript>This atlas requires JavaScript. Read the <a href="./README.md">field notes</a> for sources and data coverage.</noscript>
-  <script type="module" src="./app.mjs"></script>
+  <script type="module" src="./app.mjs?width-control=3"></script>
 </body>
 </html>

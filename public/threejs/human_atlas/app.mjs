@@ -19,7 +19,7 @@ import { paleohumansRemainsAt, nearbyPaleohumansRemains, paleohumansRemainsSnaps
 import { euppadDatesAt, nearbyEuppadDates, euppadDatesSnapshot } from './euppad-dates.mjs';
 
 const $ = selector => document.querySelector(selector);
-const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: 1, opacity: .5, resolution: .5, languageFamily: 'all', layers: { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true, archaeology: true, languages: false, rivers: false, contours: false } };
+const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: .2, opacity: .3, spikeWidth: 1.5, resolution: .5, densityColors: 'long', languageFamily: 'all', layers: { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true, archaeology: true, languages: false, rivers: false, contours: false } };
 const data = { sources: [...SOURCES], events: [...EVENTS], migrations: [...MIGRATIONS] };
 let meta, values, comparison, borders, nearEastCatalog, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
 let detailGrid=null, resolutionRequest=0, resolutionError=null, displayedPopulationYear=null;
@@ -34,16 +34,18 @@ function readHash() {
   if (params.has('year') && Number.isFinite(y)) state.year = clamp(Math.round(y), MIN_YEAR, MAX_YEAR);
   state.region = REGIONS.find(r => r.id === params.get('region')) ?? state.region;
   if (['linear', 'log'].includes(params.get('scale'))) state.scale = params.get('scale');
-  if (params.has('gain') && Number.isFinite(Number(params.get('gain')))) state.gain = clamp(Number(params.get('gain')), .05, 10);
+  if (params.has('gain') && Number.isFinite(Number(params.get('gain')))) state.gain = clamp(Number(params.get('gain')), .05, 2);
   if (params.has('opacity') && Number.isFinite(Number(params.get('opacity')))) state.opacity = clamp(Number(params.get('opacity')), 0, 1);
+  if (params.has('spikeWidth') && Number.isFinite(Number(params.get('spikeWidth')))) state.spikeWidth = clamp(Number(params.get('spikeWidth')), 0, 2);
   if (POPULATION_RESOLUTIONS.includes(Number(params.get('resolution')))) state.resolution = Number(params.get('resolution'));
+  if (['current', 'long'].includes(params.get('densityColors'))) state.densityColors = params.get('densityColors');
   if (params.has('family')) state.languageFamily = params.get('family') || 'all';
   if (params.has('layers')) { const shown = params.get('layers').split(','); for (const key in state.layers) state.layers[key] = shown.includes(key); }
 }
 function saveHash() {
   clearTimeout(hashTimer);
   hashTimer = setTimeout(() => {
-    const p = new URLSearchParams({ year: Math.round(state.year), region: state.region.id, scale: state.scale, gain: state.gain, opacity: state.opacity, resolution: state.resolution, layers: Object.keys(state.layers).filter(k => state.layers[k]).join(',') });
+    const p = new URLSearchParams({ year: Math.round(state.year), region: state.region.id, scale: state.scale, gain: state.gain, opacity: state.opacity, spikeWidth: state.spikeWidth, resolution: state.resolution, densityColors: state.densityColors, layers: Object.keys(state.layers).filter(k => state.layers[k]).join(',') });
     if (state.languageFamily !== 'all') p.set('family', state.languageFamily);
     history.replaceState(null, '', `${location.pathname}${location.search}#${p}`);
   }, 250);
@@ -704,9 +706,11 @@ function initializeControls() {
   $('#event-category').onchange=e=>{state.category=e.target.value;renderState();};
   $('#clear-location').onclick=clearPlace;
   for (const key in state.layers) {const el=$(`#layer-${key}`);el.checked=state.layers[key];el.onchange=()=>{state.layers[key]=el.checked;globe?.setLayers(state.layers);renderState();saveHash();};}
-  $('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;$('#population-resolution').value=state.resolution;
+  $('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;$('#spike-width').value=state.spikeWidth*100;$('#spike-width-output').textContent=`${Math.round(state.spikeWidth*100)}%`;$('#density-colors').value=state.densityColors;$('#population-resolution').value=state.resolution;
   const scale=()=>{state.scale=$('#height-scale').value;state.gain=Number($('#height-gain').value);globe?.setScale(state.scale,state.gain);renderState();saveHash();};$('#height-scale').onchange=scale;$('#height-gain').oninput=scale;
+  $('#density-colors').onchange=e=>{state.densityColors=e.target.value;globe?.setDensityColorMode(state.densityColors);renderState();saveHash();};
   $('#spike-opacity').oninput=e=>{state.opacity=Number(e.target.value)/100;globe?.setPopulationOpacity(state.opacity);renderState();saveHash();};
+  $('#spike-width').oninput=e=>{state.spikeWidth=Number(e.target.value)/100;globe?.setSpikeWidth(state.spikeWidth);$('#spike-width-output').textContent=`${Math.round(state.spikeWidth*100)}%`;saveHash();};
   $('#population-resolution').onchange=e=>setPopulationResolution(Number(e.target.value));
   $('#zoom-in').onclick=()=>globe?.zoom(.82);$('#zoom-out').onclick=()=>globe?.zoom(1.2);$('#reset-view').onclick=()=>globe?.focus(state.region);
   $('#sources-button').onclick=()=>showDialog('#sources-dialog');$('#snapshot-button').onclick=snapshot;
@@ -723,7 +727,7 @@ function initializeControls() {
   addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.target.closest('input,select,textarea,button,a,summary'))return;if(e.code==='Space'){e.preventDefault();setPlaying(!state.playing);}if(e.code==='ArrowLeft'||e.code==='ArrowRight'){e.preventDefault();const step=state.year < -10000?1000:state.year<0?100:10;setYear(state.year+(e.code==='ArrowLeft'?-step:step),true);}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)setPlaying(false);});
   document.addEventListener('site-theme-change',event=>globe?.setTheme(event.detail.theme));
-  addEventListener('hashchange',()=>{setPlaying(false);readHash();for(const key in state.layers)$(`#layer-${key}`).checked=state.layers[key];if(languageCatalog)populateLanguageFamilies();$('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;setPopulationResolution(state.resolution);globe?.setPopulationOpacity(state.opacity);globe?.setLayers(state.layers);globe?.setScale(state.scale,state.gain);setRegion(state.region);});
+  addEventListener('hashchange',()=>{setPlaying(false);readHash();for(const key in state.layers)$(`#layer-${key}`).checked=state.layers[key];if(languageCatalog)populateLanguageFamilies();$('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;$('#spike-width').value=state.spikeWidth*100;$('#spike-width-output').textContent=`${Math.round(state.spikeWidth*100)}%`;$('#density-colors').value=state.densityColors;setPopulationResolution(state.resolution);globe?.setPopulationOpacity(state.opacity);globe?.setSpikeWidth(state.spikeWidth);globe?.setDensityColorMode(state.densityColors);globe?.setLayers(state.layers);globe?.setScale(state.scale,state.gain);setRegion(state.region);});
 }
 async function loadJSON(name) {const r=await fetch(`./data/${name}`);if(!r.ok)throw new Error(`${name} could not load (${r.status}).`);return r.json();}
 async function start() {
@@ -739,7 +743,7 @@ async function start() {
         onBorders:status=>{borderLoadStatus=status;if(ready){$('#territory-status').textContent=boundaryDescription(status);if(state.location)renderDetail();}},
         onError:message=>{$('#map-error').hidden=false;$('#map-error').textContent=message;setPlaying(false);},
       });
-      globe.setLayers(state.layers);globe.setScale(state.scale,state.gain);globe.setPopulationOpacity(state.opacity);globe.focus(state.region);
+      globe.setLayers(state.layers);globe.setScale(state.scale,state.gain);globe.setPopulationOpacity(state.opacity);globe.setSpikeWidth(state.spikeWidth);globe.setDensityColorMode(state.densityColors);globe.focus(state.region);
     } catch (error) {
       console.error(error);$('#map-error').hidden=false;$('#map-error').innerHTML='<strong>The 3D globe could not start.</strong><p>Enable WebGL and hardware acceleration, then reload. The timeline, sources, and population snapshots are still available.</p>';
     }

@@ -164,7 +164,7 @@ export class HistoryGlobe {
     this.theme=window.SandboxTheme?.get()??'forest';
     const palette=BASE_PALETTES[this.theme]??BASE_PALETTES.forest;
     this.layers = { population: true, territories: true, migrations: true, ancestry: true, events: true, sites: true, archaeology: true, languages: false, rivers: false, contours: false };
-    this.scale = 'log'; this.gain = 1; this.populationOpacity = 1; this.year = -3000; this.routes = []; this.phase = 0; this.disposed = false; this.dirty = true;
+    this.scale = 'log'; this.gain = 1; this.populationOpacity = 1; this.densityColorMode = 'current'; this.year = -3000; this.routes = []; this.phase = 0; this.disposed = false; this.dirty = true;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(38, 1, .005, 30);
     this.camera.position.copy(latLonVector(24, 24, 3.2));
@@ -240,7 +240,7 @@ export class HistoryGlobe {
     this.earlyMesh = new THREE.Mesh(this.surface.geometry.clone(),new THREE.MeshBasicMaterial({transparent:true,opacity:.38,depthWrite:false}));this.earlyMesh.scale.setScalar(1.002);this.scene.add(this.earlyMesh);
     this.geoCache = new Map(); this.borderKey = null; this.borderData = null; this.borderRequest = 0;
     this.dotObject = new THREE.Object3D();this.color = new THREE.Color();this.up = new THREE.Vector3(0,1,0);
-    this.spikeUniforms={heightGain:{value:1},linearHeight:{value:0},studyColors:{value:1},lowDensityColor:{value:new THREE.Color('#766846')},highDensityColor:{value:new THREE.Color('#ffe6ac')}};
+    this.spikeUniforms={heightGain:{value:.2},linearHeight:{value:0},widthGain:{value:1.5},studyColors:{value:1},lowDensityColor:{value:new THREE.Color('#766846')},highDensityColor:{value:new THREE.Color('#ffe6ac')}};
     this.setPopulationGrid(meta);
     this.routeGroup = new THREE.Group();this.eventGroup = new THREE.Group();this.siteGroup = new THREE.Group();this.regionalPlaceGroup=new THREE.Group();this.scene.add(this.routeGroup,this.eventGroup,this.siteGroup,this.regionalPlaceGroup);
     this.burialDots=new PointEvidenceLayer(this.scene,{size:4,radius:POINT_FLOOR_RADIUS,zoomLimit:2.2,opacity:.82});
@@ -299,6 +299,8 @@ export class HistoryGlobe {
     this.dirty=true;
   }
   setScale(scale,gain){this.scale=scale;this.gain=gain;this.spikeUniforms.heightGain.value=gain;this.spikeUniforms.linearHeight.value=scale==='linear'?1:0;this.dirty=true;}
+  setSpikeWidth(gain){this.spikeUniforms.widthGain.value=clamp(gain,0,2);this.dirty=true;}
+  setDensityColorMode(mode){this.densityColorMode=mode==='long'?'long':'current';this.colorKey=null;if(this.populations)this.updatePopulation(this.populations);}
   setPopulationOpacity(opacity){this.populationOpacity=clamp(opacity,0,1);this.spikes.material.opacity=this.populationOpacity;this.spikes.visible=this.layers.population&&!!this.populations&&this.populationOpacity>0;this.dirty=true;}
   setPopulationGrid(meta){
     if(this.spikes){this.scene.remove(this.spikes);this.spikes.geometry.dispose();this.spikes.material.dispose();}
@@ -310,15 +312,14 @@ export class HistoryGlobe {
     const material=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:this.populationOpacity,depthWrite:false});
     material.onBeforeCompile=shader=>{
       Object.assign(shader.uniforms,this.spikeUniforms);
-      shader.vertexShader='attribute float cellPopulation; attribute float cellArea; uniform float heightGain; uniform float linearHeight; uniform float studyColors; uniform vec3 lowDensityColor; uniform vec3 highDensityColor;\n'+shader.vertexShader;
+      shader.vertexShader='attribute float cellPopulation; attribute float cellArea; uniform float heightGain; uniform float linearHeight; uniform float widthGain; uniform float studyColors; uniform vec3 lowDensityColor; uniform vec3 highDensityColor;\n'+shader.vertexShader;
       shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
         float density=max(0.0,cellPopulation/cellArea);
         float height=heightGain*mix(0.1*log(1.0+density)/log(10.0),density*0.00015,linearHeight);
+        transformed.xz*=1.0+1.5*widthGain*smoothstep(0.0,3.0,log(1.0+density));
         transformed.y*=height;
         if(cellPopulation<=0.0)transformed=vec3(0.0);
-        #ifdef USE_INSTANCING_COLOR
-          if(studyColors<0.5)vColor=mix(lowDensityColor,highDensityColor,clamp((log(density+0.01)/log(10.0)+2.0)/5.0,0.0,1.0));
-        #endif`);
+        `);
     };
     this.spikes=new THREE.InstancedMesh(geometry,material,meta.cells.length);
     this.spikes.frustumCulled=false;this.spikes.renderOrder=3;this.spikes.visible=false;
@@ -336,9 +337,9 @@ export class HistoryGlobe {
     this.dirty=true;this.populations=populations;this.spikes.visible=!!populations&&this.layers.population&&this.populationOpacity>0;
     if(!populations)return;
     const attribute=this.spikes.geometry.attributes.cellPopulation;attribute.array.set(populations);attribute.needsUpdate=true;
-    this.spikeUniforms.studyColors.value=this.layers.ancestry?1:0;
+    this.spikeUniforms.studyColors.value=1;
     const routes=this.layers.ancestry?activeMigrations(this.routes,this.year).filter(r=>r.blend):[];
-    const key=routes.map(r=>`${r.id}:${migrationProgress(r,this.year)}`).join('|');
+    const key=`${this.year}/${this.densityColorMode}/${routes.map(r=>`${r.id}:${migrationProgress(r,this.year)}`).join('|')}`;
     if(this.colorKey===key)return;this.colorKey=key;
     const blends=routes.map(route=>{
       const b=route.blend;
@@ -349,9 +350,17 @@ export class HistoryGlobe {
       }
       return {...this.blendWeights.get(route.id),incoming:new THREE.Color(b.incoming),mixed:new THREE.Color(b.prior).lerp(new THREE.Color(b.incoming),(b.fraction??.55)*migrationProgress(route,this.year))};
     });
-    const base=new THREE.Color('#dbc28a');
+    const densityLogs=populations.map((population,index)=>Math.log10(1+Math.max(0,population/this.meta.cells[index][2])));
+    const currentMax=Math.max(...densityLogs,0.001);
+    const spectrumColors=[new THREE.Color('#355c9a'),new THREE.Color('#2b9e9c'),new THREE.Color('#85bd64'),new THREE.Color('#f0cf5c'),new THREE.Color('#e5824d'),new THREE.Color('#c84c4c')];
+    const colorAt=(colors,t)=>{
+      const position=clamp(t,0,1)*(colors.length-1),index=Math.min(colors.length-2,Math.floor(position));
+      return this.color.copy(colors[index]).lerp(colors[index+1],position-index);
+    };
     for(let i=0;i<populations.length;i++){
-      this.color.copy(base);
+      const density=Math.max(0,populations[i]/this.meta.cells[i][2]);
+      const t=this.densityColorMode==='current' ? Math.pow(densityLogs[i]/currentMax,.65) : densityLogs[i]/Math.log10(1001);
+      colorAt(spectrumColors,t);
       for(const b of blends){if(b.source[i])this.color.lerp(b.incoming,b.source[i]);if(b.target[i])this.color.lerp(b.mixed,b.target[i]);}
       this.spikes.setColorAt(i,this.color);
     }
