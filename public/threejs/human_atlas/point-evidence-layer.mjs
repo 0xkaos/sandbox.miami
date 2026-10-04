@@ -6,15 +6,6 @@ function position(lat, lon, radius) {
   return [radius * Math.cos(lat * R) * Math.cos(lon * R), radius * Math.sin(lat * R),
     -radius * Math.cos(lat * R) * Math.sin(lon * R)];
 }
-function northeastAccentEnd(lat, lon, radius) {
-  const latitude = lat * R, longitude = lon * R;
-  const head = new THREE.Vector3(...position(lat, lon, radius));
-  const outward = head.clone().normalize();
-  const north = new THREE.Vector3(-Math.sin(latitude) * Math.cos(longitude), Math.cos(latitude), Math.sin(latitude) * Math.sin(longitude));
-  const east = new THREE.Vector3(-Math.sin(longitude), 0, -Math.cos(longitude));
-  const northeast = north.add(east).normalize();
-  return head.addScaledVector(outward, .016).addScaledVector(northeast, .015).toArray();
-}
 
 function markerTexture(shape = 'circle') {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32;
@@ -85,6 +76,18 @@ export class PointEvidenceLayer {
       this.accentStems.visible = false;
       scene.add(this.accentStems);
     }
+    this.accentCaps = accentStemBaseRadius == null ? null : new THREE.Points(
+      new THREE.BufferGeometry(), new THREE.PointsMaterial({
+        size: 3.1, sizeAttenuation: false, vertexColors: true, map: markerTexture(), alphaTest: .15,
+        transparent: true, opacity: accentStemOpacity, depthWrite: false,
+      }),
+    );
+    if (this.accentCaps) {
+      this.accentCaps.frustumCulled = false;
+      this.accentCaps.renderOrder = 5.2;
+      this.accentCaps.visible = false;
+      scene.add(this.accentCaps);
+    }
   }
 
   setRecords(records) {
@@ -97,6 +100,8 @@ export class PointEvidenceLayer {
     const accentRecords = this.accentStems ? records.filter(record => record.accentStem) : [];
     const accentPositions = this.accentStems ? new Float32Array(accentRecords.length * 6) : null;
     const accentColors = this.accentStems ? new Float32Array(accentRecords.length * 6) : null;
+    const accentCapPositions = this.accentCaps ? new Float32Array(accentRecords.length * 6) : null;
+    const accentCapColors = this.accentCaps ? new Float32Array(accentRecords.length * 6) : null;
     const color = new THREE.Color();
     records.forEach((record, index) => {
       const head = position(record.lat, record.lon, this.radius);
@@ -117,14 +122,20 @@ export class PointEvidenceLayer {
     });
     accentRecords.forEach((record, index) => {
       const head = position(record.lat, record.lon, this.radius);
+      const tip = position(record.lat, record.lon, this.accentStemBaseRadius);
       color.set(record.color ?? '#e4c28d');
       accentPositions.set(head, index * 6);
-      accentPositions.set(northeastAccentEnd(record.lat, record.lon, this.radius), index * 6 + 3);
+      accentPositions.set(tip, index * 6 + 3);
+      accentCapPositions.set(head, index * 6);
+      accentCapPositions.set(tip, index * 6 + 3);
       for (let end = 0; end < 2; end++) {
         const offset = index * 6 + end * 3;
         accentColors[offset] = color.r;
         accentColors[offset + 1] = color.g;
         accentColors[offset + 2] = color.b;
+        accentCapColors[offset] = color.r;
+        accentCapColors[offset + 1] = color.g;
+        accentCapColors[offset + 2] = color.b;
       }
     });
     const old = this.mesh.geometry;
@@ -147,9 +158,17 @@ export class PointEvidenceLayer {
       this.accentStems.geometry.setAttribute('color', new THREE.BufferAttribute(accentColors, 3));
       oldAccentStems.dispose();
     }
+    if (this.accentCaps) {
+      const oldAccentCaps = this.accentCaps.geometry;
+      this.accentCaps.geometry = new THREE.BufferGeometry();
+      this.accentCaps.geometry.setAttribute('position', new THREE.BufferAttribute(accentCapPositions, 3));
+      this.accentCaps.geometry.setAttribute('color', new THREE.BufferAttribute(accentCapColors, 3));
+      oldAccentCaps.dispose();
+    }
     this.mesh.visible = this.enabled && records.length > 0 && this.cameraDistance <= this.zoomLimit;
     if (this.stems) this.stems.visible = this.mesh.visible;
     if (this.accentStems) this.accentStems.visible = this.mesh.visible && accentRecords.length > 0;
+    if (this.accentCaps) this.accentCaps.visible = this.mesh.visible && accentRecords.length > 0;
   }
 
   setVisible(enabled, cameraDistance) {
@@ -159,6 +178,7 @@ export class PointEvidenceLayer {
     this.mesh.visible = enabled && this.records.length > 0 && cameraDistance <= this.zoomLimit;
     if (this.stems) this.stems.visible = this.mesh.visible;
     if (this.accentStems) this.accentStems.visible = this.mesh.visible && this.records.some(record => record.accentStem);
+    if (this.accentCaps) this.accentCaps.visible = this.mesh.visible && this.records.some(record => record.accentStem);
     return old !== this.mesh.visible;
   }
 
@@ -184,6 +204,10 @@ export class PointEvidenceLayer {
     if (this.accentStems) {
       this.scene.remove(this.accentStems);
       this.accentStems.geometry.dispose(); this.accentStems.material.dispose();
+    }
+    if (this.accentCaps) {
+      this.scene.remove(this.accentCaps);
+      this.accentCaps.geometry.dispose(); this.accentCaps.material.map.dispose(); this.accentCaps.material.dispose();
     }
   }
 }
