@@ -25,7 +25,7 @@ const data = { sources: [...SOURCES], events: [...EVENTS], migrations: [...MIGRA
 let meta, values, comparison, borders, nearEastCatalog, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
 let detailGrid=null, resolutionRequest=0, resolutionError=null, displayedPopulationYear=null;
 let siteCatalog=null, siteLoadError=null, lastSiteKey=null, catalogSelection=null, siteResultLimit=40;
-let europeCatalog=null, burialCatalog=null, levantCatalog=null, euroevolCatalog=null, contextCatalog=null, aadrCatalog=null, paleohumansCatalog=null, euppadCatalog=null, roadCatalog=null, roadSpeciesCatalog=null, roadNeanderthalCatalog=null, roadExplorerSource='all', roadExplorerStatus='Loading all published regions…', roadCategories=new Set(['lithics','human-remains','fauna','plant-remains','other']), roadNeanderthalMarkers=true, archaeologySources=new Set(['burials','contexts','aadr','paleohumans','euppad','road','levant','pleiades']), pleiadesKinds=new Set(['settlement','built or funerary site','archaeological site']), pleiadesCatalog=null, languageCatalog=null, languageAttestationCatalog=null;
+let europeCatalog=null, burialCatalog=null, levantCatalog=null, euroevolCatalog=null, contextCatalog=null, aadrCatalog=null, paleohumansCatalog=null, euppadCatalog=null, roadCatalog=null, roadSpeciesCatalog=null, roadNeanderthalCatalog=null, roadExplorerStatus='Loading all published regions…', roadCategories=new Set(['lithics','human-remains','fauna','plant-remains','other']), roadNeanderthalMarkers=true, archaeologySources=new Set(['burials','contexts','aadr','paleohumans','euppad','road','pleiades']), pleiadesKinds=new Set(['settlement','built or funerary site','archaeological site']), pleiadesCatalog=null, languageCatalog=null, languageAttestationCatalog=null;
 let researchIndex=[], researchById=new Map(), researchSelection=null, researchResultLimit=40, researchLoadErrors=[], evidenceKey=null, pleiadesKey=null, catalogRevision=0;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -350,8 +350,6 @@ function renderRoadExplorer(year) {
   const panel=$('#road-explorer-panel');panel.hidden=!state.layers.archaeology;
   if(panel.hidden)return;
   const active=roadRecordsAt(roadCatalog,year,null).filter(record=>roadCategories.has(record.displayCategory));
-  const partition=$('#road-partition');
-  if(partition.value!==roadExplorerSource)partition.value=roadExplorerSource;
   for(const checkbox of $('#road-filters').querySelectorAll('input'))checkbox.checked=roadCategories.has(checkbox.value);
   $('#road-neanderthal-marker').checked=roadNeanderthalMarkers;
   $('#road-explorer-status').textContent=roadExplorerStatus+(roadCatalog?` ${active.length.toLocaleString('en-US')} matching record${active.length===1?'':'s'} at ${formatYear(year)} after symbol filters.`:'');
@@ -380,35 +378,24 @@ function enrichRoadSpecies(catalog) {
   }
   return catalog;
 }
-async function loadRoadExplorer(source=roadExplorerSource) {
-  const label=source==='pilot'?'bundled Near East pilot':source==='all'?'all published regions':source.replaceAll('-',' ');
-  roadExplorerSource=source;roadExplorerStatus=`Loading ${label} coverage…`;renderRoadExplorer(Math.round(state.year));
+async function loadRoadExplorer() {
+  const label='all published regions';
+  roadExplorerStatus=`Loading ${label} coverage…`;renderRoadExplorer(Math.round(state.year));
   try{
     let catalog;
-    if(source==='all'){
-      const manifestResponse=await fetch('./data/road/v1/manifest.json');
-      if(!manifestResponse.ok)throw new Error(`Bundled coverage manifest could not load (${manifestResponse.status}).`);
-      const manifest=await manifestResponse.json();
-      const partitions=Array.isArray(manifest.partitions)?manifest.partitions.filter(partition=>typeof partition?.id==='string'&&typeof partition?.localFile==='string'):[];
-      if(!partitions.length)throw new Error('The published ROAD coverage manifest contains no partitions.');
-      const catalogs=await Promise.all(partitions.map(async partition=>{
-        const response=await fetch(`./data/road/v1/${encodeURIComponent(partition.localFile)}`);
-        if(!response.ok)throw new Error(`${partition.id.replaceAll('-',' ')} coverage could not load (${response.status}).`);
-        const result=await response.json();
-        if(!validRoadCatalog(result))throw new Error(`${partition.id.replaceAll('-',' ')} coverage has an invalid explorer contract.`);
-        return result;
-      }));
-      catalog={records:catalogs.flatMap(result=>result.records)};
-    }else{
-      const url=source==='pilot'?'./data/road-near-east-pilot.json':`./data/road/v1/${encodeURIComponent(source)}.json`;
-      const response=await fetch(url);
-      if(!response.ok){
-        const detail=await response.json().catch(()=>null);
-        if(response.status===404)throw new Error('This bundled coverage partition is unavailable. The currently loaded coverage remains on the map.');
-        throw new Error(detail?.error??`Coverage could not load (${response.status}).`);
-      }
-      catalog=await response.json();
-    }
+    const manifestResponse=await fetch('./data/road/v1/manifest.json');
+    if(!manifestResponse.ok)throw new Error(`Bundled coverage manifest could not load (${manifestResponse.status}).`);
+    const manifest=await manifestResponse.json();
+    const partitions=Array.isArray(manifest.partitions)?manifest.partitions.filter(partition=>typeof partition?.id==='string'&&typeof partition?.localFile==='string'):[];
+    if(!partitions.length)throw new Error('The published ROAD coverage manifest contains no partitions.');
+    const catalogs=await Promise.all(partitions.map(async partition=>{
+      const response=await fetch(`./data/road/v1/${encodeURIComponent(partition.localFile)}`);
+      if(!response.ok)throw new Error(`${partition.id.replaceAll('-',' ')} coverage could not load (${response.status}).`);
+      const result=await response.json();
+      if(!validRoadCatalog(result))throw new Error(`${partition.id.replaceAll('-',' ')} coverage has an invalid explorer contract.`);
+      return result;
+    }));
+    catalog={records:catalogs.flatMap(result=>result.records)};
     if(!validRoadCatalog(catalog))throw new Error('The ROAD partition has an invalid explorer contract.');
     roadCatalog=enrichRoadSpecies(catalog);roadExplorerStatus=`Loaded ${catalog.records.length.toLocaleString('en-US')} ROAD assemblage records from ${label}. Species labels are explicit ROAD human-remains classifications at the same locality, not assemblage-level taxon assignments.`;
     catalogRevision++;rebuildResearchIndex();renderState();
@@ -470,7 +457,7 @@ async function loadResearch() {
     catch(error){researchLoadErrors.push(`${label}: ${error.message}`);}
     catalogRevision++;rebuildResearchIndex();renderState();
   }));
-  loadRoadExplorer('all');
+  loadRoadExplorer();
 }
 function updateEvidenceView(year) {
   if(!globe)return;
@@ -618,7 +605,6 @@ function renderState() {
   $('#spike-opacity-output').textContent=`${Math.round(state.opacity*100)}%`;
   $('#height-gain').setAttribute('aria-valuetext',`${Number(state.gain.toFixed(2))} times height`);
   $('#spike-opacity').setAttribute('aria-valuetext',`${Math.round(state.opacity*100)} percent visible`);
-  $('.map-key').classList.toggle('study-colors',state.layers.migrations);
   document.querySelectorAll('.density-key i').forEach((el,i)=>{el.style.height=`${Math.max(1,32*densityHeight([.01,1,10,100,1000][i],state.scale)/densityHeight(1000,state.scale))}px`;});
   const chapter = CHAPTERS.reduce((a, c) => Math.abs(c.year - year) < Math.abs(a.year - year) ? c : a, CHAPTERS[0]);
   $('#chapter-title').textContent = chapter.title;
@@ -674,7 +660,6 @@ function updatePopulationView(year) {
   if(state.location&&grid!==previousGrid)state.location.index=globe.nearestCell(state.location.lat,state.location.lon);
   const held=displayedPopulationYear!=null&&displayedPopulationYear!==year;
   $('#resolution-status').textContent=status?(status+(held?` Spikes still show ${formatYear(displayedPopulationYear)}.`:` Showing the ${grid.resolutionDegrees}° grid.`)):`${grid.cells.length.toLocaleString('en-US')} cells · ${grid.resolutionDegrees}° grid. Finer grids use more graphics power.`;
-  $('#scale-caption').textContent=`Fixed ${state.scale==='log'?'log':'linear'} height · ${Number(state.gain.toFixed(2))}× · ${grid.resolutionDegrees}° cells`;
   if(populations)$('#map-caption').textContent=`${state.region.name} · ${grid.cells.length.toLocaleString('en-US')} population cells · ${grid.resolutionDegrees}°${held?` · displaying ${formatYear(displayedPopulationYear)}`:''}`;
 }
 async function setPopulationResolution(resolution) {
@@ -771,6 +756,8 @@ function onHover(hit) {
 function initializeControls() {
   $('#chapters').innerHTML = CHAPTERS.map(c=>`<button class="chapter" data-year="${c.year}" data-focus="${c.region}"><strong>${esc(c.title)}</strong><small>${esc(c.label)}</small></button>`).join('');
   $('#region-nav').innerHTML = REGIONS.map(r=>`<button data-region="${r.id}" aria-pressed="${r.id===state.region.id}">${r.name}</button>`).join('');
+  $('#archaeology-sources input[value="levant"]').checked=archaeologySources.has('levant');
+  $('.road-select')?.remove();
   $('#road-filters').append($('#road-neanderthal-filter'));
   $('#timeline-ticks').innerHTML = TIME_KNOTS.map((y,i)=>`<span style="left:${i/(TIME_KNOTS.length-1)*100}%">${y<0?`${Math.abs(y)>=1000?Math.abs(y)/1000+'k':Math.abs(y)} BCE`:y}</span>`).join('');
   renderTimelineMarkers(); renderCatalog();
@@ -795,7 +782,6 @@ function initializeControls() {
   $('#europe-focus').onclick=()=>setRegion(REGIONS.find(r=>r.id==='europe'));
   $('#archaeology-browse').onclick=()=>openResearch({scope:'time'});
   $('#archaeology-sources').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)archaeologySources.add(event.target.value);else archaeologySources.delete(event.target.value);renderState();};
-  $('#road-partition').onchange=event=>loadRoadExplorer(event.target.value);
   $('#road-filters').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)roadCategories.add(event.target.value);else roadCategories.delete(event.target.value);renderState();};
   $('#road-neanderthal-marker').onchange=event=>{roadNeanderthalMarkers=event.target.checked;renderState();};
   $('#pleiades-filters').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)pleiadesKinds.add(event.target.value);else pleiadesKinds.delete(event.target.value);renderState();};
