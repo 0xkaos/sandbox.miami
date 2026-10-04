@@ -6,6 +6,15 @@ function position(lat, lon, radius) {
   return [radius * Math.cos(lat * R) * Math.cos(lon * R), radius * Math.sin(lat * R),
     -radius * Math.cos(lat * R) * Math.sin(lon * R)];
 }
+function northeastAccentEnd(lat, lon, radius) {
+  const latitude = lat * R, longitude = lon * R;
+  const head = new THREE.Vector3(...position(lat, lon, radius));
+  const outward = head.clone().normalize();
+  const north = new THREE.Vector3(-Math.sin(latitude) * Math.cos(longitude), Math.cos(latitude), Math.sin(latitude) * Math.sin(longitude));
+  const east = new THREE.Vector3(-Math.sin(longitude), 0, -Math.cos(longitude));
+  const northeast = north.add(east).normalize();
+  return head.addScaledVector(outward, .016).addScaledVector(northeast, .015).toArray();
+}
 
 function markerTexture(shape = 'circle') {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32;
@@ -109,8 +118,8 @@ export class PointEvidenceLayer {
     accentRecords.forEach((record, index) => {
       const head = position(record.lat, record.lon, this.radius);
       color.set(record.color ?? '#e4c28d');
-      accentPositions.set(position(record.lat, record.lon, this.accentStemBaseRadius), index * 6);
-      accentPositions.set(head, index * 6 + 3);
+      accentPositions.set(head, index * 6);
+      accentPositions.set(northeastAccentEnd(record.lat, record.lon, this.radius), index * 6 + 3);
       for (let end = 0; end < 2; end++) {
         const offset = index * 6 + end * 3;
         accentColors[offset] = color.r;

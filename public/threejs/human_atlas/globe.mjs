@@ -279,11 +279,11 @@ export class HistoryGlobe {
       'archaeological site':new PointEvidenceLayer(this.scene,{size:3.4,radius:POINT_FLOOR_RADIUS,zoomLimit:1.58,opacity:.84,shape:'triangle'}),
     };
     this.roadDots={
-      lithics:new PointEvidenceLayer(this.scene,{size:3.3,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.036,accentStemOpacity:.96,zoomLimit:2.05,opacity:.84,shape:'circle'}),
-      'human-remains':new PointEvidenceLayer(this.scene,{size:4.2,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.036,accentStemOpacity:.96,zoomLimit:2.05,opacity:.92,shape:'diamond'}),
-      fauna:new PointEvidenceLayer(this.scene,{size:4,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.036,accentStemOpacity:.96,zoomLimit:2.05,opacity:.88,shape:'triangle'}),
-      'plant-remains':new PointEvidenceLayer(this.scene,{size:3.8,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.036,accentStemOpacity:.96,zoomLimit:2.05,opacity:.88,shape:'square'}),
-      other:new PointEvidenceLayer(this.scene,{size:3.1,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.036,accentStemOpacity:.96,zoomLimit:2.05,opacity:.72,shape:'circle'}),
+      lithics:new PointEvidenceLayer(this.scene,{size:3.3,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.0248,accentStemOpacity:.96,zoomLimit:2.05,opacity:.84,shape:'circle'}),
+      'human-remains':new PointEvidenceLayer(this.scene,{size:4.2,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.0248,accentStemOpacity:.96,zoomLimit:2.05,opacity:.92,shape:'diamond'}),
+      fauna:new PointEvidenceLayer(this.scene,{size:4,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.0248,accentStemOpacity:.96,zoomLimit:2.05,opacity:.88,shape:'triangle'}),
+      'plant-remains':new PointEvidenceLayer(this.scene,{size:3.8,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.0248,accentStemOpacity:.96,zoomLimit:2.05,opacity:.88,shape:'square'}),
+      other:new PointEvidenceLayer(this.scene,{size:3.1,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.0248,accentStemOpacity:.96,zoomLimit:2.05,opacity:.72,shape:'circle'}),
     };
     this.languageDots=new PointEvidenceLayer(this.scene,{size:4,radius:1.027,stemBaseRadius:POINT_FLOOR_RADIUS,stemOpacity:.58,zoomLimit:2.2,opacity:.8});
     this.regionalLabels=[];
