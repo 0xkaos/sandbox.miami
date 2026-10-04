@@ -25,7 +25,7 @@ const data = { sources: [...SOURCES], events: [...EVENTS], migrations: [...MIGRA
 let meta, values, comparison, borders, nearEastCatalog, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
 let detailGrid=null, resolutionRequest=0, resolutionError=null, displayedPopulationYear=null;
 let siteCatalog=null, siteLoadError=null, lastSiteKey=null, catalogSelection=null, siteResultLimit=40;
-let europeCatalog=null, burialCatalog=null, levantCatalog=null, euroevolCatalog=null, contextCatalog=null, aadrCatalog=null, paleohumansCatalog=null, euppadCatalog=null, roadCatalog=null, roadSpeciesCatalog=null, roadNeanderthalCatalog=null, roadExplorerSource='all', roadExplorerStatus='Loading all published regions…', roadCategories=new Set(['lithics','human-remains','fauna','plant-remains','other']), archaeologySources=new Set(['burials','contexts','aadr','paleohumans','euppad','road','levant','pleiades']), pleiadesKinds=new Set(['settlement','built or funerary site','archaeological site']), pleiadesCatalog=null, languageCatalog=null, languageAttestationCatalog=null;
+let europeCatalog=null, burialCatalog=null, levantCatalog=null, euroevolCatalog=null, contextCatalog=null, aadrCatalog=null, paleohumansCatalog=null, euppadCatalog=null, roadCatalog=null, roadSpeciesCatalog=null, roadNeanderthalCatalog=null, roadExplorerSource='all', roadExplorerStatus='Loading all published regions…', roadCategories=new Set(['lithics','human-remains','fauna','plant-remains','other']), roadNeanderthalMarkers=true, archaeologySources=new Set(['burials','contexts','aadr','paleohumans','euppad','road','levant','pleiades']), pleiadesKinds=new Set(['settlement','built or funerary site','archaeological site']), pleiadesCatalog=null, languageCatalog=null, languageAttestationCatalog=null;
 let researchIndex=[], researchById=new Map(), researchSelection=null, researchResultLimit=40, researchLoadErrors=[], evidenceKey=null, pleiadesKey=null, catalogRevision=0;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -353,6 +353,7 @@ function renderRoadExplorer(year) {
   const partition=$('#road-partition');
   if(partition.value!==roadExplorerSource)partition.value=roadExplorerSource;
   for(const checkbox of $('#road-filters').querySelectorAll('input'))checkbox.checked=roadCategories.has(checkbox.value);
+  $('#road-neanderthal-marker').checked=roadNeanderthalMarkers;
   $('#road-explorer-status').textContent=roadExplorerStatus+(roadCatalog?` ${active.length.toLocaleString('en-US')} matching record${active.length===1?'':'s'} at ${formatYear(year)} after symbol filters.`:'');
 }
 function validRoadCatalog(catalog) {
@@ -473,7 +474,7 @@ async function loadResearch() {
 }
 function updateEvidenceView(year) {
   if(!globe)return;
-  const key=`${year}/${catalogRevision}/${state.languageFamily}/${state.layers.archaeology}/${state.layers.languages}/${[...archaeologySources].join(',')}/${[...roadCategories].join(',')}/${[...pleiadesKinds].join(',')}`;
+  const key=`${year}/${catalogRevision}/${state.languageFamily}/${state.layers.archaeology}/${state.layers.languages}/${[...archaeologySources].join(',')}/${[...roadCategories].join(',')}/${roadNeanderthalMarkers}/${[...pleiadesKinds].join(',')}`;
   if(key===evidenceKey)return;
   evidenceKey=key;
   const burialPoints=state.layers.archaeology&&archaeologySources.has('burials')?burialSitesAt(burialCatalog,year).map((group,index)=>({
@@ -493,7 +494,7 @@ function updateEvidenceView(year) {
     id:`euppad:${record.id}`,kind:'euppad',lat:record.lat,lon:record.lon,record,color:'#79b9c4',uncertaintyYears:Math.max(...record.calibratedRanges95.map(([start,end])=>end-start)),
   })) :[];
   const roadPoints=state.layers.archaeology&&archaeologySources.has('road')?roadRecordsAt(roadCatalog,year).filter(record=>roadCategories.has(record.displayCategory)).map(record=>({
-    id:`road:${record.id}`,kind:'road',lat:record.lat,lon:record.lon,record,displayCategory:record.displayCategory,color:{lithics:'#d99b49','human-remains':'#e7dfc9',fauna:'#55afaa','plant-remains':'#83bb76',other:'#929697'}[record.displayCategory]??'#929697',accentStem:record.humanSpecies?.includes('neanderthalensis'),uncertaintyYears:record.displayRange[1]-record.displayRange[0],
+    id:`road:${record.id}`,kind:'road',lat:record.lat,lon:record.lon,record,displayCategory:record.displayCategory,color:{lithics:'#d99b49','human-remains':'#e7dfc9',fauna:'#55afaa','plant-remains':'#83bb76',other:'#929697'}[record.displayCategory]??'#929697',accentStem:roadNeanderthalMarkers&&record.humanSpecies?.includes('neanderthalensis'),uncertaintyYears:record.displayRange[1]-record.displayRange[0],
   })) :[];
   const levantPoints=state.layers.archaeology&&archaeologySources.has('levant')?activeLevantSiteIndices(levantCatalog,year).map(index=>{
     const row=levantCatalog.sites[index];return{id:`levant:${row[0]}`,kind:'levant',index,lat:row[5],lon:row[6],color:'#8fc0a6'};
@@ -770,6 +771,7 @@ function onHover(hit) {
 function initializeControls() {
   $('#chapters').innerHTML = CHAPTERS.map(c=>`<button class="chapter" data-year="${c.year}" data-focus="${c.region}"><strong>${esc(c.title)}</strong><small>${esc(c.label)}</small></button>`).join('');
   $('#region-nav').innerHTML = REGIONS.map(r=>`<button data-region="${r.id}" aria-pressed="${r.id===state.region.id}">${r.name}</button>`).join('');
+  $('#road-filters').insertAdjacentElement('afterend',$('#road-neanderthal-filter'));
   $('#timeline-ticks').innerHTML = TIME_KNOTS.map((y,i)=>`<span style="left:${i/(TIME_KNOTS.length-1)*100}%">${y<0?`${Math.abs(y)>=1000?Math.abs(y)/1000+'k':Math.abs(y)} BCE`:y}</span>`).join('');
   renderTimelineMarkers(); renderCatalog();
   $('#chapters').onclick = event => { const b=event.target.closest('[data-year]');if(!b)return;setPlaying(false);state.year=Number(b.dataset.year);setRegion(REGIONS.find(r=>r.id===b.dataset.focus));document.body.classList.remove('controls-open');$('#mobile-controls').setAttribute('aria-expanded','false'); };
@@ -795,6 +797,7 @@ function initializeControls() {
   $('#archaeology-sources').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)archaeologySources.add(event.target.value);else archaeologySources.delete(event.target.value);renderState();};
   $('#road-partition').onchange=event=>loadRoadExplorer(event.target.value);
   $('#road-filters').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)roadCategories.add(event.target.value);else roadCategories.delete(event.target.value);renderState();};
+  $('#road-neanderthal-marker').onchange=event=>{roadNeanderthalMarkers=event.target.checked;renderState();};
   $('#pleiades-filters').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)pleiadesKinds.add(event.target.value);else pleiadesKinds.delete(event.target.value);renderState();};
   $('#archaeology-list').onclick=e=>{const b=e.target.closest('[data-evidence]');if(b){const row=researchById.get(b.dataset.evidence);if(row)chooseEvidence(evidenceFromRow(row));}};
   $('#research-button').onclick=()=>openResearch();
