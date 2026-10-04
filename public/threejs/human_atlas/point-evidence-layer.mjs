@@ -7,19 +7,31 @@ function position(lat, lon, radius) {
     -radius * Math.cos(lat * R) * Math.sin(lon * R)];
 }
 
-function dotTexture() {
+function markerTexture(shape = 'circle') {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(16, 16, 13, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffffff'; ctx.beginPath();
+  if (shape === 'diamond') { ctx.moveTo(16, 2); ctx.lineTo(30, 16); ctx.lineTo(16, 30); ctx.lineTo(2, 16); }
+  else if (shape === 'triangle') { ctx.moveTo(16, 3); ctx.lineTo(30, 28); ctx.lineTo(2, 28); }
+  else if (shape === 'square') ctx.rect(4, 4, 24, 24);
+  else ctx.arc(16, 16, 13, 0, Math.PI * 2);
+  ctx.closePath(); ctx.fill();
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
+}
+
+function uncertaintyOpacity(years) {
+  if (!Number.isFinite(years) || years < 10_000) return 1;
+  if (years <= 20_000) return .7;
+  if (years <= 100_000) return .45;
+  return .25;
 }
 
 // Site and language datasets keep their own meanings and chronology. This
 // class only renders dated/selected point records and supports local picking.
 export class PointEvidenceLayer {
   constructor(scene, { size = 4, radius = 1.014, zoomLimit = 2.3, opacity = .88,
-    stemBaseRadius = null, stemOpacity = .58 } = {}) {
+    stemBaseRadius = null, stemOpacity = .58, shape = 'circle' } = {}) {
     this.scene = scene;
     this.radius = radius;
     this.stemBaseRadius = stemBaseRadius;
@@ -27,11 +39,16 @@ export class PointEvidenceLayer {
     this.records = [];
     this.enabled = false;
     this.cameraDistance = Infinity;
-    this.texture = dotTexture();
-    this.mesh = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({
+    this.texture = markerTexture(shape);
+    const material = new THREE.PointsMaterial({
       size, sizeAttenuation: false, vertexColors: true, map: this.texture,
       alphaTest: .15, transparent: true, opacity, depthWrite: false,
-    }));
+    });
+    material.onBeforeCompile = shader => {
+      shader.vertexShader = `attribute float uncertaintyOpacity; varying float vUncertaintyOpacity;\n${shader.vertexShader}`.replace('#include <begin_vertex>', '#include <begin_vertex>\nvUncertaintyOpacity = uncertaintyOpacity;');
+      shader.fragmentShader = `varying float vUncertaintyOpacity;\n${shader.fragmentShader}`.replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.a *= vUncertaintyOpacity;');
+    };
+    this.mesh = new THREE.Points(new THREE.BufferGeometry(), material);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 5;
     this.mesh.visible = false;
@@ -53,6 +70,7 @@ export class PointEvidenceLayer {
     this.records = records;
     const positions = new Float32Array(records.length * 3);
     const colors = new Float32Array(records.length * 3);
+    const opacities = new Float32Array(records.length);
     const stemPositions = this.stems ? new Float32Array(records.length * 6) : null;
     const stemColors = this.stems ? new Float32Array(records.length * 6) : null;
     const color = new THREE.Color();
@@ -61,6 +79,7 @@ export class PointEvidenceLayer {
       positions.set(head, index * 3);
       color.set(record.color ?? '#e4c28d');
       colors[index * 3] = color.r; colors[index * 3 + 1] = color.g; colors[index * 3 + 2] = color.b;
+      opacities[index] = uncertaintyOpacity(record.uncertaintyYears);
       if (stemPositions) {
         stemPositions.set(position(record.lat, record.lon, this.stemBaseRadius), index * 6);
         stemPositions.set(head, index * 6 + 3);
@@ -76,6 +95,7 @@ export class PointEvidenceLayer {
     this.mesh.geometry = new THREE.BufferGeometry();
     this.mesh.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     this.mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    this.mesh.geometry.setAttribute('uncertaintyOpacity', new THREE.BufferAttribute(opacities, 1));
     old.dispose();
     if (this.stems) {
       const oldStems = this.stems.geometry;

@@ -6,7 +6,7 @@ export { pointInAtlasRegion };
 
 const normalize = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
 
-export function buildResearchIndex({ burials = null, levant = null, euroevol = null, pleiades = null, contexts = null, aadr = null, paleohumans = null, euppad = null } = {}) {
+export function buildResearchIndex({ burials = null, levant = null, euroevol = null, pleiades = null, contexts = null, aadr = null, paleohumans = null, euppad = null, road = null } = {}) {
   const rows = [];
   for (const event of burials?.events ?? []) rows.push({
     id: `burial:${event.id}`, kind: 'burial', title: event.site,
@@ -89,6 +89,14 @@ export function buildResearchIndex({ burials = null, levant = null, euroevol = n
     lat: record.lat, lon: record.lon, ranges: record.calibratedRanges95,
     search: normalize([record.siteId, record.site, record.labId, record.method, record.feature,
       record.material, record.references, record.radiocarbonBP, record.id].filter(Boolean).join(' ')),
+    record,
+  });
+  for (const record of road?.records ?? []) rows.push({
+    id: `road:${record.id}`, kind: 'road', title: record.assemblage,
+    subtitle: `${record.locality} · ROAD assemblage observation${record.humanSpecies?.length ? ` · explicit remains: ${record.humanSpecies.join(', ')}` : ''}`,
+    lat: record.lat, lon: record.lon, ranges: [record.displayRange],
+    search: normalize([record.assemblage, record.locality, record.evidenceCategory, ...(record.humanSpecies ?? []),
+      record.correlation, record.ageRangeBP.join(' '), record.id].filter(Boolean).join(' ')),
     record,
   });
   return rows;

@@ -24,7 +24,9 @@ function associationAt(catalog, row, year, options) {
 function eligible(catalog, row, year, region, options) {
   if (!pointInAtlasRegion(row[P.lat], row[P.lon], region) || !associationAt(catalog, row, year, options)) return false;
   if (options.preciseOnly && !row[P.precision]) return false;
-  if (options.kind && catalog.dictionary.kinds[row[P.kind]] !== options.kind) return false;
+  const kind = catalog.dictionary.kinds[row[P.kind]];
+  if (options.kind && kind !== options.kind) return false;
+  if (options.kinds && !options.kinds.has(kind)) return false;
   if (options.typeCode && !row[P.types].some(index => catalog.dictionary.types[index].code === options.typeCode)) return false;
   if (Number.isFinite(options.maxAccuracyRadiusMeters) &&
       (row[P.accuracyRadiusMeters] == null || row[P.accuracyRadiusMeters] > options.maxAccuracyRadiusMeters)) return false;

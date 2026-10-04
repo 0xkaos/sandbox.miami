@@ -11,6 +11,7 @@ import { sitesAt, phasesAt, searchSites, siteSnapshot, hasSiteLocation } from '.
 import { activeNearEast, nearEastAt, nearEastForRegion, nearEastSnapshot } from '../public/threejs/human_atlas/near-east.mjs';
 import { paleohumansRemainsAt, paleohumansRemainsSnapshot } from '../public/threejs/human_atlas/paleohumans-remains.mjs';
 import { euppadDatesAt, euppadDatesSnapshot } from '../public/threejs/human_atlas/euppad-dates.mjs';
+import { roadRecordsAt, roadSnapshot } from '../public/threejs/human_atlas/road-pilot.mjs';
 
 const dir = new URL('../public/threejs/human_atlas/data/', import.meta.url);
 const meta = JSON.parse(readFileSync(new URL('population.json', dir)));
@@ -23,6 +24,9 @@ const heritage = JSON.parse(readFileSync(new URL('unesco-sites.json', dir)));
 const nearEast = JSON.parse(readFileSync(new URL('near-east.json', dir)));
 const paleohumans = JSON.parse(readFileSync(new URL('paleohumans-remains.json', dir)));
 const euppad = JSON.parse(readFileSync(new URL('euppad-calibrated-dates.json', dir)));
+const road = JSON.parse(readFileSync(new URL('road-near-east-pilot.json', dir)));
+const roadSpecies = JSON.parse(readFileSync(new URL('road-human-remains-species.json', dir)));
+const roadNeanderthals = JSON.parse(readFileSync(new URL('road-neanderthal-localities.json', dir)));
 
 test('PaleoHumans catalog preserves dated-result provenance without claiming calibration', () => {
   assert.equal(paleohumans.schemaVersion, 1);
@@ -65,6 +69,50 @@ test('EUPPAD preserves independently calibrated target-95.4% intervals', () => {
   assert.equal(snapshot.totalRecords, active.length);
   assert.match(snapshot.status, /IntCal20/);
   assert.match(snapshot.status, /not continuous occupation/i);
+});
+
+test('ROAD pilot preserves correlation-derived ranges without calibration or taxon claims', () => {
+  assert.equal(road.schemaVersion, 1);
+  assert.equal(road.records.length, 474);
+  assert.equal(road.source.license, null);
+  assert.match(road.source.interpretation, /not a calibrated date/i);
+  assert.match(road.source.interpretation, /does not identify a hominin taxon/i);
+  assert.equal(new Set(road.records.map(record => record.id)).size, road.records.length);
+  const categories = road.records.reduce((counts, record) => {
+    counts[record.displayCategory] = (counts[record.displayCategory] ?? 0) + 1;
+    return counts;
+  }, {});
+  assert.deepEqual(categories, { lithics: 252, fauna: 32, 'plant-remains': 154, other: 20, 'human-remains': 16 });
+  for (const record of road.records) {
+    assert.ok(Math.abs(record.lat) <= 90 && Math.abs(record.lon) <= 180, record.id);
+    assert.ok(record.ageRangeBP[0] <= record.ageRangeBP[1], record.id);
+    assert.ok(record.displayRange[0] <= record.displayRange[1], record.id);
+    assert.match(record.displayCategory, /^(lithics|human-remains|fauna|plant-remains|other)$/);
+  }
+  const active = roadRecordsAt(road, -45000, world);
+  assert.ok(active.length > 0);
+  const snapshot = roadSnapshot(road, -45000, world);
+  assert.equal(snapshot.totalRecords, active.length);
+  assert.match(snapshot.status, /not a calibrated date/i);
+});
+
+test('ROAD species index preserves explicit locality classifications without assigning assemblage taxa', () => {
+  assert.equal(roadSpecies.schemaVersion, 1);
+  assert.equal(roadSpecies.records.length, 491);
+  assert.match(roadSpecies.source.interpretation, /do not identify the taxon of every assemblage/i);
+  assert.equal(new Set(roadSpecies.records.map(record => record.locality)).size, roadSpecies.records.length);
+  assert.equal(roadSpecies.records.filter(record => record.humanSpecies.includes('neanderthalensis')).length, 105);
+  for (const record of roadSpecies.records) {
+    if (record.lat != null || record.lon != null) assert.ok(Number.isFinite(record.lat) && Number.isFinite(record.lon) && Math.abs(record.lat) <= 90 && Math.abs(record.lon) <= 180, record.locality);
+    assert.ok(Number.isInteger(record.humanRemains) && record.humanRemains > 0, record.locality);
+    assert.ok(Array.isArray(record.humanSpecies), record.locality);
+  }
+  assert.equal(roadNeanderthals.records.length, 105);
+  assert.ok(roadNeanderthals.records.some(record => record.locality === 'Amud Cave' && record.humanSpecies === undefined));
+  for (const record of roadNeanderthals.records) {
+    assert.ok(record.explicitHumanRemains > 0 && Array.isArray(record.assemblages), record.locality);
+    if (Array.isArray(record.displayRange)) assert.ok(record.displayRange.length === 2 && record.displayRange[0] <= record.displayRange[1], record.locality);
+  }
 });
 
 test('Near East layer distinguishes Ur the city, Sumer the region, and successive political rule', () => {
@@ -233,6 +281,7 @@ test('boundary snapshots exist, have valid geometries, and expose held/unknown d
 test('every story and migration has provenance and valid dates', () => {
   const sourceIds=new Set(SOURCES.map(s=>s.id));
   for(const item of [...EVENTS,...MIGRATIONS]){assert.ok(item.start<=item.end);assert.ok(item.sources.length);assert.ok(item.sources.every(id=>sourceIds.has(id)));}
+  for(const id of ['gilgamesh','pentateuch','septuagint','iliad','gothic-bible'])assert.ok(EVENTS.some(event=>event.id===id));
   const selected=nearbyEvents(EVENTS,1348,REGIONS.find(r=>r.id==='europe'),'plague');assert.ok(selected.some(e=>e.id==='black-death'));assert.ok(selected.every(e=>e.kind==='plague'));
   const steppe=MIGRATIONS.find(r=>r.id==='steppe-west');assert.equal(migrationProgress(steppe,-4000),0);assert.equal(migrationProgress(steppe,-2000),1);assert.ok(activeMigrations(MIGRATIONS,-3000).includes(steppe));assert.ok(!activeMigrations(MIGRATIONS,1000).includes(steppe));
 });

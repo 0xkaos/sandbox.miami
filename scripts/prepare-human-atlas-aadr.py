@@ -17,11 +17,32 @@ OUT = ROOT / 'public/threejs/human_atlas/data/aadr-archaeological-samples.json'
 CACHE = Path('/tmp/human-atlas-source/aadr-v66.p1.PUB.anno')
 FILE_ID = '13994515'
 URL = f'https://dataverse.harvard.edu/api/access/datafile/{FILE_ID}'
-LABEL_PATTERN = re.compile(
-    r'(?:^|_)(?:yamnaya|catacomb|sintashta|urnfield|hallstatt|la[ _-]?tene|'
-    r'wielbark|mycenaean|phoenician|punic|etruscan|roman)(?:_|$)',
-    re.IGNORECASE,
-)
+NOTABLE_GROUPS = {
+    'Altai_Neanderthal': 'Altai Neanderthal',
+    'ChagyrskayaCave_Neanderthal': 'Chagyrskaya Cave Neanderthal',
+    'France_GrotteMandrin_Neanderthal': 'Grotte Mandrin Neanderthal',
+    'GoyetCave_Neanderthal': 'Goyet Cave Neanderthal',
+    'LesCottescave_Neanderthal': 'Les Cottes Cave Neanderthal',
+    'Mezmaiskayacave_Neanderthal': 'Mezmaiskaya Cave Neanderthal',
+    'Russia_Denisova': 'Denisova',
+    'Russia_Denisova_Neanderthal_Mix': 'Denisova Neanderthal mix',
+    'Russia_DenisovaCave': 'Denisova Cave',
+    'Russia_DenisovaCave_MPleistocene': 'Denisova Cave Middle Pleistocene',
+    'SpyCave_Neanderthal': 'Spy Cave Neanderthal',
+    'VindijaCave_Neanderthal': 'Vindija Cave Neanderthal',
+    'Austria_N_LBK': 'Austria Neolithic LBK',
+    'Russia_Samara_EBA_Yamnaya': 'Samara Early Bronze Age Yamnaya',
+    'Czechia_EBA_CordedWare': 'Czechia Early Bronze Age Corded Ware',
+    'Czechia_BellBeaker': 'Czechia Bell Beaker',
+    'Russia_Chelyabinsk_MLBA_Sintashta': 'Chelyabinsk Middle/Late Bronze Age Sintashta',
+    'Czechia_EBA_Unetice': 'Czechia Early Bronze Age Unetice',
+    'Czechia_IA_LaTene': 'Czechia Iron Age La Tene',
+    'Austria_Avar': 'Austria Avar',
+    'Sweden_Viking': 'Sweden Viking',
+    'England_Saxon': 'England Saxon',
+    'Serbia_IronGates_Mesolithic': 'Serbia Iron Gates Mesolithic',
+    'Turkey_N': 'Turkey Neolithic',
+}
 RANGE_PATTERN = re.compile(r'(\d+)\s*-\s*(\d+)\s+(cal)?(BCE|CE)')
 SINGLE_YEAR_PATTERN = re.compile(r'^(\d+)\s+(BCE|CE)$')
 
@@ -60,6 +81,7 @@ def columns(fieldnames):
         'publication': 'Publication abbreviation', 'publicationDOI': 'doi for publication',
         'dateType': 'Method for Determining Date', 'dateMeanBP': 'Date mean in BP',
         'dateStandardDeviationBP': 'Date standard deviation in BP', 'fullDate': 'Full Date One',
+        'molecularSex': 'Molecular Sex', 'mtDNA': 'mtDNA haplogroup', 'yDNA': 'Y haplogroup  in ISOGG',
     }
     result = {}
     for name, prefix in prefixes.items():
@@ -77,12 +99,10 @@ def main():
     records = []
     for row in rows:
         label = row.get('Group ID', '').strip()
-        if not LABEL_PATTERN.search(label):
-            continue
         site = row.get('Locality', '').strip()
         latitude, longitude = row.get('Latitude', '').strip(), row.get('Longitude', '').strip()
         date, date_basis = date_range(row[column['fullDate']], row[column['dateMeanBP']], row[column['dateStandardDeviationBP']])
-        if not site or not latitude or not longitude or date is None:
+        if not site or latitude in {'.', '..'} or longitude in {'.', '..'} or date is None or row[column['dateType']].strip().lower() == 'modern':
             continue
         records.append({
             'id': row[column['id']],
@@ -99,12 +119,26 @@ def main():
             'skeletalElement': row[column['skeletalElement']].strip(),
             'publication': row[column['publication']].strip(),
             'publicationDOI': row[column['publicationDOI']].strip(),
+            'molecularSex': row[column['molecularSex']].strip(),
+            'mtDNAHaplogroup': row[column['mtDNA']].strip(),
+            'yDNAHaplogroup': row[column['yDNA']].strip(),
+            'assessment': row.get('ASSESSMENT', '').strip(),
+            'notableGroupId': label if label in NOTABLE_GROUPS else None,
         })
     records.sort(key=lambda record: (record['dateRange'][0], record['sourceLabel'], record['id']))
     if not records:
         raise ValueError('No selected AADR records were imported')
     if len({record['id'] for record in records}) != len(records):
         raise ValueError('AADR Genetic IDs are not unique')
+    notable_groups = []
+    for group_id, title in NOTABLE_GROUPS.items():
+        members = [record for record in records if record['notableGroupId'] == group_id]
+        if members:
+            notable_groups.append({
+                'id': group_id, 'title': title, 'sampleCount': len(members),
+                'localityCount': len({record['site'] for record in members}),
+                'directDateCount': sum(record['dateType'].startswith('Direct:') for record in members),
+            })
     result = {
         'schemaVersion': 1,
         'source': {
@@ -112,8 +146,9 @@ def main():
             'repository': 'https://doi.org/10.7910/DVN/FFIDCW',
             'file': 'v66.p1_1240K.aadr.PUB.anno', 'fileId': FILE_ID,
             'url': URL, 'sha256': digest, 'license': 'CC0 1.0',
-            'selection': 'Rows with a source Group ID containing Yamnaya, Catacomb, Sintashta, Urnfield, Hallstatt, La Tene, Wielbark, Mycenaean, Phoenician, Punic, Etruscan, or Roman.',
-            'interpretation': 'One record is an AADR ancient individual sample at a source locality. The retained Group ID is a source-provided archaeological or chronological label. It does not define a culture boundary, population, language, or route.',
+            'selection': 'All rows with a source locality, coordinates, a usable source date, and a date method not marked Modern. Source Group IDs are retained verbatim; no Group ID is excluded for being unfamiliar, regional, or non-curated.',
+            'interpretation': 'One record is an AADR ancient individual sample at a source locality. The retained Group ID is a source-provided label, displayed as reported. It is not expanded into an independently mapped territory, population size, language, or route.',
+            'notableGroups': notable_groups,
         },
         'records': records,
     }

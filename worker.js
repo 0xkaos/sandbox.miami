@@ -5,6 +5,8 @@ const SP500_HOLDINGS_KEY = 'sp500-impact/spy-holdings.json';
 const SP500_CONSTITUENTS_KEY = 'sp500-impact/sp500-constituents.json';
 const SP500_DIAGNOSTICS_KEY = 'sp500-impact/fmp-diagnostics.json';
 const SP500_USAGE_PREFIX = 'sp500-impact/usage/';
+const ROAD_R2_PREFIX = 'human-atlas/road/v1/';
+const ROAD_PARTITIONS = new Set(['central-asia', 'europe', 'north-africa', 'other', 'west-asia']);
 const FMP_BASE_URL = 'https://financialmodelingprep.com/stable';
 const SP500_WEIGHT_SYMBOL = 'SPY';
 const SP500_DEFAULT_DAILY_CALL_CAP = 220;
@@ -49,6 +51,33 @@ function apiJson(payload, status = 200, extraHeaders = {}) {
       ...extraHeaders
     }
   });
+}
+
+async function handleRoadExplorer(request, env) {
+  if (request.method !== 'GET') {
+    return apiJson({ error: 'Method not allowed' }, 405, { Allow: 'GET' });
+  }
+  if (!env.BUCKET) {
+    return apiJson({ error: "R2 Bucket 'BUCKET' not bound.", code: 'MISSING_BUCKET' }, 503);
+  }
+  const partition = new URL(request.url).searchParams.get('partition');
+  if (partition !== null && !ROAD_PARTITIONS.has(partition)) {
+    return apiJson({ error: 'Unknown ROAD partition.', code: 'UNKNOWN_PARTITION' }, 404);
+  }
+  const key = `${ROAD_R2_PREFIX}${partition ? `${partition}.json` : 'manifest.json'}`;
+  try {
+    const object = await env.BUCKET.get(key);
+    if (!object) return apiJson({ error: 'ROAD explorer data has not been published.', code: 'NOT_PUBLISHED' }, 404);
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set('Content-Type', 'application/json; charset=utf-8');
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    headers.set('ETag', object.httpEtag);
+    headers.set('X-Content-Type-Options', 'nosniff');
+    return new Response(object.body, { headers });
+  } catch {
+    return apiJson({ error: 'ROAD explorer data could not be read.', code: 'R2_READ_FAILED' }, 503);
+  }
 }
 
 async function readR2Json(bucket, key) {
@@ -963,6 +992,9 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname.replace(/\/$/, '') === '/api/acoustic-states') return handleAcousticStates(request, env);
+
+    // Public, allowlisted ROAD discovery partitions. No user-supplied R2 key is accepted.
+    if (url.pathname === '/api/human-atlas/road') return handleRoadExplorer(request, env);
 
     // API Endpoint: /api/sp500-impact/diagnostics
     if (url.pathname === '/api/sp500-impact/diagnostics') {

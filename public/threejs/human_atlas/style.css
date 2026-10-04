@@ -15,19 +15,21 @@ dialog{color:var(--ink);background:#16211a;border:1px solid #4a5a46;border-radiu
 @media(max-width:520px){#snapshot-chart{overflow-x:auto}#snapshot-chart svg{width:640px;max-width:none}.dialog-close{margin-right:-12px}}
 .study-colors .density-key i{background:#dbc28a}.density-key i:nth-child(2){background:#9a8b62}.study-colors .density-key i:nth-child(2){background:#dbc28a}
 
-#near-east-panel,#europe-panel,#archaeology-panel,#language-panel{border-top:1px solid var(--line);padding-top:17px;margin-top:18px}
+#near-east-panel,#europe-panel,#road-explorer-panel,#archaeology-panel,#language-panel{border-top:1px solid var(--line);padding-top:17px;margin-top:18px}
 #near-east-panel .section-label span,#europe-panel .section-label span,#archaeology-panel .section-label span,#language-panel .section-label span{color:var(--accent)}
-#near-east-panel .context-note,#europe-panel .context-note,#archaeology-panel .context-note,#language-panel .context-note{margin:9px 0 11px}
+#near-east-panel .context-note,#europe-panel .context-note,#road-explorer-panel .context-note,#archaeology-panel .context-note,#language-panel .context-note{margin:9px 0 11px}
 .regional-card{width:100%;display:flex;align-items:flex-start;gap:10px;text-align:left;padding:8px 0;border-bottom:1px solid #ffffff10}
 .regional-card i{display:block;flex:none;width:8px;height:8px;margin-top:5px;background:var(--regional-color);border-radius:50%;box-shadow:0 0 7px var(--regional-color)}
 .regional-card b{display:block;color:var(--ink);font-size:11px;font-weight:500;line-height:1.35}
 .regional-card small{display:block;color:var(--muted);font-size:9px;margin-top:3px;line-height:1.3}
 .regional-card:hover b,.regional-card:focus-visible b{color:var(--accent)}
 .territory-chip small{display:block;color:var(--muted);font-size:10px;line-height:1.5;margin:4px 0 8px}
-.near-east-label{color:#f0dbad;text-shadow:0 1px 4px #0b150c,0 0 9px #0b150c;font-size:8px;letter-spacing:.5px;transform:translate(-50%,9px)}
-@media(max-width:900px){#near-east-panel,#europe-panel,#archaeology-panel,#language-panel{grid-column:1}}
+.near-east-label{color:#f0dbad;text-shadow:0 1px 3px #0b150c,0 0 6px #0b150c;font-size:6px;letter-spacing:.4px;transform:translate(-50%,7px)}
+@media(max-width:900px){#near-east-panel,#europe-panel,#road-explorer-panel,#archaeology-panel,#language-panel{grid-column:1}}
 
 .swatch.archaeology{background:#dbad77;border-radius:50%}.swatch.languages{background:#91b8aa;transform:rotate(45deg)}.swatch.rivers{background:#74b9c1;border-radius:50%}.swatch.contours{background:#a4b58b}
+.evidence-key .road-marker{width:8px;height:8px;background:#929697;box-shadow:0 0 7px #929697}.evidence-key .road-lithics{background:#d99b49;box-shadow:0 0 7px #d99b49;border-radius:50%}.evidence-key .road-human{background:#e7dfc9;box-shadow:0 0 7px #e7dfc9;transform:rotate(45deg)}.evidence-key .road-fauna{background:#55afaa;box-shadow:0 0 7px #55afaa;clip-path:polygon(50% 0,100% 100%,0 100%)}.evidence-key .road-plant{background:#83bb76;box-shadow:0 0 7px #83bb76}.evidence-key .road-other{border-radius:50%}
+.road-select{display:grid;gap:5px;color:var(--muted);font-size:10px;margin:10px 0}.road-select select{min-width:0;width:100%}#archaeology-sources,#road-filters,#pleiades-filters{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;margin:0;padding:8px 0;border:0;border-top:1px solid var(--line);color:var(--muted);font-size:10px}#archaeology-sources legend,#road-filters legend,#pleiades-filters legend{padding:0;color:var(--ink);font-size:10px}#archaeology-sources label,#road-filters label,#pleiades-filters label{display:flex;align-items:center;gap:5px;line-height:1.25}.dataset-filters{border-top:1px solid var(--line);padding-top:9px;margin-top:9px}.dataset-filters summary{font-size:10px;color:var(--accent);cursor:pointer}.dataset-filters .context-note{font-size:9px}
 .research-browse{width:100%;margin:7px 0 0;padding:10px 6px;font-size:10px}
 #language-options{padding:13px 0;border-top:1px solid var(--line);margin-top:13px}
 #language-options label{display:block;color:var(--muted);font-size:10px;margin-bottom:7px}

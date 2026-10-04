@@ -52,7 +52,9 @@ def rivers(cache):
         paths = [geometry['coordinates']] if geometry['type'] == 'LineString' else geometry['coordinates']
         paths = [rounded(line) for path in paths if len(path) > 1 if len(line := simplify_line(path)) > 1]
         if paths:
-            features.append({'type': 'Feature', 'properties': {}, 'geometry': {'type': 'MultiLineString', 'coordinates': paths}})
+            name = (feature.get('properties') or {}).get('name_en') or (feature.get('properties') or {}).get('name')
+            properties = {'name': name} if name else {}
+            features.append({'type': 'Feature', 'properties': properties, 'geometry': {'type': 'MultiLineString', 'coordinates': paths}})
     return {'type': 'FeatureCollection', 'features': features}
 
 
