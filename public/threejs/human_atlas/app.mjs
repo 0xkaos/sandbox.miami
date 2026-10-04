@@ -771,7 +771,7 @@ function onHover(hit) {
 function initializeControls() {
   $('#chapters').innerHTML = CHAPTERS.map(c=>`<button class="chapter" data-year="${c.year}" data-focus="${c.region}"><strong>${esc(c.title)}</strong><small>${esc(c.label)}</small></button>`).join('');
   $('#region-nav').innerHTML = REGIONS.map(r=>`<button data-region="${r.id}" aria-pressed="${r.id===state.region.id}">${r.name}</button>`).join('');
-  $('#road-filters').insertAdjacentElement('afterend',$('#road-neanderthal-filter'));
+  $('#road-filters').append($('#road-neanderthal-filter'));
   $('#timeline-ticks').innerHTML = TIME_KNOTS.map((y,i)=>`<span style="left:${i/(TIME_KNOTS.length-1)*100}%">${y<0?`${Math.abs(y)>=1000?Math.abs(y)/1000+'k':Math.abs(y)} BCE`:y}</span>`).join('');
   renderTimelineMarkers(); renderCatalog();
   $('#chapters').onclick = event => { const b=event.target.closest('[data-year]');if(!b)return;setPlaying(false);state.year=Number(b.dataset.year);setRegion(REGIONS.find(r=>r.id===b.dataset.focus));document.body.classList.remove('controls-open');$('#mobile-controls').setAttribute('aria-expanded','false'); };
