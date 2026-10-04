@@ -31,10 +31,11 @@ function uncertaintyOpacity(years) {
 // class only renders dated/selected point records and supports local picking.
 export class PointEvidenceLayer {
   constructor(scene, { size = 4, radius = 1.014, zoomLimit = 2.3, opacity = .88,
-    stemBaseRadius = null, stemOpacity = .58, shape = 'circle' } = {}) {
+    stemBaseRadius = null, stemOpacity = .58, accentStemBaseRadius = null, accentStemOpacity = .9, shape = 'circle' } = {}) {
     this.scene = scene;
     this.radius = radius;
     this.stemBaseRadius = stemBaseRadius;
+    this.accentStemBaseRadius = accentStemBaseRadius;
     this.zoomLimit = zoomLimit;
     this.records = [];
     this.enabled = false;
@@ -64,6 +65,17 @@ export class PointEvidenceLayer {
       this.stems.visible = false;
       scene.add(this.stems);
     }
+    this.accentStems = accentStemBaseRadius == null ? null : new THREE.LineSegments(
+      new THREE.BufferGeometry(), new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: accentStemOpacity, depthWrite: false,
+      }),
+    );
+    if (this.accentStems) {
+      this.accentStems.frustumCulled = false;
+      this.accentStems.renderOrder = 5.1;
+      this.accentStems.visible = false;
+      scene.add(this.accentStems);
+    }
   }
 
   setRecords(records) {
@@ -73,6 +85,9 @@ export class PointEvidenceLayer {
     const opacities = new Float32Array(records.length);
     const stemPositions = this.stems ? new Float32Array(records.length * 6) : null;
     const stemColors = this.stems ? new Float32Array(records.length * 6) : null;
+    const accentRecords = this.accentStems ? records.filter(record => record.accentStem) : [];
+    const accentPositions = this.accentStems ? new Float32Array(accentRecords.length * 6) : null;
+    const accentColors = this.accentStems ? new Float32Array(accentRecords.length * 6) : null;
     const color = new THREE.Color();
     records.forEach((record, index) => {
       const head = position(record.lat, record.lon, this.radius);
@@ -91,6 +106,18 @@ export class PointEvidenceLayer {
         }
       }
     });
+    accentRecords.forEach((record, index) => {
+      const head = position(record.lat, record.lon, this.radius);
+      color.set(record.color ?? '#e4c28d');
+      accentPositions.set(position(record.lat, record.lon, this.accentStemBaseRadius), index * 6);
+      accentPositions.set(head, index * 6 + 3);
+      for (let end = 0; end < 2; end++) {
+        const offset = index * 6 + end * 3;
+        accentColors[offset] = color.r;
+        accentColors[offset + 1] = color.g;
+        accentColors[offset + 2] = color.b;
+      }
+    });
     const old = this.mesh.geometry;
     this.mesh.geometry = new THREE.BufferGeometry();
     this.mesh.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -104,8 +131,16 @@ export class PointEvidenceLayer {
       this.stems.geometry.setAttribute('color', new THREE.BufferAttribute(stemColors, 3));
       oldStems.dispose();
     }
+    if (this.accentStems) {
+      const oldAccentStems = this.accentStems.geometry;
+      this.accentStems.geometry = new THREE.BufferGeometry();
+      this.accentStems.geometry.setAttribute('position', new THREE.BufferAttribute(accentPositions, 3));
+      this.accentStems.geometry.setAttribute('color', new THREE.BufferAttribute(accentColors, 3));
+      oldAccentStems.dispose();
+    }
     this.mesh.visible = this.enabled && records.length > 0 && this.cameraDistance <= this.zoomLimit;
     if (this.stems) this.stems.visible = this.mesh.visible;
+    if (this.accentStems) this.accentStems.visible = this.mesh.visible && accentRecords.length > 0;
   }
 
   setVisible(enabled, cameraDistance) {
@@ -114,6 +149,7 @@ export class PointEvidenceLayer {
     this.cameraDistance = cameraDistance;
     this.mesh.visible = enabled && this.records.length > 0 && cameraDistance <= this.zoomLimit;
     if (this.stems) this.stems.visible = this.mesh.visible;
+    if (this.accentStems) this.accentStems.visible = this.mesh.visible && this.records.some(record => record.accentStem);
     return old !== this.mesh.visible;
   }
 
@@ -135,6 +171,10 @@ export class PointEvidenceLayer {
     if (this.stems) {
       this.scene.remove(this.stems);
       this.stems.geometry.dispose(); this.stems.material.dispose();
+    }
+    if (this.accentStems) {
+      this.scene.remove(this.accentStems);
+      this.accentStems.geometry.dispose(); this.accentStems.material.dispose();
     }
   }
 }

@@ -493,7 +493,7 @@ function updateEvidenceView(year) {
     id:`euppad:${record.id}`,kind:'euppad',lat:record.lat,lon:record.lon,record,color:'#79b9c4',uncertaintyYears:Math.max(...record.calibratedRanges95.map(([start,end])=>end-start)),
   })) :[];
   const roadPoints=state.layers.archaeology&&archaeologySources.has('road')?roadRecordsAt(roadCatalog,year).filter(record=>roadCategories.has(record.displayCategory)).map(record=>({
-    id:`road:${record.id}`,kind:'road',lat:record.lat,lon:record.lon,record,displayCategory:record.displayCategory,color:{lithics:'#d99b49','human-remains':'#e7dfc9',fauna:'#55afaa','plant-remains':'#83bb76',other:'#929697'}[record.displayCategory]??'#929697',uncertaintyYears:record.displayRange[1]-record.displayRange[0],
+    id:`road:${record.id}`,kind:'road',lat:record.lat,lon:record.lon,record,displayCategory:record.displayCategory,color:{lithics:'#d99b49','human-remains':'#e7dfc9',fauna:'#55afaa','plant-remains':'#83bb76',other:'#929697'}[record.displayCategory]??'#929697',accentStem:record.humanSpecies?.includes('neanderthalensis'),uncertaintyYears:record.displayRange[1]-record.displayRange[0],
   })) :[];
   const levantPoints=state.layers.archaeology&&archaeologySources.has('levant')?activeLevantSiteIndices(levantCatalog,year).map(index=>{
     const row=levantCatalog.sites[index];return{id:`levant:${row[0]}`,kind:'levant',index,lat:row[5],lon:row[6],color:'#8fc0a6'};
