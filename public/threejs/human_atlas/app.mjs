@@ -17,6 +17,7 @@ import { contextsAt, nearbyContexts, archaeologicalContextsSnapshot } from './ar
 import { aadrSamplesAt, nearbyAadrSamples, aadrSamplesSnapshot } from './aadr-samples.mjs';
 import { paleohumansRemainsAt, nearbyPaleohumansRemains, paleohumansRemainsSnapshot } from './paleohumans-remains.mjs';
 import { euppadDatesAt, nearbyEuppadDates, euppadDatesSnapshot } from './euppad-dates.mjs';
+import { p3k14cDatesAt, nearbyP3k14cDates } from './p3k14c-dates.mjs';
 import { roadRecordsAt, nearbyRoadRecords, roadSnapshot } from './road-pilot.mjs';
 
 const $ = selector => document.querySelector(selector);
@@ -25,7 +26,7 @@ const data = { sources: [...SOURCES], events: [...EVENTS], migrations: [...MIGRA
 let meta, values, comparison, borders, nearEastCatalog, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
 let detailGrid=null, resolutionRequest=0, resolutionError=null, displayedPopulationYear=null;
 let siteCatalog=null, siteLoadError=null, lastSiteKey=null, catalogSelection=null, siteResultLimit=40;
-let europeCatalog=null, burialCatalog=null, levantCatalog=null, euroevolCatalog=null, contextCatalog=null, aadrCatalog=null, paleohumansCatalog=null, euppadCatalog=null, roadCatalog=null, roadSpeciesCatalog=null, roadNeanderthalCatalog=null, roadExplorerStatus='Loading all published regions…', roadCategories=new Set(['lithics','human-remains','fauna','plant-remains','other']), roadNeanderthalMarkers=true, archaeologySources=new Set(['burials','contexts','aadr','paleohumans','euppad','road','pleiades']), pleiadesKinds=new Set(['settlement','built or funerary site','archaeological site']), pleiadesCatalog=null, languageCatalog=null, languageAttestationCatalog=null;
+let europeCatalog=null, burialCatalog=null, levantCatalog=null, euroevolCatalog=null, contextCatalog=null, aadrCatalog=null, paleohumansCatalog=null, euppadCatalog=null, p3k14cCatalog=null, p3k14cLoadState='idle', roadCatalog=null, roadSpeciesCatalog=null, roadNeanderthalCatalog=null, roadExplorerStatus='Loading all published regions…', roadCategories=new Set(['lithics','human-remains','fauna','plant-remains','other']), roadNeanderthalMarkers=true, archaeologySources=new Set(['burials','contexts','aadr','paleohumans','euppad','road','pleiades']), p3k14cMaterials=new Set(['plant','faunal','shell','human','other','unspecified']), p3k14cMinimumLocationAccuracy=2, pleiadesKinds=new Set(['settlement','built or funerary site','archaeological site']), pleiadesCatalog=null, languageCatalog=null, languageAttestationCatalog=null;
 let researchIndex=[], researchById=new Map(), researchSelection=null, researchResultLimit=40, researchLoadErrors=[], evidenceKey=null, pleiadesKey=null, catalogRevision=0;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -150,6 +151,8 @@ function aadrColor(label) {
   let hash=0;for(const char of label??'')hash=(hash*31+char.charCodeAt(0))|0;
   return `hsl(${(hash>>>0)%360},46%,66%)`;
 }
+const P3K14C_MATERIAL_COLORS={plant:'#83bb76',faunal:'#55afaa',shell:'#e3b475',human:'#e7dfc9',other:'#bd9bd5',unspecified:'#929697'};
+const p3k14cColor=materialClass=>P3K14C_MATERIAL_COLORS[materialClass]??P3K14C_MATERIAL_COLORS.unspecified;
 const BURIAL_AADR_LABELS={'Corded Ware':'Czechia_EBA_CordedWare','Bell Beaker':'Czechia_BellBeaker'};
 function burialColor(traditions) {
   const tradition=Array.isArray(traditions)?traditions.includes('Corded Ware')?'Corded Ware':'Bell Beaker':traditions;
@@ -237,6 +240,11 @@ function evidenceHTML(item, compact=false) {
     const ranges=record.calibratedRanges95.map(([start,end])=>`${formatYear(start)}–${formatYear(end)}`).join(' · ');
     const searchURL=`https://www.google.com/search?q=${encodeURIComponent(`"${record.site}" "${record.feature||record.siteId}" radiocarbon`)}`;
     return `<span class="section-label">EUPPAD · CALIBRATED RADIOCARBON DATE</span><h2>${esc(record.site)}</h2><div class="research-phase"><b>${esc(record.siteId)}</b><small>${esc(record.feature||'feature not recorded')}</small><p>${esc(record.references||'Reference not recorded')}</p></div><p><strong>Published result:</strong> ${esc(record.radiocarbonBP)} ± ${esc(record.radiocarbonSd)} BP${record.material?` · ${esc(record.material)}`:''}${record.method?` · ${esc(record.method)}`:''}${record.labId?` · lab ${esc(record.labId)}`:''}.</p><p><strong>IntCal20 calibration:</strong> target-95.4% highest-density interval${record.calibratedRanges95.length===1?'':'s'} ${ranges}. ${record.calibratedRanges95.length>1?'Separate segments preserve the multi-modal posterior.':''}</p><p class="context-note">Each date was independently calibrated with Bchron and IntCal20. It dates one sampled material, not continuous occupation, a culture boundary, ancestry, language, or population.</p><a href="${esc(searchURL)}" target="_blank" rel="noopener">Search site and date context ↗</a>`;
+  }
+  if(item.kind==='p3k14c'){
+    const ranges=record.calibratedRanges95.map(([start,end])=>`${formatYear(start)}–${formatYear(end)}`).join(' · ');
+    const searchURL=`https://www.google.com/search?q=${encodeURIComponent(`"${record.site}" "${record.labId}" ${record.radiocarbonBP} radiocarbon`)}`;
+    return `<span class="section-label">P3K14C · CALIBRATED RADIOCARBON DETERMINATION</span><h2>${esc(record.site)}</h2><p>${esc(record.country||'country not recorded')} · coordinate precision ${esc(record.locationAccuracy)}/3.</p><p><strong>Published result:</strong> ${esc(record.radiocarbonBP)} ± ${esc(record.radiocarbonSd)} BP${record.material?` · ${esc(record.material)}`:''}${record.taxa?` · ${esc(record.taxa)}`:''}${record.method?` · ${esc(record.method)}`:''}${record.labId?` · lab ${esc(record.labId)}`:''}.</p><p><strong>IntCal20 calibration:</strong> target-95.4% highest-density interval${record.calibratedRanges95.length===1?'':'s'} ${ranges}.</p><p class="context-note">Each date was independently calibrated with Bchron and IntCal20. It dates one sampled material, not continuous occupation, a culture boundary, ancestry, language, or population. P3K14C coordinates below precision 3 are approximate; US and Canadian records may use deliberately obfuscated administrative-centroid locations.</p>${record.reference?`<p>Reference: ${esc(record.reference)}.</p>`:''}<a href="${esc(searchURL)}" target="_blank" rel="noopener">Search site and date context ↗</a>`;
   }
   if(item.kind==='road'){
     const searchURL=`https://www.google.com/search?q=${encodeURIComponent(`"${record.assemblage}" "${record.locality}"`)}`;
@@ -328,11 +336,12 @@ function renderArchaeologyPanel(year) {
   const aadr=archaeologySources.has('aadr')?aadrSamplesAt(aadrCatalog,year,state.region):[];
   const paleohumans=archaeologySources.has('paleohumans')?paleohumansRemainsAt(paleohumansCatalog,year,state.region):[];
   const euppad=archaeologySources.has('euppad')?euppadDatesAt(euppadCatalog,year,state.region):[];
+  const p3k14c=archaeologySources.has('p3k14c')?p3k14cDatesAt(p3k14cCatalog,year,state.region,{materials:p3k14cMaterials,minimumLocationAccuracy:p3k14cMinimumLocationAccuracy}):[];
   const road=archaeologySources.has('road')?roadRecordsAt(roadCatalog,year,state.region).filter(record=>roadCategories.has(record.displayCategory)):[];
   const places=archaeologySources.has('pleiades')?pleiadesPlaceIndicesAt(pleiadesCatalog,year,state.region,{onlyCertain:true,preciseOnly:true,kinds:pleiadesKinds}):[];
-  $('#archaeology-count').textContent=(burials.length+levant.length+contexts.length+aadr.length+paleohumans.length+euppad.length+road.length+places.length).toLocaleString('en-US');
+  $('#archaeology-count').textContent=(burials.length+levant.length+contexts.length+aadr.length+paleohumans.length+euppad.length+p3k14c.length+road.length+places.length).toLocaleString('en-US');
   const loaded=[burialCatalog,levantCatalog,euroevolCatalog,contextCatalog,aadrCatalog,paleohumansCatalog,euppadCatalog,roadCatalog,pleiadesCatalog].filter(Boolean).length;
-  $('#archaeology-status').textContent=researchLoadErrors.length?researchLoadErrors.join(' '):loaded<9?'Loading archaeology and ancient-place collections…':`${burials.length} modelled burial dates, ${aadr.length} AADR ancient samples, ${paleohumans.length} PaleoHumans uncalibrated-date placements, ${euppad.length} EUPPAD calibrated-date placements, ${road.length} ROAD assemblage observations, ${levant.length} surveyed sites with matching phases, ${contexts.length} selected contexts, and ${places.length} Pleiades period-associated places match this year and region. ROAD uses correlation-derived BP bounds, placed against 1950 CE for browsing only; it is not a calibrated date or taxonomic attribution. These are source records, not a census of occupied sites.${year>=PLEIADES_MODERN_START_YEAR?' Pleiades Modern-period names and locations remain searchable but are hidden from the dated map.':''} EUROEVOL associations are searchable but undated.`;
+  $('#archaeology-status').textContent=researchLoadErrors.length?researchLoadErrors.join(' '):loaded<9?'Loading archaeology and ancient-place collections…':`${burials.length} modelled burial dates, ${aadr.length} AADR ancient samples, ${paleohumans.length} PaleoHumans uncalibrated-date placements, ${euppad.length} EUPPAD calibrated-date placements, ${p3k14c.length} P3K14C calibrated radiocarbon determinations${p3k14cLoadState==='loading'?' (loading…)':''}, ${road.length} ROAD assemblage observations, ${levant.length} surveyed sites with matching phases, ${contexts.length} selected contexts, and ${places.length} Pleiades period-associated places match this year and region. ROAD uses correlation-derived BP bounds, placed against 1950 CE for browsing only; it is not a calibrated date or taxonomic attribution. These are source records, not a census of occupied sites.${year>=PLEIADES_MODERN_START_YEAR?' Pleiades Modern-period names and locations remain searchable but are hidden from the dated map.':''} EUROEVOL associations are searchable but undated.`;
   if(state.location){
     const nearby=[...nearbyBurialEvidence(burialCatalog,year,state.location.lat,state.location.lon,80,{limit:10}).map(event=>({id:`burial:${event.id}`,title:event.site,sub:event.tradition,distance:event.distanceKm})),
       ...nearbyLevantSites(levantCatalog,year,state.location.lat,state.location.lon,35,10).map(site=>({id:`levant:${site.id}`,title:site.name,sub:site.phases.map(phase=>phase.period).slice(0,2).join(' / '),distance:site.distanceKm})),
@@ -340,11 +349,22 @@ function renderArchaeologyPanel(year) {
       ...nearbyAadrSamples(aadrCatalog,year,state.location.lat,state.location.lon,80,10).map(sample=>({id:`aadr:${sample.id}`,title:sample.site||sample.id,sub:`AADR · ${sample.sourceLabel}`,distance:sample.distanceKm})),
       ...nearbyPaleohumansRemains(paleohumansCatalog,year,state.location.lat,state.location.lon,80,10).map(record=>({id:`paleohumans:${record.id}`,title:record.site,sub:`PaleoHumans · ${record.radiocarbonBP} ± ${record.radiocarbonRange} BP`,distance:record.distanceKm})),
       ...nearbyEuppadDates(euppadCatalog,year,state.location.lat,state.location.lon,80,10).map(record=>({id:`euppad:${record.id}`,title:record.site,sub:`EUPPAD · ${record.radiocarbonBP} ± ${record.radiocarbonSd} BP`,distance:record.distanceKm})),
+      ...nearbyP3k14cDates(p3k14cCatalog,year,state.location.lat,state.location.lon,80,{materials:p3k14cMaterials,minimumLocationAccuracy:p3k14cMinimumLocationAccuracy,limit:10}).map(record=>({id:`p3k14c:${record.id}`,title:record.site,sub:`P3K14C · ${record.radiocarbonBP} ± ${record.radiocarbonSd} BP`,color:p3k14cColor(record.materialClass),distance:record.distanceKm})),
       ...nearbyRoadRecords(roadCatalog,year,state.location.lat,state.location.lon,80,10).map(record=>({id:`road:${record.id}`,title:record.assemblage,sub:`ROAD · ${record.ageRangeBP[0].toLocaleString('en-US')}–${record.ageRangeBP[1].toLocaleString('en-US')} BP`,distance:record.distanceKm})),
       ...nearbyPleiadesPlaces(pleiadesCatalog,year,state.location.lat,state.location.lon,20,{onlyCertain:true,preciseOnly:true,limit:10}).map(place=>({id:`pleiades:${place.id}`,title:place.title,sub:`Pleiades · ${place.kind}`,distance:place.distanceKm}))]
       .sort((a,b)=>a.distance-b.distance).slice(0,6);
-    $('#archaeology-list').innerHTML=nearby.length?nearby.map(row=>`<button class="regional-card" data-evidence="${esc(row.id)}" style="--regional-color:${row.id.startsWith('burial:')?burialColor(row.sub):row.id.startsWith('context:')?'#d19a7d':row.id.startsWith('aadr:')?'#b59ac7':row.id.startsWith('paleohumans:')?'#d6bf87':row.id.startsWith('road:')?'#e2a65e':row.id.startsWith('pleiades:')?'#b5a8d0':'#89b9a4'}"><i aria-hidden="true"></i><span><b>${esc(row.title)}</b><small>${esc(row.sub)} · ${Math.round(row.distance)} km away</small></span></button>`).join(''):'<p class="empty-note">No associated records from these collections near this point and year.</p>';
-  }else $('#archaeology-list').innerHTML=burials.length+levant.length+contexts.length+aadr.length+paleohumans.length+euppad.length+road.length+places.length?`<p class="context-note">${burials.filter(event=>event.tradition==='Corded Ware').length} Corded Ware burial dates · ${burials.filter(event=>event.tradition==='Bell Beaker').length} Bell Beaker burial dates · ${aadr.length} AADR ancient samples · ${paleohumans.length} PaleoHumans uncalibrated-date placements · ${euppad.length} EUPPAD calibrated-date placements · ${road.length} ROAD assemblage observations · ${contexts.length} selected contexts · ${levant.length} Levant sites · ${places.length} Pleiades place associations. Zoom in and select a point, or search the collections.</p>`:year>=PLEIADES_MODERN_START_YEAR?'<p class="empty-note">No dated burial, AADR sample, PaleoHumans, EUPPAD, ROAD, selected context, or Levant survey record matches this year and region. Pleiades Modern-period place references remain available in search.</p>':'<p class="empty-note">No records from these dated collections match this year and region. This is a coverage gap.</p>';
+    $('#archaeology-list').innerHTML=nearby.length?nearby.map(row=>`<button class="regional-card" data-evidence="${esc(row.id)}" style="--regional-color:${row.color??(row.id.startsWith('burial:')?burialColor(row.sub):row.id.startsWith('context:')?'#d19a7d':row.id.startsWith('aadr:')?'#b59ac7':row.id.startsWith('paleohumans:')?'#d6bf87':row.id.startsWith('road:')?'#e2a65e':row.id.startsWith('pleiades:')?'#b5a8d0':'#89b9a4')}"><i aria-hidden="true"></i><span><b>${esc(row.title)}</b><small>${esc(row.sub)} · ${Math.round(row.distance)} km away</small></span></button>`).join(''):'<p class="empty-note">No associated records from these collections near this point and year.</p>';
+  }else $('#archaeology-list').innerHTML=burials.length+levant.length+contexts.length+aadr.length+paleohumans.length+euppad.length+p3k14c.length+road.length+places.length?`<p class="context-note">${burials.filter(event=>event.tradition==='Corded Ware').length} Corded Ware burial dates · ${burials.filter(event=>event.tradition==='Bell Beaker').length} Bell Beaker burial dates · ${aadr.length} AADR ancient samples · ${paleohumans.length} PaleoHumans uncalibrated-date placements · ${euppad.length} EUPPAD calibrated-date placements · ${p3k14c.length} P3K14C calibrated determinations · ${road.length} ROAD assemblage observations · ${contexts.length} selected contexts · ${levant.length} Levant sites · ${places.length} Pleiades place associations. Zoom in and select a point, or search the collections.</p>`:year>=PLEIADES_MODERN_START_YEAR?'<p class="empty-note">No dated burial, AADR sample, PaleoHumans, EUPPAD, P3K14C, ROAD, selected context, or Levant survey record matches this year and region. Pleiades Modern-period place references remain available in search.</p>':'<p class="empty-note">No records from these dated collections match this year and region. This is a coverage gap.</p>';
+}
+
+async function loadP3k14c() {
+  if (p3k14cCatalog || p3k14cLoadState==='loading') return;
+  p3k14cLoadState='loading';renderState();
+  try {
+    const catalog=await loadJSON('p3k14c-calibrated-dates.json');
+    if (!Array.isArray(catalog?.records) || !catalog.records.every(record=>Array.isArray(record.calibratedRanges95)&&Number.isFinite(record.locationAccuracy))) throw new Error('P3K14C catalog has an invalid calibration contract.');
+    p3k14cCatalog=catalog;p3k14cLoadState='loaded';catalogRevision++;renderState();
+  } catch(error) { p3k14cLoadState=`P3K14C unavailable: ${error.message}`;archaeologySources.delete('p3k14c');$('#archaeology-sources input[value="p3k14c"]').checked=false;renderState(); }
 }
 function renderRoadExplorer(year) {
   const panel=$('#road-explorer-panel');panel.hidden=!state.layers.archaeology;
@@ -461,7 +481,7 @@ async function loadResearch() {
 }
 function updateEvidenceView(year) {
   if(!globe)return;
-  const key=`${year}/${catalogRevision}/${state.languageFamily}/${state.layers.archaeology}/${state.layers.languages}/${[...archaeologySources].join(',')}/${[...roadCategories].join(',')}/${roadNeanderthalMarkers}/${[...pleiadesKinds].join(',')}`;
+  const key=`${year}/${catalogRevision}/${state.languageFamily}/${state.layers.archaeology}/${state.layers.languages}/${[...archaeologySources].join(',')}/${[...roadCategories].join(',')}/${roadNeanderthalMarkers}/${[...p3k14cMaterials].join(',')}/${p3k14cMinimumLocationAccuracy}/${[...pleiadesKinds].join(',')}`;
   if(key===evidenceKey)return;
   evidenceKey=key;
   const burialPoints=state.layers.archaeology&&archaeologySources.has('burials')?burialSitesAt(burialCatalog,year).map((group,index)=>({
@@ -480,6 +500,9 @@ function updateEvidenceView(year) {
   const euppadPoints=state.layers.archaeology&&archaeologySources.has('euppad')?euppadDatesAt(euppadCatalog,year).map(record=>({
     id:`euppad:${record.id}`,kind:'euppad',lat:record.lat,lon:record.lon,record,color:'#79b9c4',uncertaintyYears:Math.max(...record.calibratedRanges95.map(([start,end])=>end-start)),
   })) :[];
+  const p3k14cPoints=state.layers.archaeology&&archaeologySources.has('p3k14c')?p3k14cDatesAt(p3k14cCatalog,year,null,{materials:p3k14cMaterials,minimumLocationAccuracy:p3k14cMinimumLocationAccuracy,limit:20000}).map(record=>({
+    id:`p3k14c:${record.id}`,kind:'p3k14c',lat:record.lat,lon:record.lon,record,color:p3k14cColor(record.materialClass),uncertaintyYears:Math.max(...record.calibratedRanges95.map(([start,end])=>end-start)),
+  })) :[];
   const roadPoints=state.layers.archaeology&&archaeologySources.has('road')?roadRecordsAt(roadCatalog,year).filter(record=>roadCategories.has(record.displayCategory)).map(record=>({
     id:`road:${record.id}`,kind:'road',lat:record.lat,lon:record.lon,record,displayCategory:record.displayCategory,color:{lithics:'#d99b49','human-remains':'#e7dfc9',fauna:'#55afaa','plant-remains':'#83bb76',other:'#929697'}[record.displayCategory]??'#929697',accentStem:roadNeanderthalMarkers&&record.humanSpecies?.includes('neanderthalensis'),uncertaintyYears:record.displayRange[1]-record.displayRange[0],
   })) :[];
@@ -492,7 +515,7 @@ function updateEvidenceView(year) {
   const modern=state.layers.languages?languagesForRegion(languageCatalog,year,REGIONS[0],state.languageFamily==='all'?null:state.languageFamily).map(record=>({
     id:record.id,kind:'modern-language',lat:record.lat,lon:record.lon,color:languageColor(record.familyName),record,
   })):[];
-  globe.setEvidencePoints(burialPoints.concat(contextPoints,aadrPoints,paleohumansPoints,euppadPoints),levantPoints,ancient.concat(modern));
+  globe.setEvidencePoints(burialPoints.concat(contextPoints,aadrPoints,paleohumansPoints,euppadPoints,p3k14cPoints),levantPoints,ancient.concat(modern));
   globe.setRoadPoints(roadPoints);
   const indices=state.layers.archaeology&&archaeologySources.has('pleiades')?pleiadesPlaceIndicesAt(pleiadesCatalog,year,null,{onlyCertain:true,preciseOnly:true,kinds:pleiadesKinds}):[];
   const currentKey=indices.join(',');
@@ -526,7 +549,7 @@ function renderDetail() {
     html+=evidenceHTML(current,true);
     if(selected.kind==='pleiades'&&year>=PLEIADES_MODERN_START_YEAR)html+=`<p class="context-note">Pleiades Modern-period names and locations remain searchable references. No Pleiades time-map point is shown at ${formatYear(year)}.</p>`;
     else if(selected.kind==='pleiades'&&!current.record.matchingTemporalAssociations.length)html+=`<p class="context-note">No source period association includes ${formatYear(year)}. The periods above are source context, not current-year matches.</p>`;
-    if(detail.item.kind!=='burial-site')html+=`<button class="outline-button" data-detail-research="${esc(detail.item.id)}">Open complete record ↗</button>`;
+    if(detail.item.kind!=='burial-site'&&detail.item.kind!=='p3k14c')html+=`<button class="outline-button" data-detail-research="${esc(detail.item.id)}">Open complete record ↗</button>`;
   } else if (detail?.type === 'language') {
     const item=detail.item,record=item.record;
     if(item.kind==='attestation')html+=`<span class="section-label">HISTORICAL LANGUAGE ATTESTATION</span><h2>${esc(record.languages.map(language=>language.name).join(' / '))}</h2><p>${esc(record.placeLabel)} · ${formatYear(record.start)}–${formatYear(record.end)} · ${esc(record.dateLabel)}</p><p>${esc(record.sourceTitle)}</p><p class="context-note">The date range estimates when this inscription was made. It is not a period of continuous language use. The point is a representative findspot, sometimes a city centroid.</p><a href="${esc(record.sourceUrl)}" target="_blank" rel="noopener">EDH inscription ${esc(record.sourceId)} ↗</a>${sourceHTML(['edh'])}`;
@@ -757,6 +780,13 @@ function initializeControls() {
   $('#chapters').innerHTML = CHAPTERS.map(c=>`<button class="chapter" data-year="${c.year}" data-focus="${c.region}"><strong>${esc(c.title)}</strong><small>${esc(c.label)}</small></button>`).join('');
   $('#region-nav').innerHTML = REGIONS.map(r=>`<button data-region="${r.id}" aria-pressed="${r.id===state.region.id}">${r.name}</button>`).join('');
   $('#archaeology-sources input[value="levant"]').checked=archaeologySources.has('levant');
+  const p3k14cControl=document.createElement('label');
+  p3k14cControl.innerHTML='<input type="checkbox" value="p3k14c"> P3K14C calibrated dates';
+  $('#archaeology-sources').insertBefore(p3k14cControl,$('#archaeology-sources input[value="contexts"]').parentElement);
+  const p3k14cFilters=document.createElement('details');
+  p3k14cFilters.className='dataset-filters';
+  p3k14cFilters.innerHTML='<summary>P3K14C filters</summary><p class="context-note">Loaded only when enabled. These are sample determinations, not site types or occupation histories.</p><fieldset id="p3k14c-filters"><legend>Location precision</legend><label><input type="radio" name="p3k14c-accuracy" value="3"> Exact site coordinate</label><label><input type="radio" name="p3k14c-accuracy" value="2" checked> Near-site or area coordinate</label><label><input type="radio" name="p3k14c-accuracy" value="1"> Include administrative-scale coordinates</label><label class="p3k14c-material p3k14c-plant"><input type="checkbox" name="p3k14c-material" value="plant" checked> Plant / charcoal / wood</label><label class="p3k14c-material p3k14c-faunal"><input type="checkbox" name="p3k14c-material" value="faunal" checked> Faunal bone / antler</label><label class="p3k14c-material p3k14c-shell"><input type="checkbox" name="p3k14c-material" value="shell" checked> Shell</label><label class="p3k14c-material p3k14c-human"><input type="checkbox" name="p3k14c-material" value="human" checked> Human material</label><label class="p3k14c-material p3k14c-other"><input type="checkbox" name="p3k14c-material" value="other" checked> Other material</label><label class="p3k14c-material p3k14c-unspecified"><input type="checkbox" name="p3k14c-material" value="unspecified" checked> Unspecified material</label></fieldset>';
+  $('#road-explorer-panel').insertBefore(p3k14cFilters,$('#road-explorer-panel .dataset-filters'));
   $('.road-select')?.remove();
   $('#road-filters').append($('#road-neanderthal-filter'));
   $('#timeline-ticks').innerHTML = TIME_KNOTS.map((y,i)=>`<span style="left:${i/(TIME_KNOTS.length-1)*100}%">${y<0?`${Math.abs(y)>=1000?Math.abs(y)/1000+'k':Math.abs(y)} BCE`:y}</span>`).join('');
@@ -781,10 +811,11 @@ function initializeControls() {
   $('#europe-list').onclick=e=>{const b=e.target.closest('[data-european]');if(b){const item=europeanPeoplesForRegion(europeCatalog,Math.round(state.year),state.region).find(x=>x.id===b.dataset.european);if(item)chooseRegional(item);}};
   $('#europe-focus').onclick=()=>setRegion(REGIONS.find(r=>r.id==='europe'));
   $('#archaeology-browse').onclick=()=>openResearch({scope:'time'});
-  $('#archaeology-sources').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)archaeologySources.add(event.target.value);else archaeologySources.delete(event.target.value);renderState();};
+  $('#archaeology-sources').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked){archaeologySources.add(event.target.value);if(event.target.value==='p3k14c')loadP3k14c();}else archaeologySources.delete(event.target.value);renderState();};
   $('#road-filters').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)roadCategories.add(event.target.value);else roadCategories.delete(event.target.value);renderState();};
   $('#road-neanderthal-marker').onchange=event=>{roadNeanderthalMarkers=event.target.checked;renderState();};
   $('#pleiades-filters').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)pleiadesKinds.add(event.target.value);else pleiadesKinds.delete(event.target.value);renderState();};
+  $('#p3k14c-filters').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.name==='p3k14c-material'){if(event.target.checked)p3k14cMaterials.add(event.target.value);else p3k14cMaterials.delete(event.target.value);}else p3k14cMinimumLocationAccuracy=Number(event.target.value);renderState();};
   $('#archaeology-list').onclick=e=>{const b=e.target.closest('[data-evidence]');if(b){const row=researchById.get(b.dataset.evidence);if(row)chooseEvidence(evidenceFromRow(row));}};
   $('#research-button').onclick=()=>openResearch();
   const filterResearch=()=>{researchResultLimit=40;renderResearchDirectory();};

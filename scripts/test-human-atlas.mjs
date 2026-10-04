@@ -11,6 +11,7 @@ import { sitesAt, phasesAt, searchSites, siteSnapshot, hasSiteLocation } from '.
 import { activeNearEast, nearEastAt, nearEastForRegion, nearEastSnapshot } from '../public/threejs/human_atlas/near-east.mjs';
 import { paleohumansRemainsAt, paleohumansRemainsSnapshot } from '../public/threejs/human_atlas/paleohumans-remains.mjs';
 import { euppadDatesAt, euppadDatesSnapshot } from '../public/threejs/human_atlas/euppad-dates.mjs';
+import { p3k14cDatesAt, p3k14cDatesSnapshot } from '../public/threejs/human_atlas/p3k14c-dates.mjs';
 import { roadRecordsAt, roadSnapshot } from '../public/threejs/human_atlas/road-pilot.mjs';
 
 const dir = new URL('../public/threejs/human_atlas/data/', import.meta.url);
@@ -24,6 +25,7 @@ const heritage = JSON.parse(readFileSync(new URL('unesco-sites.json', dir)));
 const nearEast = JSON.parse(readFileSync(new URL('near-east.json', dir)));
 const paleohumans = JSON.parse(readFileSync(new URL('paleohumans-remains.json', dir)));
 const euppad = JSON.parse(readFileSync(new URL('euppad-calibrated-dates.json', dir)));
+const p3k14c = JSON.parse(readFileSync(new URL('p3k14c-calibrated-dates.json', dir)));
 const road = JSON.parse(readFileSync(new URL('road-near-east-pilot.json', dir)));
 const roadSpecies = JSON.parse(readFileSync(new URL('road-human-remains-species.json', dir)));
 const roadNeanderthals = JSON.parse(readFileSync(new URL('road-neanderthal-localities.json', dir)));
@@ -68,6 +70,39 @@ test('EUPPAD preserves independently calibrated target-95.4% intervals', () => {
   const snapshot = euppadDatesSnapshot(euppad, -14000, world);
   assert.equal(snapshot.totalRecords, active.length);
   assert.match(snapshot.status, /IntCal20/);
+  assert.match(snapshot.status, /not continuous occupation/i);
+});
+
+test('P3K14C preserves calibrated sample determinations with source-grounded filters', () => {
+  assert.equal(p3k14c.schemaVersion, 1);
+  assert.equal(p3k14c.source.dataset, 'P3K14C');
+  assert.equal(p3k14c.source.version, '2022.06');
+  assert.equal(p3k14c.source.license, 'CC0 1.0 (attribution requested)');
+  assert.equal(p3k14c.source.inputRows, p3k14c.records.length);
+  assert.ok(p3k14c.records.length > 160_000);
+  assert.equal(new Set(p3k14c.records.map(record => record.id)).size, p3k14c.records.length);
+  const materialClasses = new Set(['plant', 'faunal', 'shell', 'human', 'other', 'unspecified']);
+  for (const record of p3k14c.records) {
+    assert.ok(Math.abs(record.lat) <= 90 && Math.abs(record.lon) <= 180, record.id);
+    assert.ok(Number.isInteger(record.locationAccuracy) && record.locationAccuracy >= 0 && record.locationAccuracy <= 3, record.id);
+    assert.ok(record.radiocarbonBP >= 95 && record.radiocarbonBP <= 50_193, record.id);
+    assert.ok(record.radiocarbonSd > 0 && materialClasses.has(record.materialClass), record.id);
+    assert.equal(record.calibrationCurve, 'IntCal20', record.id);
+    assert.equal(record.calibrationMethod, 'BchronCalibrate', record.id);
+    // The discrete calibration grid can overshoot the target when adding its
+    // next probability cell; it must still retain at least the target mass.
+    assert.ok(record.calibratedProbability >= .954 && record.calibratedProbability <= 1, record.id);
+    for (const [start, end] of record.calibratedRanges95) assert.ok(Number.isFinite(start) && Number.isFinite(end) && start <= end, record.id);
+  }
+  const year = -1000;
+  const permissive = p3k14cDatesAt(p3k14c, year, world, { minimumLocationAccuracy: 1 });
+  const precise = p3k14cDatesAt(p3k14c, year, world, { minimumLocationAccuracy: 2 });
+  assert.ok(permissive.length >= precise.length && precise.every(record => record.locationAccuracy >= 2));
+  const plant = p3k14cDatesAt(p3k14c, year, world, { materials: new Set(['plant']), minimumLocationAccuracy: 1 });
+  assert.ok(plant.every(record => record.materialClass === 'plant'));
+  const snapshot = p3k14cDatesSnapshot(p3k14c, year, world, { minimumLocationAccuracy: 2 });
+  assert.equal(snapshot.totalRecords, precise.length);
+  assert.match(snapshot.status, /sampled material/i);
   assert.match(snapshot.status, /not continuous occupation/i);
 });
 
