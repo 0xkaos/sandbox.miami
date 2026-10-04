@@ -361,7 +361,7 @@ async function loadP3k14c() {
   if (p3k14cCatalog || p3k14cLoadState==='loading') return;
   p3k14cLoadState='loading';renderState();
   try {
-    const catalog=await loadJSON('p3k14c-calibrated-dates.json');
+    const catalog=await loadGzipJSON('p3k14c-calibrated-dates.json.gz');
     if (!Array.isArray(catalog?.records) || !catalog.records.every(record=>Array.isArray(record.calibratedRanges95)&&Number.isFinite(record.locationAccuracy))) throw new Error('P3K14C catalog has an invalid calibration contract.');
     p3k14cCatalog=catalog;p3k14cLoadState='loaded';catalogRevision++;renderState();
   } catch(error) { p3k14cLoadState=`P3K14C unavailable: ${error.message}`;archaeologySources.delete('p3k14c');$('#archaeology-sources input[value="p3k14c"]').checked=false;renderState(); }
@@ -863,6 +863,12 @@ function initializeControls() {
   addEventListener('hashchange',()=>{setPlaying(false);readHash();for(const key in state.layers)$(`#layer-${key}`).checked=state.layers[key];if(languageCatalog)populateLanguageFamilies();$('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;$('#spike-width').value=state.spikeWidth*100;$('#spike-width-output').textContent=`${Math.round(state.spikeWidth*100)}%`;$('#density-colors').value=state.densityColors;setPopulationResolution(state.resolution);globe?.setPopulationOpacity(state.opacity);globe?.setSpikeWidth(state.spikeWidth);globe?.setDensityColorMode(state.densityColors);globe?.setLayers(state.layers);globe?.setScale(state.scale,state.gain);setRegion(state.region);});
 }
 async function loadJSON(name) {const r=await fetch(`./data/${name}`);if(!r.ok)throw new Error(`${name} could not load (${r.status}).`);return r.json();}
+async function loadGzipJSON(name) {
+  if(!('DecompressionStream' in globalThis))throw new Error('This browser cannot decompress the P3K14C catalog.');
+  const response=await fetch(`./data/${name}`);
+  if(!response.ok)throw new Error(`${name} could not load (${response.status}).`);
+  return new Response(response.body.pipeThrough(new DecompressionStream('gzip'))).json();
+}
 async function start() {
   readHash();
   try {

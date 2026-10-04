@@ -6,7 +6,7 @@ suppressPackageStartupMessages(library(Bchron))
 root <- normalizePath(file.path(dirname(sub('^--file=', '', commandArgs(trailingOnly = FALSE)[grep('^--file=', commandArgs(trailingOnly = FALSE))][1])), '..'))
 url <- 'https://www.p3k14c.org/data/p3k14c_2022.06.csv'
 cache <- '/tmp/human-atlas-research/p3k14c_2022.06.csv'
-output <- file.path(root, 'public', 'threejs', 'human_atlas', 'data', 'p3k14c-calibrated-dates.json')
+output <- file.path(root, 'public', 'threejs', 'human_atlas', 'data', 'p3k14c-calibrated-dates.json.gz')
 
 if (!file.exists(cache)) {
   dir.create(dirname(cache), recursive = TRUE, showWarnings = FALSE)
@@ -78,5 +78,7 @@ result <- list(schemaVersion = 1, source = list(
   calibration = 'Each retained P3K14C radiocarbon determination was independently calibrated with Bchron and IntCal20. calibratedRanges95 contains all target-95.4% highest-density calendar intervals. IntCal20 support limits this catalog to conventional radiocarbon ages from 95 to 50,193 BP. Coordinates with locationAccuracy below 3 are approximate; P3K14C deliberately obfuscates United States and Canadian coordinates to administrative centroids.'
 ), records = records)
 dir.create(dirname(output), recursive = TRUE, showWarnings = FALSE)
-writeLines(jsonlite::toJSON(result, auto_unbox = TRUE, null = 'null', digits = NA), output, useBytes = TRUE)
+compressed_output <- gzfile(output, open = 'wt')
+writeLines(jsonlite::toJSON(result, auto_unbox = TRUE, null = 'null', digits = NA), compressed_output, useBytes = TRUE)
+close(compressed_output)
 message(sprintf('P3K14C: %d dates written to %s', length(records), output))

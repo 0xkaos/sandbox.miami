@@ -196,7 +196,7 @@ The example coordinates illustrate the format only. Replace the placeholder sour
 
 ## Data preparation
 
-The deployed atlas data total roughly 100 MB including optional finer grids and the new research catalogs. The 1° reference population/geography needs roughly 5 MB plus the local Three.js module; the default 0.5° view adds its metadata and adjoining dates. Finer metadata (about 1.4 MB at 0.5° or 4.9 MB at 0.25°) and individual dates are fetched only when needed. Boundary files also load by date. The archaeology, ancient-place, and language catalogs load separately after the core globe; one failed catalog request does not stop playback. No individual file exceeds Cloudflare's 25 MiB asset limit. Raw source archives are not shipped.
+The deployed atlas data total roughly 100 MB including optional finer grids and the new research catalogs. The 1° reference population/geography needs roughly 5 MB plus the local Three.js module; the default 0.5° view adds its metadata and adjoining dates. Finer metadata (about 1.4 MB at 0.5° or 4.9 MB at 0.25°) and individual dates are fetched only when needed. Boundary files also load by date. The archaeology, ancient-place, and language catalogs load separately after the core globe; one failed catalog request does not stop playback. P3K14C is a lazy-loaded gzip catalog (about 9.1 MB compressed) decompressed in the browser; no individual asset exceeds Cloudflare's 25 MiB limit. Raw source archives are not shipped.
 
 The committed artifacts allow normal builds with **no Python or network dependency**. To reproduce them, use a separate Python environment with `numpy`, `rasterio`, and `shapely`:
 
