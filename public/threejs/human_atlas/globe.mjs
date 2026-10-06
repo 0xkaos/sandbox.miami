@@ -14,6 +14,9 @@ const SUPERSEDED_BORDERS = new Set(['Ur','Semites','Canaan','Judea']);
 // overlays, so floor markers can sit close to land and draw after those layers.
 const POINT_FLOOR_RADIUS = 1.0025;
 const COAST_LINE_RADIUS = 1.003;
+const LOCAL_VIEW_DISTANCE = 1.7;
+const MIN_NAVIGATION_DISTANCE = 1.13;
+const LOCAL_ORBIT_TILT = 40 * R;
 const BASE_PALETTES = {
   forest:{sea:'#182b25',land:'#3b4932',shore:'#778064',rivers:'#74b9c1',contours:'#a4b58b',grid:'#c1caa10c',specular:'#263c2e',haze:[.34,.56,.43]},
   tidal:{sea:'#172c3b',land:'#3d5b62',shore:'#80a9af',rivers:'#8ecdd2',contours:'#adc29a',grid:'#b3d8de0c',specular:'#2f4c58',haze:[.31,.55,.64]},
@@ -24,6 +27,7 @@ export function latLonVector(lat, lon, radius = 1) {
   return new THREE.Vector3(radius * Math.cos(lat * R) * Math.cos(lon * R), radius * Math.sin(lat * R), -radius * Math.cos(lat * R) * Math.sin(lon * R));
 }
 function vectorLatLon(p) { return { lat: Math.asin(clamp(p.y / p.length(), -1, 1)) / R, lon: Math.atan2(-p.z, p.x) / R }; }
+function smoothstep(edge0, edge1, value) { const t=clamp((value-edge0)/(edge1-edge0),0,1); return t*t*(3-2*t); }
 // A 4K equirectangular texture keeps coastlines and historical boundaries
 // legible at the atlas's closest viewing distance.
 function textureCanvas(width = 4096) { const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = width / 2; return canvas; }
@@ -190,18 +194,19 @@ export class HistoryGlobe {
     this.container = container; this.meta = meta; this.borders = borders; this.nearEast = nearEast; this.land=land; this.callbacks = callbacks;
     this.theme=window.SandboxTheme?.get()??'forest';
     const palette=BASE_PALETTES[this.theme]??BASE_PALETTES.forest;
-    this.layers = { population: true, territories: true, migrations: true, events: true, sites: true, archaeology: true, languages: false, rivers: false, contours: false };
+    this.layers = { population: true, territories: true, migrations: true, events: true, sites: true, archaeology: true, notes: false, languages: false, rivers: false, contours: false };
     this.scale = 'log'; this.gain = 1; this.populationOpacity = 1; this.densityColorMode = 'current'; this.year = -3000; this.routes = []; this.phase = 0; this.disposed = false; this.dirty = true;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(38, 1, .005, 30);
     this.camera.position.copy(latLonVector(24, 24, 3.2));
+    this.navigationCamera = this.camera.clone();
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.8));
     this.renderer.setClearColor(0x101714, 0); this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls = new OrbitControls(this.navigationCamera, this.renderer.domElement);
     this.controls.enableDamping = true; this.controls.dampingFactor = .065;
-    this.controls.enablePan = false; this.controls.minDistance = 1.13; this.controls.maxDistance = 6;
+    this.controls.enablePan = false; this.controls.minDistance = MIN_NAVIGATION_DISTANCE; this.controls.maxDistance = 6;
     this.controls.rotateSpeed = .55; this.controls.zoomSpeed = .6;
     this.controls.addEventListener('start', () => { this.destination = null; });
     this.controls.addEventListener('change', () => { this.dirty = true; });
@@ -286,6 +291,7 @@ export class HistoryGlobe {
       other:new PointEvidenceLayer(this.scene,{size:3.1,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.0185,accentStemOpacity:.96,zoomLimit:2.05,opacity:.72,shape:'circle'}),
     };
     this.languageDots=new PointEvidenceLayer(this.scene,{size:4,radius:1.027,stemBaseRadius:POINT_FLOOR_RADIUS,stemOpacity:.58,zoomLimit:2.2,opacity:.8});
+    this.noteDots=new PointEvidenceLayer(this.scene,{size:5.1,radius:1.029,stemBaseRadius:POINT_FLOOR_RADIUS,stemOpacity:.7,zoomLimit:2.4,opacity:.94,shape:'diamond'});
     this.regionalLabels=[];
     this.selection = new THREE.Mesh(new THREE.RingGeometry(.0175,.0185,48),new THREE.MeshBasicMaterial({color:0xe7d4a0,side:THREE.DoubleSide,transparent:true,opacity:.85,depthWrite:false}));this.selection.renderOrder=6;this.selection.visible=false;this.scene.add(this.selection);
     this.raycaster = new THREE.Raycaster();this.pointer = new THREE.Vector2();
@@ -299,9 +305,27 @@ export class HistoryGlobe {
     this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(container);this.resize();
     this.labels = [['EUROPE',54,15],['NILE VALLEY',24,31],['ANATOLIA',39,34],['SAHARA',23,0],['SOUTH ASIA',21,79],['EAST ASIA',36,112],['SAHUL',-24,133],['NORTH AMERICA',43,-106],['SOUTH AMERICA',-15,-60]].map(([name,lat,lon])=>{const el=document.createElement('span');el.className='globe-label';el.textContent=name;document.querySelector('#map-labels').appendChild(el);return{el,position:latLonVector(lat,lon,POINT_FLOOR_RADIUS)};});
   }
-  resize(){const {width,height}=this.container.getBoundingClientRect();if(!width||!height)return;this.width=width;this.height=height;this.camera.aspect=width/height;this.camera.updateProjectionMatrix();this.renderer.setSize(width,height);this.dirty=true;}
-  focus(region){const distance=region.preserveZoom?this.camera.position.length():Math.min(6,region.distance/Math.min(1,this.camera.aspect));this.destination=latLonVector(region.lat,region.lon,region.keepZoomedIn?Math.min(this.camera.position.length(),distance):distance);}
-  zoom(factor){this.destination=null;this.camera.position.setLength(clamp(this.camera.position.length()*factor,1.13,6));this.controls.update();}
+  resize(){const {width,height}=this.container.getBoundingClientRect();if(!width||!height)return;this.width=width;this.height=height;this.camera.aspect=width/height;this.camera.updateProjectionMatrix();this.navigationCamera.aspect=width/height;this.navigationCamera.updateProjectionMatrix();this.renderer.setSize(width,height);this.dirty=true;}
+  updateCameraPresentation(){
+    const radius=this.navigationCamera.position.length();
+    const blend=clamp((LOCAL_VIEW_DISTANCE-radius)/(LOCAL_VIEW_DISTANCE-MIN_NAVIGATION_DISTANCE),0,1);
+    if(blend===0){this.camera.position.copy(this.navigationCamera.position);this.camera.quaternion.copy(this.navigationCamera.quaternion);this.camera.updateMatrixWorld();return;}
+    const normal=this.navigationCamera.position.clone().normalize();
+    const north=new THREE.Vector3(0,1,0).addScaledVector(normal,-normal.y);
+    if(north.lengthSq()<.00001){this.camera.position.copy(this.navigationCamera.position);this.camera.quaternion.copy(this.navigationCamera.quaternion);this.camera.updateMatrixWorld();return;}
+    const point=normal.multiplyScalar(POINT_FLOOR_RADIUS),altitude=radius-1;
+    const localPosition=point.clone().addScaledVector(normal,altitude*Math.cos(LOCAL_ORBIT_TILT)).addScaledVector(north.normalize(),-altitude*Math.sin(LOCAL_ORBIT_TILT));
+    const localOrientation=new THREE.Quaternion();this.camera.position.copy(localPosition);this.camera.lookAt(point);localOrientation.copy(this.camera.quaternion);
+    this.camera.position.copy(this.navigationCamera.position).lerp(localPosition,blend);
+    this.camera.quaternion.copy(this.navigationCamera.quaternion).slerp(localOrientation,blend);
+    this.camera.updateMatrixWorld();
+  }
+  focus(region){const distance=region.preserveZoom?this.navigationCamera.position.length():Math.min(6,region.distance/Math.min(1,this.camera.aspect));this.destination=latLonVector(region.lat,region.lon,region.keepZoomedIn?Math.min(this.navigationCamera.position.length(),distance):distance);}
+  zoom(factor){
+    this.destination=null;
+    this.navigationCamera.position.setLength(clamp(this.navigationCamera.position.length()*factor,MIN_NAVIGATION_DISTANCE,6));
+    this.controls.update();
+  }
   setTheme(theme){
     const palette=BASE_PALETTES[theme]??BASE_PALETTES.forest;
     if(this.theme===theme)return;
@@ -315,7 +339,7 @@ export class HistoryGlobe {
     this.atmosphere.material.uniforms.tint.value.set(...palette.haze);
     this.dirty=true;
   }
-  setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.siteGroup.visible=this.layers.sites;this.regionalPlaceGroup.visible=this.layers.territories;this.riverLines.visible=this.layers.rivers;this.riverHoverTargets.visible=this.layers.rivers;this.contourLines.visible=this.layers.contours;this.burialDots.setVisible(!!this.layers.archaeology,this.camera.position.length());this.levantDots.setVisible(!!this.layers.archaeology,this.camera.position.length());for(const layer of Object.values(this.pleiadesDots))layer.setVisible(!!this.layers.archaeology,this.camera.position.length());for(const layer of Object.values(this.roadDots))layer.setVisible(!!this.layers.archaeology,this.camera.position.length());this.languageDots.setVisible(!!this.layers.languages,this.camera.position.length());this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);this.dirty=true;}
+  setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.siteGroup.visible=this.layers.sites;this.regionalPlaceGroup.visible=this.layers.territories;this.riverLines.visible=this.layers.rivers;this.riverHoverTargets.visible=this.layers.rivers;this.contourLines.visible=this.layers.contours;this.burialDots.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());this.levantDots.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());for(const layer of Object.values(this.pleiadesDots))layer.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());for(const layer of Object.values(this.roadDots))layer.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());this.languageDots.setVisible(!!this.layers.languages,this.navigationCamera.position.length());this.noteDots.setVisible(!!this.layers.notes,this.navigationCamera.position.length());this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);this.dirty=true;}
   setEuropeanCatalog(catalog){
     this.europeLayer?.dispose();this.europeCatalog=catalog;this.europeLayer=null;
     if(catalog){
@@ -327,23 +351,28 @@ export class HistoryGlobe {
   }
   setEvidencePoints(burials=[],levant=[],languages=[]){
     this.burialDots.setRecords(burials);this.levantDots.setRecords(levant);this.languageDots.setRecords(languages);
-    this.burialDots.setVisible(!!this.layers.archaeology,this.camera.position.length());
-    this.levantDots.setVisible(!!this.layers.archaeology,this.camera.position.length());
-    this.languageDots.setVisible(!!this.layers.languages,this.camera.position.length());
+    this.burialDots.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());
+    this.levantDots.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());
+    this.languageDots.setVisible(!!this.layers.languages,this.navigationCamera.position.length());
     this.dirty=true;
   }
   setPleiadesPoints(records=[]){
     for(const [kind,layer] of Object.entries(this.pleiadesDots)){
       layer.setRecords(records.filter(record=>record.placeKind===kind));
-      layer.setVisible(!!this.layers.archaeology,this.camera.position.length());
+      layer.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());
     }
     this.dirty=true;
   }
   setRoadPoints(records=[]){
     for(const [category,layer] of Object.entries(this.roadDots)){
       layer.setRecords(records.filter(record=>(record.displayCategory??'other')===category));
-      layer.setVisible(!!this.layers.archaeology,this.camera.position.length());
+      layer.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());
     }
+    this.dirty=true;
+  }
+  setNotePoints(records=[]){
+    this.noteDots.setRecords(records);
+    this.noteDots.setVisible(!!this.layers.notes,this.camera.position.length);
     this.dirty=true;
   }
   setScale(scale,gain){this.scale=scale;this.gain=gain;this.spikeUniforms.heightGain.value=gain;this.spikeUniforms.linearHeight.value=scale==='linear'?1:0;this.dirty=true;}
@@ -588,14 +617,14 @@ export class HistoryGlobe {
     const place=vectorLatLon(hit.point);place.index=this.nearestCell(place.lat,place.lon);place.territories=this.territoriesAt(place.lat,place.lon);
     const nearby=[
       [this.burialDots,35,'evidence'],[this.levantDots,18,'evidence'],...Object.values(this.roadDots).map(layer=>[layer,26,'evidence']),
-      ...Object.values(this.pleiadesDots).map(layer=>[layer,15,'evidence']),[this.languageDots,35,'language'],
+      ...Object.values(this.pleiadesDots).map(layer=>[layer,15,'evidence']),[this.languageDots,35,'language'],[this.noteDots,45,'note'],
     ].filter(([layer])=>layer.mesh.visible)
       .map(([layer,radius,kind])=>({record:layer.nearest(place.lat,place.lon,radius),kind}))
       .filter(item=>item.record)
       .sort((a,b)=>distanceKm(place.lat,place.lon,a.record.lat,a.record.lon)-distanceKm(place.lat,place.lon,b.record.lat,b.record.lon));
     if(nearby.length){
       const {record,kind}=nearby[0];
-      if(click){if(kind==='language')this.callbacks.onLanguage?.(record);else this.callbacks.onEvidence?.(record);}
+      if(click){if(kind==='language')this.callbacks.onLanguage?.(record);else if(kind==='note')this.callbacks.onNote?.(record);else this.callbacks.onEvidence?.(record);}
       else this.callbacks.onHover?.({[kind]:record,x:event.clientX-rect.left,y:event.clientY-rect.top});
       return;
     }
@@ -608,18 +637,19 @@ export class HistoryGlobe {
   }
   render(dt,playing){
     if(this.disposed)return;
-    if(this.destination){this.camera.position.lerp(this.destination,1-Math.exp(-dt*5));if(this.camera.position.distanceTo(this.destination)<.001)this.destination=null;}
+    if(this.destination){this.navigationCamera.position.lerp(this.destination,1-Math.exp(-dt*5));if(this.navigationCamera.position.distanceTo(this.destination)<.001)this.destination=null;}
     this.advanceBorders(dt);this.advanceRegion(dt);
-    if(this.europeLayer?.advance(dt))this.dirty=true;this.controls.update();
-    const cameraDistance=this.camera.position.length();
+    if(this.europeLayer?.advance(dt))this.dirty=true;this.controls.update();this.updateCameraPresentation();
+    const cameraDistance=this.navigationCamera.position.length();
     if(this.burialDots.setVisible(!!this.layers.archaeology,cameraDistance))this.dirty=true;
     for(const layer of Object.values(this.roadDots))if(layer.setVisible(!!this.layers.archaeology,cameraDistance))this.dirty=true;
     if(this.levantDots.setVisible(!!this.layers.archaeology,cameraDistance))this.dirty=true;
     for(const layer of Object.values(this.pleiadesDots))if(layer.setVisible(!!this.layers.archaeology,cameraDistance))this.dirty=true;
     if(this.languageDots.setVisible(!!this.layers.languages,cameraDistance))this.dirty=true;
+    if(this.noteDots.setVisible(!!this.layers.notes,cameraDistance))this.dirty=true;
     if(!this.dirty&&!playing&&!this.destination)return;if(playing)this.phase+=dt;
     for(const v of this.routeVisuals??[]){const p=migrationProgress(v.route,this.year),positions=v.dots.geometry.attributes.position;for(let i=0;i<18;i++){const t=p===0?0:((i/18+this.phase*.1)%1)*p;const point=along(v.points,t);positions.setXYZ(i,point.x,point.y,point.z);}positions.needsUpdate=true;v.head.position.copy(along(v.points,p));}
-    const cameraNormal=this.camera.position.clone().normalize(),horizon=1/this.camera.position.length();
+    const cameraNormal=this.navigationCamera.position.clone().normalize(),horizon=1/this.navigationCamera.position.length();
     for(const label of this.labels){const visible=label.position.clone().normalize().dot(cameraNormal)>horizon+.07;label.el.hidden=!visible;if(visible){const p=label.position.clone().project(this.camera);label.el.style.left=`${(p.x*.5+.5)*this.width}px`;label.el.style.top=`${(-p.y*.5+.5)*this.height}px`;}}
     const labelPriority=['Ur','Babylon','Nineveh','Samaria','Jerusalem','Uruk','Ashur','Ebla','Hazor'];
     const placed=[];
@@ -627,7 +657,7 @@ export class HistoryGlobe {
       const ai=labelPriority.indexOf(a.el.textContent),bi=labelPriority.indexOf(b.el.textContent);
       return (ai<0?100:ai)-(bi<0?100:bi);
     })){
-      let visible=this.layers.territories&&this.camera.position.length()<1.72&&label.position.clone().normalize().dot(cameraNormal)>horizon+.06;
+      let visible=this.layers.territories&&this.navigationCamera.position.length()<1.72&&label.position.clone().normalize().dot(cameraNormal)>horizon+.06;
       if(visible){const p=label.position.clone().project(this.camera),x=(p.x*.5+.5)*this.width,y=(-p.y*.5+.5)*this.height;
         if(placed.some(([px,py])=>Math.abs(x-px)<56&&Math.abs(y-py)<19))visible=false;
         else{label.el.style.left=`${x}px`;label.el.style.top=`${y}px`;placed.push([x,y]);}

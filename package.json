@@ -5,7 +5,7 @@
   "main": "index.html",
   "scripts": {
     "start": "node server.js",
-    "build": "node scripts/generate-manifest.js",
+    "build": "node scripts/prepare-quill-assets.mjs && node scripts/generate-manifest.js",
     "dev": "npm run build && python3 -m http.server --directory public 8000",
     "dev:wrangler": "npm run build && wrangler pages dev public",
     "deploy": "npm run build && wrangler pages deploy public",
@@ -29,5 +29,9 @@
     "@ffmpeg/core": "^0.12.4",
     "@ffmpeg/ffmpeg": "^0.12.4",
     "wrangler": "^4.50.0"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.4.0",
+    "quill": "^2.0.3"
   }
 }

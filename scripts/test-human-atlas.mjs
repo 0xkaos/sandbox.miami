@@ -12,8 +12,9 @@ import { sitesAt, phasesAt, searchSites, siteSnapshot, hasSiteLocation } from '.
 import { activeNearEast, nearEastAt, nearEastForRegion, nearEastSnapshot } from '../public/threejs/human_atlas/near-east.mjs';
 import { paleohumansRemainsAt, paleohumansRemainsSnapshot } from '../public/threejs/human_atlas/paleohumans-remains.mjs';
 import { euppadDatesAt, euppadDatesSnapshot } from '../public/threejs/human_atlas/euppad-dates.mjs';
-import { p3k14cDatesAt, p3k14cDatesSnapshot } from '../public/threejs/human_atlas/p3k14c-dates.mjs';
+import { nearbyP3k14cDates, p3k14cDatesAt, p3k14cDatesSnapshot } from '../public/threejs/human_atlas/p3k14c-dates.mjs';
 import { roadRecordsAt, roadSnapshot } from '../public/threejs/human_atlas/road-pilot.mjs';
+import { nearbyNotes, normalizeEditorNote, notesAt } from '../public/threejs/human_atlas/editor-notes.mjs';
 
 const dir = new URL('../public/threejs/human_atlas/data/', import.meta.url);
 const meta = JSON.parse(readFileSync(new URL('population.json', dir)));
@@ -105,6 +106,20 @@ test('P3K14C preserves calibrated sample determinations with source-grounded fil
   assert.equal(snapshot.totalRecords, precise.length);
   assert.match(snapshot.status, /sampled material/i);
   assert.match(snapshot.status, /not continuous occupation/i);
+});
+
+test('nearby P3K14C dates apply their limit after local spatial filtering', () => {
+  const nearby = nearbyP3k14cDates(p3k14c, -1366, 52.625, 18.625, 80, { limit: 20 });
+  assert.ok(nearby.some(record => record.id === 'p3k14c-095334'));
+  assert.ok(nearby.every(record => record.distanceKm <= 80));
+});
+
+test('editor notes use explicit time spans and spatial queries', () => {
+  const nearby = normalizeEditorNote({ id: 'nearby-note', title: 'Nearby note', lat: 52.625, lon: 18.625, startYear: -1400, endYear: -1300, author: 'Editor' });
+  const later = normalizeEditorNote({ id: 'later-note', title: 'Later note', lat: 52.7, lon: 18.7, startYear: -1200, endYear: -1100, author: 'Editor' });
+  assert.deepEqual(notesAt([nearby, later], -1366, world).map(note => note.id), ['nearby-note']);
+  assert.deepEqual(nearbyNotes([nearby, later], -1366, 52.625, 18.625, 80).map(note => note.id), ['nearby-note']);
+  assert.equal(normalizeEditorNote({ id: 'bad', title: 'Bad', lat: 91, lon: 0, startYear: -1, endYear: 1 }), null);
 });
 
 test('ROAD pilot preserves correlation-derived ranges without calibration or taxon claims', () => {

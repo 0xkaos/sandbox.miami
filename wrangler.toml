@@ -22,3 +22,8 @@ new_classes = ["StylusSession"]
 binding = "BUCKET"
 bucket_name = "sandbox-miami-storage"
 preview_bucket_name = "sandbox-miami-storage-preview"
+
+[[d1_databases]]
+binding = "NOTES_DB"
+database_name = "sandbox-notes"
+database_id = "05a58bbb-3956-4d08-9cd6-8100fc8e0d9a"

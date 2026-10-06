@@ -1,4 +1,4 @@
-import { HistoryGlobe } from './globe.mjs';
+import { HistoryGlobe } from './globe.mjs?close-view-17';
 import { SOURCES, EVENTS, MIGRATIONS, CHAPTERS } from './history.mjs';
 import { MIN_YEAR, MAX_YEAR, TIME_KNOTS, REGIONS, CATEGORY_COLORS, clamp, bracket, borderBracket, formatYear, formatPeople, yearToPosition, positionToYear, populationAt, summarize, densityHeight, contextWindow, nearbyEvents, activeMigrations, migrationProgress, distanceKm, sourceLinks, escapeHTML as esc } from './model.mjs';
 import { populationSeries, sparklinePath, makeSnapshot, snapshotCSV, downloadFile } from './snapshot.mjs';
@@ -19,15 +19,17 @@ import { paleohumansRemainsAt, nearbyPaleohumansRemains, paleohumansRemainsSnaps
 import { euppadDatesAt, nearbyEuppadDates, euppadDatesSnapshot } from './euppad-dates.mjs';
 import { p3k14cDatesAt, nearbyP3k14cDates } from './p3k14c-dates.mjs';
 import { roadRecordsAt, nearbyRoadRecords, roadSnapshot } from './road-pilot.mjs';
+import { nearbyNotes, normalizeEditorNote, notesAt } from './editor-notes.mjs';
 
 const $ = selector => document.querySelector(selector);
-const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: .2, opacity: .3, spikeWidth: 1.5, resolution: .5, densityColors: 'long', languageFamily: 'all', layers: { population: true, territories: true, migrations: true, events: true, sites: true, archaeology: true, languages: false, rivers: false, contours: false } };
+const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: .2, opacity: .3, spikeWidth: 1.5, resolution: .5, densityColors: 'long', languageFamily: 'all', layers: { population: true, territories: true, migrations: true, events: true, sites: true, archaeology: true, notes: false, languages: false, rivers: false, contours: false } };
 const data = { sources: [...SOURCES], events: [...EVENTS], migrations: [...MIGRATIONS] };
 let meta, values, comparison, borders, nearEastCatalog, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
 let detailGrid=null, resolutionRequest=0, resolutionError=null, displayedPopulationYear=null;
 let siteCatalog=null, siteLoadError=null, lastSiteKey=null, catalogSelection=null, siteResultLimit=40;
 let europeCatalog=null, burialCatalog=null, levantCatalog=null, euroevolCatalog=null, contextCatalog=null, aadrCatalog=null, paleohumansCatalog=null, euppadCatalog=null, p3k14cCatalog=null, p3k14cLoadState='idle', roadCatalog=null, roadSpeciesCatalog=null, roadNeanderthalCatalog=null, roadExplorerStatus='Loading all published regions…', roadCategories=new Set(['lithics','human-remains','fauna','plant-remains','other']), roadNeanderthalMarkers=true, archaeologySources=new Set(['burials','contexts','aadr','paleohumans','euppad','road','pleiades']), p3k14cMaterials=new Set(['plant','faunal','shell','human','other','unspecified']), p3k14cMinimumLocationAccuracy=2, pleiadesKinds=new Set(['settlement','built or funerary site','archaeological site']), pleiadesCatalog=null, languageCatalog=null, languageAttestationCatalog=null;
 let researchIndex=[], researchById=new Map(), researchSelection=null, researchResultLimit=40, researchLoadErrors=[], evidenceKey=null, pleiadesKey=null, catalogRevision=0;
+let editorNotes=[], editorNotesLoadState='idle', editorNotesRevision=0, editorNotesScope='accessible', editorSession=null, editorNoteQuill=null, editingNote=null, notesAuthMode='login';
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function readHash() {
@@ -89,7 +91,7 @@ function chooseSite(site) {
     state.location={lat:site.lat,lon:site.lon,index:globe?.nearestCell(site.lat,site.lon)??-1};
     globe?.selectLocation(site.lat,site.lon);globe?.focus({lat:site.lat,lon:site.lon,distance:1.6,keepZoomedIn:true});
   }else{state.location=null;globe?.clearSelection();}
-  renderState();$('#place-info').scrollIntoView({block:'nearest',behavior:reduceMotion?'instant':'smooth'});
+  renderState();requestAnimationFrame(()=>$('#place-info').scrollIntoView({block:'start',behavior:reduceMotion?'instant':'smooth'}));
 }
 function chooseRegional(item) {
   setPlaying(false);state.detail={type:'regional',item};
@@ -104,6 +106,13 @@ function chooseEvidence(item) {
   state.location={lat:item.lat,lon:item.lon,index:globe?.nearestCell(item.lat,item.lon)??-1};
   globe?.selectLocation(item.lat,item.lon);globe?.focus({lat:item.lat,lon:item.lon,distance:1.45,keepZoomedIn:true});
   renderState();$('#place-info').scrollIntoView({block:'nearest',behavior:reduceMotion?'instant':'smooth'});
+}
+function chooseNote(note) {
+  setPlaying(false);state.detail={type:'note',item:note};
+  state.location={lat:note.lat,lon:note.lon,index:globe?.nearestCell(note.lat,note.lon)??-1};
+  globe?.selectLocation(note.lat,note.lon);globe?.focus({lat:note.lat,lon:note.lon,distance:1.45,keepZoomedIn:true});
+  renderState();requestAnimationFrame(()=>$('#place-info').scrollIntoView({block:'start',behavior:reduceMotion?'instant':'smooth'}));
+  loadEditorNoteDetail(note.id);
 }
 function chooseLanguage(item) {
   setPlaying(false);state.detail={type:'language',item};
@@ -357,6 +366,78 @@ function renderArchaeologyPanel(year) {
   }else $('#archaeology-list').innerHTML=burials.length+levant.length+contexts.length+aadr.length+paleohumans.length+euppad.length+p3k14c.length+road.length+places.length?`<p class="context-note">${burials.filter(event=>event.tradition==='Corded Ware').length} Corded Ware burial dates · ${burials.filter(event=>event.tradition==='Bell Beaker').length} Bell Beaker burial dates · ${aadr.length} AADR ancient samples · ${paleohumans.length} PaleoHumans uncalibrated-date placements · ${euppad.length} EUPPAD calibrated-date placements · ${p3k14c.length} P3K14C calibrated determinations · ${road.length} ROAD assemblage observations · ${contexts.length} selected contexts · ${levant.length} Levant sites · ${places.length} Pleiades place associations. Zoom in and select a point, or search the collections.</p>`:year>=PLEIADES_MODERN_START_YEAR?'<p class="empty-note">No dated burial, AADR sample, PaleoHumans, EUPPAD, P3K14C, ROAD, selected context, or Levant survey record matches this year and region. Pleiades Modern-period place references remain available in search.</p>':'<p class="empty-note">No records from these dated collections match this year and region. This is a coverage gap.</p>';
 }
 
+async function loadEditorNotes() {
+  if (editorNotesLoadState==='loading') return;
+  editorNotesLoadState='loading';renderState();
+  try {
+    const response=await fetch(`/api/human-atlas/notes?scope=${encodeURIComponent(editorSession?editorNotesScope:'public')}`,{credentials:'same-origin'});
+    if (!response.ok) throw new Error(`Notes service returned ${response.status}.`);
+    const payload=await response.json();
+    editorNotes=(Array.isArray(payload.notes)?payload.notes:[]).map(normalizeEditorNote).filter(Boolean);
+    editorNotesLoadState='loaded';editorNotesRevision++;renderState();
+  } catch (error) {
+    editorNotesLoadState=`Notes unavailable: ${error.message}`;renderState();
+  }
+}
+async function loadEditorNoteDetail(id) {
+  try {
+    const response=await fetch(`/api/human-atlas/notes?id=${encodeURIComponent(id)}`,{credentials:'same-origin'});
+    if (!response.ok) throw new Error(`Note unavailable (${response.status}).`);
+    const payload=await response.json(),detail=state.detail;
+    if (detail?.type==='note'&&detail.item.id===id) { detail.item={...detail.item,...payload.note,body:payload.body??null};renderDetail(); }
+  } catch (error) {
+    const detail=state.detail;
+    if (detail?.type==='note'&&detail.item.id===id) { detail.item={...detail.item,bodyError:error.message};renderDetail(); }
+  }
+}
+async function loadEditorSession() {
+  try { const response=await fetch('/api/human-atlas/auth/session',{credentials:'same-origin'}); if(!response.ok)throw new Error(); editorSession=(await response.json()).user??null; }
+  catch { editorSession=null; }
+}
+function noteText(delta) { return Array.isArray(delta?.ops)?delta.ops.map(op=>typeof op.insert==='string'?op.insert:'').join('').trim():''; }
+function initializeNoteEditor() { if(!editorNoteQuill) editorNoteQuill=new window.Quill('#note-editor',{theme:'snow',placeholder:'Write the note…',modules:{toolbar:[['bold','italic','underline'],[{header:[2,3,false]}],['blockquote','link'],[{list:'bullet'},{list:'ordered'}],['clean']]}}); }
+function openNotesAuth(mode='login') { notesAuthMode=mode; $('#notes-auth-title').textContent=mode==='login'?'Sign in to write.':'Request editor access.'; $('#notes-auth-submit').textContent=mode==='login'?'Sign in':'Request account'; $('#notes-auth-switch').textContent=mode==='login'?'Request an editor account':'I already have an account'; $('#notes-password').autocomplete=mode==='login'?'current-password':'new-password'; $('#notes-auth-status').textContent=''; $('#notes-auth-dialog').showModal(); }
+function openNoteEditor(note=null) {
+  if(!state.location&&!note)return;
+  initializeNoteEditor(); editingNote=note; const source=note??{lat:state.location.lat,lon:state.location.lon,start:Math.round(state.year),end:Math.round(state.year),visibility:'private',collaborators:[]};
+  $('#note-editor-title').textContent=note?'Edit note':'New note';$('#note-title').value=source.title??'';$('#note-start').value=source.start;$('#note-end').value=source.end;$('#note-visibility').value=source.visibility??'private';$('#note-collaborators').value=(source.collaborators??[]).join(', ');$('#note-collaborators-label').hidden=$('#note-visibility').value!=='shared';$('#delete-note').hidden=!note?.canDelete;$('#note-editor-status').textContent='';editorNoteQuill.setContents(note?.body?.delta??[{insert:'\n'}]);$('#note-editor-dialog').showModal();
+}
+async function submitNote(event) {
+  event.preventDefault(); const text=noteText(editorNoteQuill.getContents()), location=editingNote??state.location;
+  const payload={title:$('#note-title').value,startYear:Number($('#note-start').value),endYear:Number($('#note-end').value),lat:location.lat,lon:location.lon,visibility:$('#note-visibility').value,collaborators:$('#note-collaborators').value.split(',').map(value=>value.trim()).filter(Boolean),delta:editorNoteQuill.getContents(),text};
+  if(editingNote)payload.revision=editingNote.revision;
+  $('#note-editor-status').textContent='Saving…';
+  try { const response=await fetch(`/api/human-atlas/notes${editingNote?`?id=${encodeURIComponent(editingNote.id)}`:''}`,{method:editingNote?'PUT':'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),result=await response.json(); if(!response.ok)throw new Error(result.error??'Save failed.'); $('#note-editor-dialog').close();editorNotesLoadState='idle';await loadEditorNotes();const note=editorNotes.find(item=>item.id===result.note.id)??normalizeEditorNote(result.note);if(note)chooseNote(note); }
+  catch(error){$('#note-editor-status').textContent=error.message;}
+}
+async function loadNotesAdmin() { const status=$('#notes-admin-status'),list=$('#notes-admin-users');status.textContent='Loading account requests…';list.innerHTML='';try{const response=await fetch('/api/human-atlas/admin/users',{credentials:'same-origin'}),payload=await response.json();if(!response.ok)throw new Error(payload.error??'Unable to load accounts.');const pending=payload.users.filter(user=>user.status==='pending');status.textContent=pending.length?`${pending.length} account request${pending.length===1?'':'s'} awaiting approval.`:'No pending account requests.';list.innerHTML=pending.map(user=>`<div class="note-admin-user"><span><b>${esc(user.username)}</b><small>Requested ${new Date(user.createdAt).toLocaleDateString()}</small></span><button class="outline-button" data-approve-user="${esc(user.id)}">Approve</button></div>`).join('');$('#notes-admin-dialog').showModal();}catch(error){status.textContent=error.message;$('#notes-admin-dialog').showModal();} }
+function renderNotesPanel(year) {
+  const panel=$('#notes-panel');panel.hidden=!state.layers.notes;
+  if(panel.hidden)return;
+  const active=notesAt(editorNotes,year,state.region);
+  const visible=state.location?nearbyNotes(active,year,state.location.lat,state.location.lon,180,8):active.slice(0,8);
+  $('#notes-count').textContent=editorNotesLoadState==='loaded'?active.length.toLocaleString('en-US'):'';
+  $('#notes-scope').value=editorNotesScope;
+  $('#notes-scope').disabled=!editorSession;
+  $('#notes-status').textContent=editorNotesLoadState==='idle'||editorNotesLoadState==='loading'?'Loading notes…':typeof editorNotesLoadState==='string'&&editorNotesLoadState.startsWith('Notes unavailable:')?editorNotesLoadState:state.location?`${visible.length} accessible note${visible.length===1?'':'s'} within 180 km of this selection.${editorSession?` Signed in as ${editorSession.username}.`:' Sign in to see private and shared notes.'}`:`${active.length} accessible note${active.length===1?'':'s'} match this year and viewing region.${editorSession?` Signed in as ${editorSession.username}.`:' Sign in to see private and shared notes.'}`;
+  $('#notes-list').innerHTML=visible.length?visible.map(note=>`<button class="regional-card" data-note="${esc(note.id)}" style="--regional-color:#e2c794"><i aria-hidden="true"></i><span><b>${esc(note.title)}</b><small>${formatYear(note.start)}–${formatYear(note.end)} · ${esc(note.author)}${state.location?` · ${Math.round(note.distanceKm)} km away`:''}</small></span></button>`).join(''):'<p class="empty-note">No published notes match this place and year.</p>';
+  $('#new-note').hidden=!state.location;$('#new-note').textContent=editorSession?.role==='admin'?'New note here · Admin':editorSession?'New note here':'Sign in to add a note';$('#notes-signout').hidden=!editorSession;$('#notes-signout').textContent=editorSession?`Sign out ${editorSession.username}`:'Sign out';$('#notes-admin').hidden=editorSession?.role!=='admin';
+}
+function renderNotesBrowser() {
+  const query=$('#notes-browser-search').value.trim().toLowerCase();
+  const notes=editorNotes.filter(note=>!query||`${note.title} ${note.author}`.toLowerCase().includes(query));
+  $('#notes-browser-status').textContent=`${notes.length.toLocaleString('en-US')} ${editorNotesScope==='mine'?'owned':editorNotesScope==='shared'?'shared':editorNotesScope==='public'?'public':'accessible'} note${notes.length===1?'':'s'}${query?' matching this search':''}.`;
+  $('#notes-browser-results').innerHTML=notes.map(note=>`<article class="note-browser-row"><span><b>${esc(note.title)}</b><small>${formatYear(note.start)}–${formatYear(note.end)} · ${esc(note.author)} · ${note.lat.toFixed(3)}°, ${note.lon.toFixed(3)}°</small></span><button class="outline-button" data-note-go="${esc(note.id)}">Go to note →</button></article>`).join('')||'<p class="empty-note">No accessible notes match this search.</p>';
+}
+function openNotesBrowser() {
+  if(editorNotesLoadState!=='loaded') { $('#notes-status').textContent='Notes are still loading.'; return; }
+  $('#notes-browser-search').value='';renderNotesBrowser();showDialog('#notes-browser-dialog');
+}
+function goToNote(note) {
+  if(!note)return;
+  $('#notes-browser-dialog').close();setYear(Math.round((note.start+note.end)/2),true);chooseNote(note);
+}
+
 async function loadP3k14c() {
   if (p3k14cCatalog || p3k14cLoadState==='loading') return;
   p3k14cLoadState='loading';renderState();
@@ -481,7 +562,7 @@ async function loadResearch() {
 }
 function updateEvidenceView(year) {
   if(!globe)return;
-  const key=`${year}/${catalogRevision}/${state.languageFamily}/${state.layers.archaeology}/${state.layers.languages}/${[...archaeologySources].join(',')}/${[...roadCategories].join(',')}/${roadNeanderthalMarkers}/${[...p3k14cMaterials].join(',')}/${p3k14cMinimumLocationAccuracy}/${[...pleiadesKinds].join(',')}`;
+  const key=`${year}/${catalogRevision}/${editorNotesRevision}/${state.languageFamily}/${state.layers.archaeology}/${state.layers.notes}/${state.layers.languages}/${[...archaeologySources].join(',')}/${[...roadCategories].join(',')}/${roadNeanderthalMarkers}/${[...p3k14cMaterials].join(',')}/${p3k14cMinimumLocationAccuracy}/${[...pleiadesKinds].join(',')}`;
   if(key===evidenceKey)return;
   evidenceKey=key;
   const burialPoints=state.layers.archaeology&&archaeologySources.has('burials')?burialSitesAt(burialCatalog,year).map((group,index)=>({
@@ -517,6 +598,7 @@ function updateEvidenceView(year) {
   })):[];
   globe.setEvidencePoints(burialPoints.concat(contextPoints,aadrPoints,paleohumansPoints,euppadPoints,p3k14cPoints),levantPoints,ancient.concat(modern));
   globe.setRoadPoints(roadPoints);
+  globe.setNotePoints(state.layers.notes?notesAt(editorNotes,year).map(note=>({...note,color:'#e2c794',uncertaintyYears:note.end-note.start})):[]);
   const indices=state.layers.archaeology&&archaeologySources.has('pleiades')?pleiadesPlaceIndicesAt(pleiadesCatalog,year,null,{onlyCertain:true,preciseOnly:true,kinds:pleiadesKinds}):[];
   const currentKey=indices.join(',');
   if(currentKey!==pleiadesKey){
@@ -550,6 +632,9 @@ function renderDetail() {
     if(selected.kind==='pleiades'&&year>=PLEIADES_MODERN_START_YEAR)html+=`<p class="context-note">Pleiades Modern-period names and locations remain searchable references. No Pleiades time-map point is shown at ${formatYear(year)}.</p>`;
     else if(selected.kind==='pleiades'&&!current.record.matchingTemporalAssociations.length)html+=`<p class="context-note">No source period association includes ${formatYear(year)}. The periods above are source context, not current-year matches.</p>`;
     if(detail.item.kind!=='burial-site'&&detail.item.kind!=='p3k14c')html+=`<button class="outline-button" data-detail-research="${esc(detail.item.id)}">Open complete record ↗</button>`;
+  } else if (detail?.type === 'note') {
+    const note=detail.item,body=note.body;
+    html+=`<span class="section-label">EDITOR'S NOTE · ${esc((note.visibility??'public').toUpperCase())}</span><h2>${esc(note.title)}</h2><p>${formatYear(note.start)}–${formatYear(note.end)} · ${esc(note.author)}</p>${body?.text?`<div class="note-body">${body.text.split(/\n{2,}/).map(paragraph=>`<p>${esc(paragraph)}</p>`).join('')}</div>`:note.bodyError?`<p class="context-note">${esc(note.bodyError)}</p>`:'<p class="context-note">Loading note…</p>'}${note.canEdit&&body?.delta?'<button id="edit-note" class="outline-button">Edit note</button>':''}<p class="evidence-location">${note.lat.toFixed(4)}°, ${note.lon.toFixed(4)}°</p>`;
   } else if (detail?.type === 'language') {
     const item=detail.item,record=item.record;
     if(item.kind==='attestation')html+=`<span class="section-label">HISTORICAL LANGUAGE ATTESTATION</span><h2>${esc(record.languages.map(language=>language.name).join(' / '))}</h2><p>${esc(record.placeLabel)} · ${formatYear(record.start)}–${formatYear(record.end)} · ${esc(record.dateLabel)}</p><p>${esc(record.sourceTitle)}</p><p class="context-note">The date range estimates when this inscription was made. It is not a period of continuous language use. The point is a representative findspot, sometimes a city centroid.</p><a href="${esc(record.sourceUrl)}" target="_blank" rel="noopener">EDH inscription ${esc(record.sourceId)} ↗</a>${sourceHTML(['edh'])}`;
@@ -589,6 +674,7 @@ function renderDetail() {
   const readMore=$('#site-read-more');if(readMore)readMore.onclick=()=>openSites('all',detail.item);
   el.querySelectorAll('[data-detail-research]').forEach(button=>button.onclick=()=>openResearch({recordId:button.dataset.detailResearch}));
   el.querySelectorAll('[data-research-query]').forEach(button=>button.onclick=()=>openResearch({kind:'burial',query:button.dataset.researchQuery}));
+  $('#edit-note')?.addEventListener('click',()=>openNoteEditor(detail.item));
 }
 function boundaryDescription(status = borderLoadStatus) {
   if (status?.error) return status.error;
@@ -655,6 +741,7 @@ function renderState() {
   renderNearEastPanel(year);
   renderEuropePanel(year);
   renderArchaeologyPanel(year);
+  renderNotesPanel(year);
   renderRoadExplorer(year);
   renderLanguagePanel(year);
   $('#territory-status').textContent = boundaryDescription();
@@ -749,6 +836,7 @@ function onHover(hit) {
   else if (hit.riverName) html = `<strong>${esc(hit.riverName)}</strong><small>Modern river reference</small>`;
   else if (hit.site) html = `<strong>${esc(hit.site.title)}</strong><small>${phasesAt(hit.site,Math.round(state.year)).map(p=>esc(p.dateLabel)).join(' · ')} · click to read</small>`;
   else if (hit.regionalPlace) html=`<strong>${esc(hit.regionalPlace.name)}</strong><small>${esc(nearEastRole(hit.regionalPlace,Math.round(state.year))??(hit.regionalPlace.kind==='ethnonym'?'Ethnonym reference point':'Ancient city'))} · click to read</small>`;
+  else if (hit.note) html=`<strong>${esc(hit.note.title)}</strong><small>Editor's note · ${formatYear(hit.note.start)}–${formatYear(hit.note.end)} · click to read</small>`;
   else if (hit.evidence){
     const e=hit.evidence;
     if(e.kind==='pleiades'){
@@ -817,6 +905,20 @@ function initializeControls() {
   $('#pleiades-filters').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)pleiadesKinds.add(event.target.value);else pleiadesKinds.delete(event.target.value);renderState();};
   $('#p3k14c-filters').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.name==='p3k14c-material'){if(event.target.checked)p3k14cMaterials.add(event.target.value);else p3k14cMaterials.delete(event.target.value);}else p3k14cMinimumLocationAccuracy=Number(event.target.value);renderState();};
   $('#archaeology-list').onclick=e=>{const b=e.target.closest('[data-evidence]');if(b){const row=researchById.get(b.dataset.evidence);if(row)chooseEvidence(evidenceFromRow(row));}};
+  $('#notes-list').onclick=e=>{const b=e.target.closest('[data-note]');if(b){const note=editorNotes.find(item=>item.id===b.dataset.note);if(note)chooseNote(note);}};
+  $('#notes-browse').onclick=()=>openNotesBrowser();
+  $('#notes-browser-search').oninput=renderNotesBrowser;
+  $('#notes-browser-results').onclick=e=>{const button=e.target.closest('[data-note-go]');if(button)goToNote(editorNotes.find(note=>note.id===button.dataset.noteGo));};
+  $('#notes-scope').onchange=async e=>{editorNotesScope=e.target.value;editorNotesLoadState='idle';await loadEditorNotes();};
+  $('#new-note').onclick=()=>editorSession?openNoteEditor():openNotesAuth();
+  $('#notes-signout').onclick=async()=>{await fetch('/api/human-atlas/auth/logout',{method:'POST',credentials:'same-origin'});editorSession=null;editorNotesScope='public';editorNotesLoadState='idle';await loadEditorNotes();};
+  $('#notes-admin').onclick=()=>loadNotesAdmin();
+  $('#notes-auth-switch').onclick=()=>openNotesAuth(notesAuthMode==='login'?'register':'login');
+  $('#notes-auth-form').onsubmit=async event=>{event.preventDefault();const status=$('#notes-auth-status');status.textContent=notesAuthMode==='login'?'Signing in…':'Requesting account…';try{const response=await fetch(`/api/human-atlas/auth/${notesAuthMode}`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#notes-username').value,password:$('#notes-password').value})}),payload=await response.json();if(!response.ok)throw new Error(payload.error??'Account request failed.');if(notesAuthMode==='register'){status.textContent=payload.message;return;}editorSession=payload.user;$('#notes-auth-dialog').close();editorNotesLoadState='idle';await loadEditorNotes();if(state.location)openNoteEditor();}catch(error){status.textContent=error.message;}};
+  $('#note-editor-form').onsubmit=submitNote;
+  $('#delete-note').onclick=async()=>{if(!editingNote||!confirm(`Delete “${editingNote.title}”? This cannot be undone.`))return;const status=$('#note-editor-status');status.textContent='Deleting…';try{const response=await fetch(`/api/human-atlas/notes?id=${encodeURIComponent(editingNote.id)}`,{method:'DELETE',credentials:'same-origin'}),payload=await response.json();if(!response.ok)throw new Error(payload.error??'Delete failed.');$('#note-editor-dialog').close();state.detail=null;editorNotesLoadState='idle';await loadEditorNotes();renderState();}catch(error){status.textContent=error.message;}};
+  $('#note-visibility').onchange=()=>{$('#note-collaborators-label').hidden=$('#note-visibility').value!=='shared';};
+  $('#notes-admin-users').onclick=async event=>{const button=event.target.closest('[data-approve-user]');if(!button)return;button.disabled=true;try{const response=await fetch('/api/human-atlas/admin/approve',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:button.dataset.approveUser})}),payload=await response.json();if(!response.ok)throw new Error(payload.error??'Approval failed.');await loadNotesAdmin();}catch(error){$('#notes-admin-status').textContent=error.message;button.disabled=false;}};
   $('#research-button').onclick=()=>openResearch();
   const filterResearch=()=>{researchResultLimit=40;renderResearchDirectory();};
   $('#research-search').oninput=filterResearch;$('#research-kind').onchange=filterResearch;$('#research-scope').onchange=filterResearch;
@@ -838,7 +940,8 @@ function initializeControls() {
   };
   $('#event-category').onchange=e=>{state.category=e.target.value;renderState();};
   $('#clear-location').onclick=clearPlace;
-  for (const key in state.layers) {const el=$(`#layer-${key}`);el.checked=state.layers[key];el.onchange=()=>{state.layers[key]=el.checked;globe?.setLayers(state.layers);renderState();saveHash();};}
+  for (const key in state.layers) {const el=$(`#layer-${key}`);el.checked=state.layers[key];el.onchange=async()=>{state.layers[key]=el.checked;if(key==='notes'&&el.checked){await loadEditorSession();editorNotesLoadState='idle';await loadEditorNotes();}globe?.setLayers(state.layers);renderState();saveHash();};}
+  if(state.layers.notes)loadEditorSession().then(()=>loadEditorNotes());
   $('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;$('#spike-width').value=state.spikeWidth*100;$('#spike-width-output').textContent=`${Math.round(state.spikeWidth*100)}%`;$('#density-colors').value=state.densityColors;$('#population-resolution').value=state.resolution;
   const scale=()=>{state.scale=$('#height-scale').value;state.gain=Number($('#height-gain').value);globe?.setScale(state.scale,state.gain);renderState();saveHash();};$('#height-scale').onchange=scale;$('#height-gain').oninput=scale;
   $('#density-colors').onchange=e=>{state.densityColors=e.target.value;globe?.setDensityColorMode(state.densityColors);renderState();saveHash();};
@@ -878,7 +981,7 @@ async function start() {
     buffer=new Float32Array(meta.cells.length);series=populationSeries(meta,values,REGIONS[0]);
     try {
       globe=new HistoryGlobe($('#globe'),meta,results[2],borders,nearEastCatalog,results[6],{
-        onLocation:place=>{setPlaying(false);state.location=place;state.detail=null;lastEventKey=null;renderState();},onEvent:chooseEvent,onSite:chooseSite,onRegional:chooseRegional,onEvidence:chooseEvidence,onLanguage:chooseLanguage,onHover,
+        onLocation:place=>{setPlaying(false);state.location=place;state.detail=null;lastEventKey=null;renderState();},onEvent:chooseEvent,onSite:chooseSite,onRegional:chooseRegional,onEvidence:chooseEvidence,onNote:chooseNote,onLanguage:chooseLanguage,onHover,
         onBorders:status=>{borderLoadStatus=status;if(ready){$('#territory-status').textContent=boundaryDescription(status);if(state.location)renderDetail();}},
         onError:message=>{$('#map-error').hidden=false;$('#map-error').textContent=message;setPlaying(false);},
       });

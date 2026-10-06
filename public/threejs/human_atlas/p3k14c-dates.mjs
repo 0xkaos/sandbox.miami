@@ -12,7 +12,7 @@ export function nearbyP3k14cDates(catalog, year, lat, lon, radiusKm = 80, option
   if (!catalog || radiusKm <= 0) return [];
   const latitudeSpan = radiusKm / 111;
   const longitudeSpan = radiusKm / Math.max(20, 111 * Math.cos(lat * Math.PI / 180));
-  return p3k14cDatesAt(catalog, year, null, options).filter(record => Math.abs(record.lat - lat) <= latitudeSpan && Math.abs(record.lon - lon) <= longitudeSpan)
+  return p3k14cDatesAt(catalog, year, null, { ...options, limit: Infinity }).filter(record => Math.abs(record.lat - lat) <= latitudeSpan && Math.abs(record.lon - lon) <= longitudeSpan)
     .map(record => ({ ...record, distanceKm: distanceKm(lat, lon, record.lat, record.lon) }))
     .filter(record => record.distanceKm <= radiusKm)
     .sort((a, b) => a.distanceKm - b.distanceKm || a.site.localeCompare(b.site) || a.id.localeCompare(b.id))
