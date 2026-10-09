@@ -1,11 +1,19 @@
 import { distanceKm, pointInAtlasRegion } from './model.mjs';
 
+export function p3k14cDisplayRange(record) {
+  const ranges = record.calibratedRanges95;
+  return [Math.min(...ranges.map(([start]) => start)), Math.max(...ranges.map(([, end]) => end))];
+}
+
 export function p3k14cDatesAt(catalog, year, region = null, { materials = null, minimumLocationAccuracy = 0, limit = Infinity } = {}) {
   if (!catalog) return [];
-  return catalog.records.filter(record => record.locationAccuracy >= minimumLocationAccuracy
-    && (!materials || materials.has(record.materialClass))
-    && record.calibratedRanges95.some(([start, end]) => start <= year && year <= end)
-    && pointInAtlasRegion(record.lat, record.lon, region)).slice(0, limit);
+  return catalog.records.filter(record => {
+    const [start, end] = p3k14cDisplayRange(record);
+    return record.locationAccuracy >= minimumLocationAccuracy
+      && (!materials || materials.has(record.materialClass))
+      && start <= year && year <= end
+      && pointInAtlasRegion(record.lat, record.lon, region);
+  }).slice(0, limit);
 }
 
 export function nearbyP3k14cDates(catalog, year, lat, lon, radiusKm = 80, options = {}) {
@@ -23,7 +31,7 @@ export function p3k14cDatesSnapshot(catalog, year, region, options = {}, limit =
   if (!catalog) return null;
   const records = p3k14cDatesAt(catalog, year, region, options);
   return {
-    status: 'Independently calibrated P3K14C radiocarbon determinations. Every retained target-95.4% highest-density segment from Bchron with IntCal20 is preserved; each date concerns one sampled material, not continuous occupation.',
+    status: 'Independently calibrated P3K14C radiocarbon determinations. The map uses each result\'s continuous earliest-to-latest target-95.4% display envelope to avoid flicker across multi-modal calibration gaps; the exact Bchron/IntCal20 highest-density segments remain in every record. Each date concerns one sampled material, not continuous occupation.',
     source: catalog.source,
     totalRecords: records.length,
     records: records.slice(0, limit),

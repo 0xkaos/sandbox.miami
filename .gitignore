@@ -32,5 +32,9 @@ tmp/
 temp/
 *.tmp
 
+# Personal genealogy exports are local-only and must not be published.
+ancestors*.ged
+private/
+
 # Unused audio backup
 unused_audio/

@@ -77,11 +77,17 @@ def date_range(full_date, mean_bp, standard_deviation):
 
 def columns(fieldnames):
     prefixes = {
-        'id': 'Genetic ID (', 'skeletalCode': 'Skeletal code', 'skeletalElement': 'Skeletal element',
+        'id': 'Genetic ID (', 'persistentGeneticId': 'Persistent Genetic ID', 'individualId': 'Individual ID',
+        'skeletalCode': 'Skeletal code', 'skeletalElement': 'Skeletal element',
+        'firstPublication': 'First publication:', 'dataRepository': 'Link to the most permanent repository',
         'publication': 'Publication abbreviation', 'publicationDOI': 'doi for publication',
         'dateType': 'Method for Determining Date', 'dateMeanBP': 'Date mean in BP',
         'dateStandardDeviationBP': 'Date standard deviation in BP', 'fullDate': 'Full Date One',
-        'molecularSex': 'Molecular Sex', 'mtDNA': 'mtDNA haplogroup', 'yDNA': 'Y haplogroup  in ISOGG',
+        'physicalAnthropology': 'Age at death, Morphological sex', 'pulldownStrategy': 'Pulldown Strategy',
+        'dataType': 'Data type', 'libraryCount': 'No. Libraries', 'autosomalCoverage': 'Mean coverage on 1.15M',
+        'familyRelations': 'Family relations', 'molecularSex': 'Molecular Sex', 'mtDNA': 'mtDNA haplogroup',
+        'yDNATerminal': 'Y haplogroup in terminal mutation notation', 'yDNA': 'Y haplogroup  in ISOGG',
+        'yDNAManual': 'Y haplogroup manually called',
     }
     result = {}
     for name, prefix in prefixes.items():
@@ -107,6 +113,8 @@ def main():
         records.append({
             'id': row[column['id']],
             'sourceLabel': label,
+            'persistentGeneticId': row[column['persistentGeneticId']].strip(),
+            'individualId': row[column['individualId']].strip(),
             'site': site,
             'country': row.get('Political Entity', '').strip(),
             'lat': round(float(latitude), 6), 'lon': round(float(longitude), 6),
@@ -117,11 +125,21 @@ def main():
             'dateStandardDeviationBP': row[column['dateStandardDeviationBP']].strip(),
             'skeletalCode': row[column['skeletalCode']].strip(),
             'skeletalElement': row[column['skeletalElement']].strip(),
+            'physicalAnthropology': row[column['physicalAnthropology']].strip(),
+            'pulldownStrategy': row[column['pulldownStrategy']].strip(),
+            'dataType': row[column['dataType']].strip(),
+            'libraryCount': row[column['libraryCount']].strip(),
+            'autosomalCoverage': row[column['autosomalCoverage']].strip(),
+            'familyRelations': row[column['familyRelations']].strip(),
+            'firstPublication': row[column['firstPublication']].strip(),
             'publication': row[column['publication']].strip(),
             'publicationDOI': row[column['publicationDOI']].strip(),
+            'dataRepository': row[column['dataRepository']].strip(),
             'molecularSex': row[column['molecularSex']].strip(),
             'mtDNAHaplogroup': row[column['mtDNA']].strip(),
+            'yDNAHaplogroupTerminal': row[column['yDNATerminal']].strip(),
             'yDNAHaplogroup': row[column['yDNA']].strip(),
+            'yDNAHaplogroupManual': row[column['yDNAManual']].strip(),
             'assessment': row.get('ASSESSMENT', '').strip(),
             'notableGroupId': label if label in NOTABLE_GROUPS else None,
         })
@@ -147,7 +165,7 @@ def main():
             'file': 'v66.p1_1240K.aadr.PUB.anno', 'fileId': FILE_ID,
             'url': URL, 'sha256': digest, 'license': 'CC0 1.0',
             'selection': 'All rows with a source locality, coordinates, a usable source date, and a date method not marked Modern. Source Group IDs are retained verbatim; no Group ID is excluded for being unfamiliar, regional, or non-curated.',
-            'interpretation': 'One record is an AADR ancient individual sample at a source locality. The retained Group ID is a source-provided label, displayed as reported. It is not expanded into an independently mapped territory, population size, language, or route.',
+            'interpretation': 'One record is an AADR ancient individual sample at a source locality. sourceLabel preserves the AADR Group ID verbatim. Point color is a stable function of that Group ID: records in the same Group ID share a color. The Group ID is not an admixture estimate or an independently mapped territory, population size, language, or route.',
             'notableGroups': notable_groups,
         },
         'records': records,

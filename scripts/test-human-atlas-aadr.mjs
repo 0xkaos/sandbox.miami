@@ -18,6 +18,8 @@ test('AADR archaeological samples retain source labels, dated localities, and so
     assert.ok(record.dateRange[0] <= record.dateRange[1], record.id);
     assert.ok(Math.abs(record.lat) <= 90 && Math.abs(record.lon) <= 180, record.id);
     assert.ok(record.site && record.dateBasis && (record.fullDate || record.dateMeanBP), record.id);
+    assert.ok('individualId' in record && 'persistentGeneticId' in record && 'physicalAnthropology' in record, record.id);
+    assert.ok('dataRepository' in record && 'yDNAHaplogroupTerminal' in record && 'yDNAHaplogroupManual' in record, record.id);
     assert.notEqual(record.dateType.trim().toLowerCase(), 'modern', record.id);
   }
 });

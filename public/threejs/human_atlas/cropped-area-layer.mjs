@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // one dated map crossfades its premultiplied color so overlapping areas do not
 // blink or darken while the timeline is playing.
 export class CroppedAreaLayer {
-  constructor(scene, sphereGeometry, bounds, { width = 2048, height = 1344, renderOrder = 2.1 } = {}) {
+  constructor(scene, sphereGeometry, bounds, { width = 2048, height = 1344, renderOrder = 2.1, surfaceRadius = 1.0025 } = {}) {
     this.bounds = bounds;
     this.width = width;
     this.height = height;
@@ -28,7 +28,7 @@ export class CroppedAreaLayer {
           #include <colorspace_fragment>
         }`,
     }));
-    this.mesh.scale.setScalar(1.005);
+    this.mesh.scale.setScalar(surfaceRadius);
     this.mesh.renderOrder = renderOrder;
     this.mesh.visible = false;
     scene.add(this.mesh);

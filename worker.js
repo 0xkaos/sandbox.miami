@@ -13,6 +13,10 @@ const NOTES_SESSION_COOKIE = 'ha_notes_session';
 const NOTES_SESSION_SECONDS = 60 * 60 * 24 * 7;
 const NOTES_PASSWORD_OPTIONS = { m: 19_456, t: 2, p: 1, dkLen: 32 };
 const NOTES_MAX_BODY_BYTES = 300_000;
+const NOTES_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const NOTES_IMAGE_TYPES = new Map([
+  ['image/jpeg', 'jpg'], ['image/png', 'png'], ['image/webp', 'webp'], ['image/gif', 'gif'], ['image/avif', 'avif']
+]);
 const FMP_BASE_URL = 'https://financialmodelingprep.com/stable';
 const SP500_WEIGHT_SYMBOL = 'SPY';
 const SP500_DEFAULT_DAILY_CALL_CAP = 220;
@@ -131,11 +135,24 @@ function notesClientKey(request) {
 function notesUserSummary(row) {
   return { id: row.id, username: row.username, role: row.role, status: row.status, createdAt: row.created_at, approvedAt: row.approved_at ?? null };
 }
-function notesBody(payload) {
+function notesImageURL(value, noteId) {
+  try {
+    const url = new URL(String(value), 'https://sandbox.miami');
+    return url.origin === 'https://sandbox.miami'
+      && url.pathname === '/api/human-atlas/note-images'
+      && url.searchParams.get('note') === noteId
+      && /^img_[a-f0-9]{32}$/.test(url.searchParams.get('image') ?? '') ? url.href : null;
+  } catch { return null; }
+}
+function notesBody(payload, noteId) {
   const delta = payload.delta;
   const text = typeof payload.text === 'string' ? payload.text.trim() : '';
   if (!delta || typeof delta !== 'object' || Array.isArray(delta) || !Array.isArray(delta.ops)) throw new Error('Invalid editor content.');
-  if (!text || text.length > 50_000 || JSON.stringify(delta).length > 200_000) throw new Error('Note content must be between 1 and 50,000 characters.');
+  const embeds = delta.ops.filter(operation => operation?.insert && typeof operation.insert === 'object' && !Array.isArray(operation.insert));
+  const images = embeds
+    .map(operation => notesImageURL(operation.insert.image, noteId)).filter(Boolean);
+  if (embeds.length !== images.length) throw new Error('Note images must be uploaded through this editor.');
+  if ((!text && !images.length) || text.length > 50_000 || images.length > 24 || JSON.stringify(delta).length > 200_000) throw new Error('Note content must include text or an image, with at most 24 images.');
   return { delta, text };
 }
 function notesMetadata(payload) {
@@ -304,6 +321,42 @@ async function notesCanEdit(env, noteId, user) {
     .bind(user.id, user.role, user.id, noteId).first();
   return row;
 }
+async function handleEditorNoteImages(request, env) {
+  if (!env.NOTES_DB || !env.BUCKET) return apiJson({ error: 'Editor notes are not configured.', code: 'NOT_CONFIGURED' }, 503);
+  const url = new URL(request.url), noteId = url.searchParams.get('note'), imageId = url.searchParams.get('image');
+  if (!/^note_[a-f0-9]{32}$/.test(noteId ?? '')) return apiJson({ error: 'Invalid note id.', code: 'INVALID_NOTE_ID' }, 400);
+  if (request.method === 'GET') {
+    if (!/^img_[a-f0-9]{32}$/.test(imageId ?? '')) return apiJson({ error: 'Invalid image id.', code: 'INVALID_IMAGE_ID' }, 400);
+    const session = await notesSession(request, env);
+    const published = `n.visibility = 'public' AND n.publication_status = 'published'`;
+    const accessible = session ? `(n.publication_status = 'published' AND (n.visibility = 'public' OR n.owner_id = ? OR EXISTS (SELECT 1 FROM note_access access WHERE access.note_id = n.id AND access.user_id = ?)))` : `(${published})`;
+    const note = await env.NOTES_DB.prepare(`SELECT n.id FROM notes n WHERE n.id = ? AND ${accessible}`).bind(noteId, ...(session ? [session.id, session.id] : [])).first();
+    if (!note) return apiJson({ error: 'Note image not found.', code: 'IMAGE_NOT_FOUND' }, 404);
+    const prefix = `${EDITOR_NOTES_R2_PREFIX}${noteId}/images/${imageId}.`;
+    const listed = await env.BUCKET.list({ prefix, limit: 2 });
+    const object = listed.objects.find(candidate => candidate.key.startsWith(prefix));
+    if (!object) return apiJson({ error: 'Note image not found.', code: 'IMAGE_NOT_FOUND' }, 404);
+    const image = await env.BUCKET.get(object.key);
+    if (!image) return apiJson({ error: 'Note image not found.', code: 'IMAGE_NOT_FOUND' }, 404);
+    const headers = new Headers({ 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+    image.writeHttpMetadata(headers);
+    return new Response(image.body, { headers });
+  }
+  if (request.method !== 'POST') return apiJson({ error: 'Method not allowed.', code: 'METHOD_NOT_ALLOWED' }, 405, { Allow: 'GET, POST' });
+  if (!notesOriginAllowed(request)) return apiJson({ error: 'Use this site to upload note images.', code: 'BAD_ORIGIN' }, 403);
+  const session = await notesSession(request, env), denied = notesRequireActive(session); if (denied) return denied;
+  const note = await notesCanEdit(env, noteId, session);
+  if (!note) return apiJson({ error: 'Note not found.', code: 'NOTE_NOT_FOUND' }, 404);
+  if (!note.can_edit) return apiJson({ error: 'You do not have edit access to this note.', code: 'NOTE_EDIT_DENIED' }, 403);
+  if (!(await notesThrottle(env, `note-image:${session.id}:${notesClientKey(request)}`, 30, 900))) return apiJson({ error: 'Too many image uploads. Try again later.', code: 'RATE_LIMITED' }, 429);
+  try {
+    const form = await request.formData(), file = form.get('image');
+    if (!(file instanceof File) || !NOTES_IMAGE_TYPES.has(file.type) || !file.size || file.size > NOTES_MAX_IMAGE_BYTES) throw new Error('Choose a JPEG, PNG, WebP, GIF, or AVIF image up to 8 MB.');
+    const imageId = notesId('img'), extension = NOTES_IMAGE_TYPES.get(file.type), key = `${EDITOR_NOTES_R2_PREFIX}${noteId}/images/${imageId}.${extension}`;
+    await env.BUCKET.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type, cacheControl: 'private, max-age=300' }, customMetadata: { noteId, uploadedBy: session.id, originalName: file.name.slice(0, 180) } });
+    return apiJson({ image: { id: imageId, url: `/api/human-atlas/note-images?note=${encodeURIComponent(noteId)}&image=${encodeURIComponent(imageId)}` } }, 201);
+  } catch (error) { return apiJson({ error: error.message || 'Image could not be uploaded.', code: 'IMAGE_UPLOAD_FAILED' }, 400); }
+}
 async function handleEditorNoteWrites(request, env) {
   if (!env.NOTES_DB || !env.BUCKET) return apiJson({ error: 'Editor notes are not configured.', code: 'NOT_CONFIGURED' }, 503);
   if (!notesOriginAllowed(request)) return apiJson({ error: 'Use this site to edit notes.', code: 'BAD_ORIGIN' }, 403);
@@ -311,8 +364,8 @@ async function handleEditorNoteWrites(request, env) {
   const url = new URL(request.url), id = url.searchParams.get('id');
   try {
     if (request.method === 'POST') {
-      const payload = await notesJson(request), metadata = notesMetadata(payload), body = notesBody(payload), collaborators = await notesAccessUserIds(env, payload.collaborators ?? [], session.id);
-      const id = notesId('note'), now = notesNow(), bodyKey = `${EDITOR_NOTES_R2_PREFIX}${id}/1.json`, bodyText = JSON.stringify(body), hash = await notesSha256(bodyText);
+      const payload = await notesJson(request), metadata = notesMetadata(payload), id = notesId('note'), body = notesBody(payload, id), collaborators = await notesAccessUserIds(env, payload.collaborators ?? [], session.id);
+      const now = notesNow(), bodyKey = `${EDITOR_NOTES_R2_PREFIX}${id}/1.json`, bodyText = JSON.stringify(body), hash = await notesSha256(bodyText);
       await env.BUCKET.put(bodyKey, bodyText, { httpMetadata: { contentType: 'application/json; charset=utf-8' } });
       const publication = 'published';
       const statements = [
@@ -335,7 +388,7 @@ async function handleEditorNoteWrites(request, env) {
     if (request.method !== 'PUT') return apiJson({ error: 'Method not allowed.' }, 405, { Allow: 'POST, PUT, DELETE' });
     const payload = await notesJson(request), expected = Number(payload.revision);
     if (!Number.isInteger(expected) || expected !== note.current_revision) return apiJson({ error: 'This note changed elsewhere. Reload it before saving.', code: 'REVISION_CONFLICT', revision: note.current_revision }, 409);
-    const metadata = notesMetadata(payload), body = notesBody(payload), collaborators = await notesAccessUserIds(env, payload.collaborators ?? [], note.owner_id), revision = note.current_revision + 1, now = notesNow(), bodyKey = `${EDITOR_NOTES_R2_PREFIX}${id}/${revision}.json`, bodyText = JSON.stringify(body), hash = await notesSha256(bodyText);
+    const metadata = notesMetadata(payload), body = notesBody(payload, id), collaborators = await notesAccessUserIds(env, payload.collaborators ?? [], note.owner_id), revision = note.current_revision + 1, now = notesNow(), bodyKey = `${EDITOR_NOTES_R2_PREFIX}${id}/${revision}.json`, bodyText = JSON.stringify(body), hash = await notesSha256(bodyText);
     await env.BUCKET.put(bodyKey, bodyText, { httpMetadata: { contentType: 'application/json; charset=utf-8' } });
     const revisionInsert = await env.NOTES_DB.prepare(`INSERT OR IGNORE INTO note_revisions (note_id, revision, author_id, body_key, body_sha256, created_at)
       SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM notes WHERE id = ? AND current_revision = ?)`)
@@ -1266,6 +1319,7 @@ export default {
     // Public, allowlisted ROAD discovery partitions. No user-supplied R2 key is accepted.
     if (url.pathname === '/api/human-atlas/road') return handleRoadExplorer(request, env);
     if (url.pathname === '/api/human-atlas/notes') return request.method === 'GET' ? handleEditorNotes(request, env) : handleEditorNoteWrites(request, env);
+    if (url.pathname === '/api/human-atlas/note-images') return handleEditorNoteImages(request, env);
     if (url.pathname.startsWith('/api/human-atlas/auth/')) return handleNotesAuth(request, env);
     if (url.pathname.startsWith('/api/human-atlas/admin/')) return handleNotesAdmin(request, env);
 

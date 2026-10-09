@@ -1,4 +1,4 @@
-import { HistoryGlobe } from './globe.mjs?close-view-17';
+import { HistoryGlobe } from './globe.mjs?close-view-37';
 import { SOURCES, EVENTS, MIGRATIONS, CHAPTERS } from './history.mjs';
 import { MIN_YEAR, MAX_YEAR, TIME_KNOTS, REGIONS, CATEGORY_COLORS, clamp, bracket, borderBracket, formatYear, formatPeople, yearToPosition, positionToYear, populationAt, summarize, densityHeight, contextWindow, nearbyEvents, activeMigrations, migrationProgress, distanceKm, sourceLinks, escapeHTML as esc } from './model.mjs';
 import { populationSeries, sparklinePath, makeSnapshot, snapshotCSV, downloadFile } from './snapshot.mjs';
@@ -14,22 +14,89 @@ import { languagesForRegion, languageFamilySummary, languageGroups, languageSnap
 import { languageAttestationsForRegion, languageAttestationSnapshot } from './language-attestations.mjs';
 import { buildResearchIndex, searchResearchIndex } from './research-model.mjs';
 import { contextsAt, nearbyContexts, archaeologicalContextsSnapshot } from './archaeological-contexts.mjs';
-import { aadrSamplesAt, nearbyAadrSamples, aadrSamplesSnapshot } from './aadr-samples.mjs';
+import { aadrSamplesAt, nearbyAadrSamples, aadrSamplesSnapshot, stackAadrSamples } from './aadr-samples.mjs';
 import { paleohumansRemainsAt, nearbyPaleohumansRemains, paleohumansRemainsSnapshot } from './paleohumans-remains.mjs';
 import { euppadDatesAt, nearbyEuppadDates, euppadDatesSnapshot } from './euppad-dates.mjs';
-import { p3k14cDatesAt, nearbyP3k14cDates } from './p3k14c-dates.mjs';
+import { p3k14cDatesAt, nearbyP3k14cDates, p3k14cDisplayRange } from './p3k14c-dates.mjs';
+import { potterySitesAt } from './pottery-dates.mjs';
 import { roadRecordsAt, nearbyRoadRecords, roadSnapshot } from './road-pilot.mjs';
 import { nearbyNotes, normalizeEditorNote, notesAt } from './editor-notes.mjs';
 
 const $ = selector => document.querySelector(selector);
-const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: .2, opacity: .3, spikeWidth: 1.5, resolution: .5, densityColors: 'long', languageFamily: 'all', layers: { population: true, territories: true, migrations: true, events: true, sites: true, archaeology: true, notes: false, languages: false, rivers: false, contours: false } };
+const POTTERY_ECONOMY_TYPES = { HG: 'Hunting and gathering', M: 'Mixed economy', ME: 'Mixed economy', F: 'Farming', un: 'Unknown or uncertain' };
+const NEAR_EAST_LOCATION_BOUNDS = { west: 25, south: 20, east: 60, north: 43 };
+function potteryEconomyType(code) { return code.split('/').map(part => POTTERY_ECONOMY_TYPES[part] ?? part).join(' / '); }
+function potteryHoverLabel(code) { return `Pottery - ${potteryEconomyType(code).replaceAll(' and ', ' ')}`; }
+function aadrValue(value) { return value && !['.', '..', 'n/a (female)'].includes(value) ? value : ''; }
+const state = { year: -3000, region: REGIONS[0], playing: false, speed: 1, mode: 'era', category: 'all', location: null, detail: null, scale: 'log', gain: .2, opacity: .3, spikeWidth: 1.5, resolution: .5, densityColors: 'long', languageFamily: 'all', layers: { population: false, territories: true, migrations: false, events: false, archaeology: true, notes: false, languages: false, rivers: false, contours: false } };
 const data = { sources: [...SOURCES], events: [...EVENTS], migrations: [...MIGRATIONS] };
 let meta, values, comparison, borders, nearEastCatalog, globe, populations, buffer, lastRenderedYear, ready = false, hashTimer, lastEventKey, lastRouteKey, series, currentSnapshot, borderLoadStatus;
 let detailGrid=null, resolutionRequest=0, resolutionError=null, displayedPopulationYear=null;
 let siteCatalog=null, siteLoadError=null, lastSiteKey=null, catalogSelection=null, siteResultLimit=40;
-let europeCatalog=null, burialCatalog=null, levantCatalog=null, euroevolCatalog=null, contextCatalog=null, aadrCatalog=null, paleohumansCatalog=null, euppadCatalog=null, p3k14cCatalog=null, p3k14cLoadState='idle', roadCatalog=null, roadSpeciesCatalog=null, roadNeanderthalCatalog=null, roadExplorerStatus='Loading all published regions…', roadCategories=new Set(['lithics','human-remains','fauna','plant-remains','other']), roadNeanderthalMarkers=true, archaeologySources=new Set(['burials','contexts','aadr','paleohumans','euppad','road','pleiades']), p3k14cMaterials=new Set(['plant','faunal','shell','human','other','unspecified']), p3k14cMinimumLocationAccuracy=2, pleiadesKinds=new Set(['settlement','built or funerary site','archaeological site']), pleiadesCatalog=null, languageCatalog=null, languageAttestationCatalog=null;
+let europeCatalog=null, burialCatalog=null, levantCatalog=null, euroevolCatalog=null, contextCatalog=null, aadrCatalog=null, paleohumansCatalog=null, euppadCatalog=null, p3k14cCatalog=null, potteryCatalog=null, p3k14cLoadState='idle', roadCatalog=null, roadSpeciesCatalog=null, roadNeanderthalCatalog=null, roadExplorerStatus='Loading all published regions…', roadCategories=new Set(['lithics','human-remains','fauna','plant-remains','other']), roadNeanderthalMarkers=true, aadrStacks=true, archaeologySources=new Set(['aadr','road','p3k14c']), p3k14cMaterials=new Set(['plant','faunal','shell','human','other','unspecified']), p3k14cMinimumLocationAccuracy=2, pleiadesKinds=new Set(['settlement','built or funerary site','archaeological site']), pleiadesCatalog=null, languageCatalog=null, languageAttestationCatalog=null;
 let researchIndex=[], researchById=new Map(), researchSelection=null, researchResultLimit=40, researchLoadErrors=[], evidenceKey=null, pleiadesKey=null, catalogRevision=0;
 let editorNotes=[], editorNotesLoadState='idle', editorNotesRevision=0, editorNotesScope='accessible', editorSession=null, editorNoteQuill=null, editingNote=null, notesAuthMode='login';
+let familyAncestry=null, familySelection=null, familyRenderKey=null;
+let haplogroupKind='mt', haplogroupQuery='', haplogroupSelection=null, haplogroupIndex={mt:[],y:[]}, haplogroupCoverageSites=[];
+function haplogroupValue(record, kind) { const value=kind==='mt'?record.mtDNAHaplogroup:record.yDNAHaplogroup; return aadrValue(value)&&!/^n\/a/i.test(value)?value:''; }
+function buildHaplogroupIndex(catalog) {
+  const groups={mt:new Map(),y:new Map()};
+  for(const record of catalog?.records??[])for(const kind of ['mt','y']){const label=haplogroupValue(record,kind);if(label){const rows=groups[kind].get(label)??[];rows.push(record);groups[kind].set(label,rows);}}
+  haplogroupIndex=Object.fromEntries(Object.entries(groups).map(([kind,group])=>[kind,[...group].map(([label,records])=>({label,records,first:Math.min(...records.map(record=>record.dateRange[0]))})).sort((a,b)=>b.records.length-a.records.length||a.label.localeCompare(b.label))]));
+}
+function renderHaplogroupBrowser() {
+  const list=$('#haplogroup-list'),status=$('#haplogroup-status');if(!list||!status)return;
+  const groups=haplogroupIndex[haplogroupKind]??[],query=haplogroupQuery.trim().toLowerCase(),matches=groups.filter(group=>group.label.toLowerCase().includes(query));
+  status.textContent=groups.length?`${groups.length.toLocaleString('en-US')} reported exact ${haplogroupKind==='mt'?'mtDNA':'Y-DNA'} labels · select one to show dated sampled-occurrence coverage.`:'Loading AADR haplogroups…';
+  list.innerHTML=matches.slice(0,60).map(group=>`<button class="site-result" data-haplogroup="${esc(group.label)}" aria-pressed="${group.label===haplogroupSelection}"><b>${esc(group.label)}</b><small>${group.records.length.toLocaleString('en-US')} sample${group.records.length===1?'':'s'} · earliest ${formatYear(group.first)}</small></button>`).join('')||'<p class="empty-note">No reported haplogroup matches this filter.</p>';
+}
+function chooseHaplogroup(label) {
+  const group=(haplogroupIndex[haplogroupKind]??[]).find(candidate=>candidate.label===label);if(!group)return;
+  haplogroupSelection=label;evidenceKey=null;const sites=new Map();for(const record of group.records){const key=`${record.lat.toFixed(4)}:${record.lon.toFixed(4)}`,site=sites.get(key);if(!site||record.dateRange[0]<site.firstYear)sites.set(key,{id:`haplogroup:${haplogroupKind}:${label}:${key}`,lat:record.lat,lon:record.lon,firstYear:record.dateRange[0]});}haplogroupCoverageSites=[...sites.values()].sort((a,b)=>a.firstYear-b.firstYear||a.id.localeCompare(b.id));const first=group.records.filter(record=>record.dateRange[0]===group.first).sort((a,b)=>a.id.localeCompare(b.id))[0];
+  setPlaying(false);setYear(group.first,true);state.location={lat:first.lat,lon:first.lon,index:globe?.nearestCell(first.lat,first.lon)??-1};state.detail={type:'aadr',item:{kind:'aadr',record:first}};globe?.selectLocation(first.lat,first.lon);globe?.focus({lat:first.lat,lon:first.lon,distance:1.75});renderState();renderHaplogroupBrowser();
+}
+function familyBirthLabel(person) { return person.birth?.year ? `${formatYear(person.birth.year)} · ${person.birth.place??'place not recorded'}` : 'Birth date and place not recorded'; }
+function familyVisibleRecords(year) {
+  if(state.playing&&familySelection)return familyPathToRoot(familySelection).filter(person=>person.birth&&person.birth.year<=year).map(person=>({...person,lat:person.birth.lat,lon:person.birth.lon,color:person.id===familySelection.id?'#fff0b5':'#d58b55'}));
+  const records=[];
+  for(let birthYear=year-25;birthYear<=year+25;birthYear++)for(const person of familyAncestry?.mappedByYear.get(birthYear)??[])records.push({...person,lat:person.birth.lat,lon:person.birth.lon,color:person.id===familySelection?.id?'#fff0b5':'#d58b55'});
+  return records;
+}
+function familyPathToRoot(person) {
+  if(!familyAncestry||!person)return [];
+  if(Array.isArray(person.pathToRoot))return person.pathToRoot.map(id=>familyAncestry.byId.get(id)).filter(Boolean);
+  const path=[],visited=new Set();let currentId=person.id;
+  while(currentId&&!visited.has(currentId)){visited.add(currentId);const current=familyAncestry.byId.get(currentId);if(current)path.push(current);currentId=familyAncestry.nextTowardRootById?.[currentId];}
+  return path;
+}
+function renderFamilyMatches() {
+  const familySearch=$('#familysearch-search'),familyResults=$('#familysearch-results');
+  if(!familySearch||!familyResults)return;
+  const query=familySearch.value.trim().toLowerCase(),year=Math.round(state.year);let matches;
+  if(query)matches=(familyAncestry?.individuals??[]).filter(person=>person.name.toLowerCase().includes(query));
+  else if(familySelection?.birth)matches=(familyAncestry?.individuals??[]).filter(person=>person.id!==familySelection.id&&person.birth&&Math.abs(person.birth.year-year)<=25).sort((a,b)=>distanceKm(familySelection.birth.lat,familySelection.birth.lon,a.birth.lat,a.birth.lon)-distanceKm(familySelection.birth.lat,familySelection.birth.lon,b.birth.lat,b.birth.lon));
+  else if(familySelection)matches=[];
+  else matches=familyAncestry?.individuals??[];
+  const parents=!query&&familySelection?(familyAncestry.parentIdsById?.[familySelection.id]??[]).map(id=>familyAncestry.byId.get(id)).filter(Boolean):[];
+  const selected=!query&&familySelection?`<button class="site-result" data-family-person="${esc(familySelection.id)}"><b>${esc(familySelection.name)} · selected</b><small>${esc(familyBirthLabel(familySelection))}</small></button>`:'';
+  const parentButtons=parents.map(person=>`<button class="site-result" data-family-person="${esc(person.id)}"><b>${esc(person.name)} · parent</b><small>${esc(familyBirthLabel(person))}</small></button>`).join('');
+  const nearby=matches.slice(0,12).map(person=>`<button class="site-result" data-family-person="${esc(person.id)}"><b>${esc(person.name)}</b><small>${esc(familyBirthLabel(person))}${familySelection?.birth&&!query&&person.birth?` · ${Math.round(distanceKm(familySelection.birth.lat,familySelection.birth.lon,person.birth.lat,person.birth.lon)).toLocaleString('en-US')} km`:''}</small></button>`).join('');
+  familyResults.innerHTML=selected||parentButtons||nearby?`${selected}${parentButtons}${nearby}`:'<p class="empty-note">No ancestor matches this search.</p>';
+}
+function chooseFamily(person) {
+  if(!person)return;
+  familySelection=person;setPlaying(false);state.detail={type:'family',item:person};
+  if(person.birth){setYear(person.birth.year,true);state.location={lat:person.birth.lat,lon:person.birth.lon,index:globe?.nearestCell(person.birth.lat,person.birth.lon)??-1};globe?.selectLocation(person.birth.lat,person.birth.lon);globe?.focus({lat:person.birth.lat,lon:person.birth.lon,distance:1.7});}
+  else {state.location=null;globe?.clearSelection();renderState();}
+  renderFamilyMatches();
+}
+function initializeFamilyAncestryControls() {
+  const familyFile=$('#familysearch-file'),familySearch=$('#familysearch-search'),familyResults=$('#familysearch-results'),familyStatus=$('#familysearch-status');
+  if(!familyFile||!familySearch||!familyResults||!familyStatus||familyFile.onchange)return;
+  familyFile.onchange=async event=>{const file=event.target.files[0];if(!file)return;familyStatus.textContent=`Reading ${file.name} locally…`;try{const catalog=JSON.parse(await file.text());if(![1,2,3].includes(catalog?.schemaVersion)||!Array.isArray(catalog.individuals))throw new Error('Expected a version 1, 2, or 3 ancestry map.');const mappedByYear=new Map();for(const person of catalog.individuals)if(person.birth?.year&&Number.isFinite(person.birth.lat)&&Number.isFinite(person.birth.lon)){const people=mappedByYear.get(person.birth.year)??[];people.push(person);mappedByYear.set(person.birth.year,people);}familyAncestry={...catalog,byId:new Map(catalog.individuals.map(person=>[person.id,person])),mappedByYear};familyRenderKey=null;familySelection=familyAncestry.byId.get(catalog.rootId)??catalog.individuals.reduce((closest,person)=>person.depth<(closest?.depth??Infinity)?person:closest,null);if(!familySelection?.birth)throw new Error('The selected GEDCOM root needs a mapped birth location.');familySearch.disabled=false;familyStatus.textContent=`Selected: ${familySelection.name} · ${catalog.counts?.mappedBirths?.toLocaleString('en-US')??catalog.individuals.length} mapped births loaded locally. Dates, relationships, places, and coordinates are unverified GEDCOM transcriptions.`;state.location={lat:familySelection.birth.lat,lon:familySelection.birth.lon,index:globe?.nearestCell(familySelection.birth.lat,familySelection.birth.lon)??-1};state.detail={type:'family',item:familySelection};globe?.selectLocation(familySelection.birth.lat,familySelection.birth.lon);globe?.focus({lat:familySelection.birth.lat,lon:familySelection.birth.lon,distance:1.7});setYear(familySelection.birth.year,true);requestAnimationFrame(renderFamilyMatches);}catch(error){familyAncestry=null;familySelection=null;familyRenderKey=null;familyStatus.textContent=`Could not load ancestry map: ${error.message}`;}event.target.value='';};
+  familySearch.oninput=renderFamilyMatches;
+  familyResults.onclick=event=>{const button=event.target.closest('[data-family-person]');if(button&&familyAncestry)chooseFamily(familyAncestry.byId.get(button.dataset.familyPerson));};
+}
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function readHash() {
@@ -45,15 +112,24 @@ function readHash() {
   if (['current', 'long'].includes(params.get('densityColors'))) state.densityColors = params.get('densityColors');
   if (params.has('family')) state.languageFamily = params.get('family') || 'all';
   if (params.has('layers')) { const shown = params.get('layers').split(','); for (const key in state.layers) state.layers[key] = shown.includes(key); }
+  if (params.has('datasets')) archaeologySources = new Set(params.get('datasets').split(',').filter(Boolean));
+  if (params.has('aadrStacks')) aadrStacks = params.get('aadrStacks') !== '0';
 }
 function saveHash() {
   clearTimeout(hashTimer);
   hashTimer = setTimeout(() => {
     const p = new URLSearchParams({ year: Math.round(state.year), region: state.region.id, scale: state.scale, gain: state.gain, opacity: state.opacity, spikeWidth: state.spikeWidth, resolution: state.resolution, densityColors: state.densityColors, layers: Object.keys(state.layers).filter(k => state.layers[k]).join(',') });
     if (state.languageFamily !== 'all') p.set('family', state.languageFamily);
+    p.set('datasets', [...archaeologySources].join(','));
+    p.set('aadrStacks', aadrStacks ? '1' : '0');
     history.replaceState(null, '', `${location.pathname}${location.search}#${p}`);
   }, 250);
 }
+function syncArchaeologySourceControls() {
+  for(const input of $('#archaeology-sources')?.querySelectorAll('input[type="checkbox"]')??[])input.checked=archaeologySources.has(input.value);
+  const stacks=$('#aadr-stacks');if(stacks)stacks.checked=aadrStacks;
+}
+function syncPopulationAppearance() { $('#population-appearance').hidden=!state.layers.population; }
 function sourceHTML(ids) { return sourceLinks(ids, data.sources).map(s => `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)} ↗</a>`).join(''); }
 function setPlaying(playing) {
   if (!ready) return;
@@ -128,6 +204,7 @@ function siteLinkHTML(site) {
   return `<a href="${esc(site.url)}" target="_blank" rel="noopener">UNESCO · ${esc(site.title)} ↗</a>`;
 }
 function renderSitePanel(year) {
+  if (!$('#site-panel')) return;
   const sites=sitesAt(siteCatalog?.sites??[],year,state.region,state.location);
   $('#site-count').textContent=siteCatalog?String(sites.length):'';
   $('#site-status').textContent=siteLoadError??(siteCatalog?`Reviewed phases matching this year${state.location?' within 1,800 km':''}. ${siteCatalog.counts.reviewedSites} of ${siteCatalog.counts.sites.toLocaleString('en-US')} sites dated so far; gaps reflect coverage.`:'Loading the heritage catalog…');
@@ -137,9 +214,11 @@ function renderSitePanel(year) {
   $('#sites-at-time').textContent=sites.length>6?`Browse all ${sites.length} matching sites →`:'Browse the heritage catalog →';
 }
 function renderNearEastPanel(year) {
+  const location=state.location;
+  const inNearEast=location&&location.lon>=NEAR_EAST_LOCATION_BOUNDS.west&&location.lon<=NEAR_EAST_LOCATION_BOUNDS.east&&location.lat>=NEAR_EAST_LOCATION_BOUNDS.south&&location.lat<=NEAR_EAST_LOCATION_BOUNDS.north;
   const records=state.layers.territories?nearEastForRegion(nearEastCatalog,year,state.region):[];
-  const panel=$('#near-east-panel');panel.hidden=!records.length;
-  if(!records.length)return;
+  const panel=$('#near-east-panel');panel.hidden=!inNearEast||!records.length;
+  if(panel.hidden)return;
   $('#near-east-count').textContent=String(records.length);
   $('#near-east-list').innerHTML=records.map(item=>`<button class="regional-card" data-regional="${esc(item.id)}" style="--regional-color:${esc(item.color??'#e5d39c')}"><i aria-hidden="true"></i><span><b>${esc(item.name)}</b><small>${esc(nearEastRole(item,year)??(item.kind==='city'?'City · selected viewing window':item.kind==='culture'?'Cultural / geographic region':item.confidence==='schematic'?'Political area · schematic':'Political area · approximate'))}</small></span></button>`).join('');
 }
@@ -151,16 +230,16 @@ function renderEuropePanel(year) {
   $('#europe-list').innerHTML=records.map(item=>`<button class="regional-card" data-european="${esc(item.id)}" style="--regional-color:${esc(item.color??'#bc9374')}"><i aria-hidden="true"></i><span><b>${esc(item.name)}</b><small>${item.kind==='ethnonym'?'Ethnonym · reference point':item.kind==='people'?'Named people · approximate source area':'Polity · approximate source area'}</small></span></button>`).join('');
 }
 function languageColor(family) {
-  const selected={ 'Indo-European':'#b8a0d8','Afro-Asiatic':'#d7a679','Uralic':'#8fc3aa','Kartvelian':'#d9b87a','Dravidian':'#96b6d8','Atlantic-Congo':'#c6a86e','Austronesian':'#8cb7c2' };
+  const selected={ 'Indo-European':'#8d63d2','Afro-Asiatic':'#d48a36','Uralic':'#38a982','Kartvelian':'#c98a2b','Dravidian':'#438fc5','Atlantic-Congo':'#ae8b2c','Austronesian':'#328e9f' };
   if(selected[family])return selected[family];
   let hash=0;for(const char of family??'')hash=(hash*31+char.charCodeAt(0))|0;
-  return `hsl(${(hash>>>0)%360},42%,67%)`;
+  return `hsl(${(hash>>>0)%360},68%,57%)`;
 }
 function aadrColor(label) {
   let hash=0;for(const char of label??'')hash=(hash*31+char.charCodeAt(0))|0;
-  return `hsl(${(hash>>>0)%360},46%,66%)`;
+  return `hsl(${(hash>>>0)%360},72%,58%)`;
 }
-const P3K14C_MATERIAL_COLORS={plant:'#83bb76',faunal:'#55afaa',shell:'#e3b475',human:'#e7dfc9',other:'#bd9bd5',unspecified:'#929697'};
+const P3K14C_MATERIAL_COLORS={plant:'#4b9b3f',faunal:'#159b96',shell:'#d0802d',human:'#d9ba62',other:'#9357c2',unspecified:'#66717b'};
 const p3k14cColor=materialClass=>P3K14C_MATERIAL_COLORS[materialClass]??P3K14C_MATERIAL_COLORS.unspecified;
 const BURIAL_AADR_LABELS={'Corded Ware':'Czechia_EBA_CordedWare','Bell Beaker':'Czechia_BellBeaker'};
 function burialColor(traditions) {
@@ -239,8 +318,11 @@ function evidenceHTML(item, compact=false) {
   }
   if(item.kind==='aadr'){
     const sample=record;
-    const genetic=[sample.molecularSex&&sample.molecularSex!=='U'?`molecular sex ${sample.molecularSex}`:'',sample.mtDNAHaplogroup&&sample.mtDNAHaplogroup!=='..'?`mtDNA ${sample.mtDNAHaplogroup}`:'',sample.yDNAHaplogroup&&sample.yDNAHaplogroup!=='..'?`Y ${sample.yDNAHaplogroup}`:''].filter(Boolean);
-    return `<span class="section-label">AADR ANCIENT INDIVIDUAL · SOURCE LABEL</span><h2>${esc(sample.site||sample.id)}</h2><p><strong>Source Group ID:</strong> ${esc(sample.sourceLabel)} · ${esc(sample.country||'country not recorded')}</p><div class="research-phase"><b>Sample ${esc(sample.id)}</b><small>${esc(sample.skeletalElement||'skeletal element not recorded')}${sample.skeletalCode?` · ${esc(sample.skeletalCode)}`:''}</small><p>${esc(sample.fullDate||'No full source date text recorded.')}</p><small>${esc(sample.dateType||'Date method not recorded')} · ${esc(sample.dateBasis)}</small></div><p><strong>AADR date:</strong> ${formatYear(sample.dateRange[0])}–${formatYear(sample.dateRange[1])}.</p>${genetic.length?`<p><strong>Reported genetic annotations:</strong> ${esc(genetic.join(' · '))}${sample.assessment?` · data assessment ${esc(sample.assessment)}`:''}.</p>`:''}<p>Publication: ${sample.publicationDOI?`<a href="${esc(sample.publicationDOI)}" target="_blank" rel="noopener">${esc(sample.publication||sample.publicationDOI)} ↗</a>`:esc(sample.publication||'not recorded')}.</p><p class="context-note">This is one ancient individual sample at the source locality. The retained Group ID is a source label, not a culture boundary, population, language, or route. Its range expresses source date uncertainty, not continuous site activity.</p><a href="${esc(aadrCatalog?.source.repository??'https://doi.org/10.7910/DVN/FFIDCW')}" target="_blank" rel="noopener">Allen Ancient DNA Resource source ↗</a>`;
+    const genetic=[aadrValue(sample.molecularSex)&&sample.molecularSex!=='U'?`molecular sex ${sample.molecularSex}`:'',aadrValue(sample.mtDNAHaplogroup)?`mtDNA ${sample.mtDNAHaplogroup}`:'',aadrValue(sample.yDNAHaplogroupManual)?`Y ${sample.yDNAHaplogroupManual} (manual call)`:aadrValue(sample.yDNAHaplogroup)?`Y ${sample.yDNAHaplogroup}`:''].filter(Boolean);
+    const technical=[aadrValue(sample.pulldownStrategy),aadrValue(sample.dataType),aadrValue(sample.autosomalCoverage)?`${sample.autosomalCoverage}x autosomal coverage`:''].filter(Boolean);
+    const individualIds=[aadrValue(sample.individualId),aadrValue(sample.persistentGeneticId)].filter(Boolean);
+    const dataRepository=aadrValue(sample.dataRepository);
+    return `<span class="section-label">AADR ANCIENT INDIVIDUAL · GROUP ID</span><h2>${esc(sample.site||sample.id)}</h2><p><strong>AADR Group ID:</strong> ${esc(sample.sourceLabel)} · ${esc(sample.country||'country not recorded')}</p><div class="research-phase"><b>Sample ${esc(sample.id)}</b><small>${esc(aadrValue(sample.skeletalElement)||'skeletal element not recorded')}${aadrValue(sample.skeletalCode)?` · ${esc(sample.skeletalCode)}`:''}</small><p>${esc(sample.fullDate||'No full source date text recorded.')}</p><small>${esc(sample.dateType||'Date method not recorded')} · ${esc(sample.dateBasis)}</small></div><p><strong>AADR date:</strong> ${formatYear(sample.dateRange[0])}–${formatYear(sample.dateRange[1])}.</p>${individualIds.length?`<p><strong>Individual IDs:</strong> ${esc(individualIds.join(' · '))}.</p>`:''}${aadrValue(sample.physicalAnthropology)?`<p><strong>Physical anthropology:</strong> ${esc(sample.physicalAnthropology)}.</p>`:''}${genetic.length?`<p><strong>Reported genetic classifications:</strong> ${esc(genetic.join(' · '))}${aadrValue(sample.assessment)?` · data assessment ${esc(sample.assessment)}`:''}.</p>`:''}${aadrValue(sample.familyRelations)?`<p><strong>Reported family relation:</strong> ${esc(sample.familyRelations)}.</p>`:''}${technical.length?`<p><strong>Data metadata:</strong> ${esc(technical.join(' · '))}${aadrValue(sample.libraryCount)?` · ${esc(sample.libraryCount)} libraries`:''}.</p>`:''}<p>Publication: ${sample.publicationDOI?`<a href="${esc(sample.publicationDOI)}" target="_blank" rel="noopener">${esc(sample.publication||sample.publicationDOI)} ↗</a>`:esc(sample.publication||'not recorded')}${aadrValue(sample.firstPublication)?` · first publication ${esc(sample.firstPublication)}`:''}.</p><p class="context-note">The Group ID and genetic classifications above are transcribed from AADR annotations. A Group ID can be an archaeological, chronological, geographic, or genetic label; it does not by itself provide admixture proportions or an independently mapped territory, population size, language, or route. Its range expresses source date uncertainty, not continuous site activity.</p>${dataRepository?(dataRepository.startsWith('http')?`<a href="${esc(dataRepository)}" target="_blank" rel="noopener">Data repository ↗</a>`:`<p><strong>Data repository:</strong> ${esc(dataRepository)}.</p>`):''}<a href="${esc(aadrCatalog?.source.repository??'https://doi.org/10.7910/DVN/FFIDCW')}" target="_blank" rel="noopener">Allen Ancient DNA Resource source ↗</a>`;
   }
   if(item.kind==='paleohumans'){
     return `<span class="section-label">PALEOHUMANS · DATED HUMAN REMAINS</span><h2>${esc(record.site)}</h2><div class="research-phase"><b>${esc(record.culture||'Culture unspecified')}</b><small>${esc(record.culturePhase||'phase not recorded')}${record.stratigraphicContext?` · ${esc(record.stratigraphicContext)}`:''}</small><p>${esc(record.country||'country not recorded')}${record.region?` · ${esc(record.region)}`:''}${record.municipality?` · ${esc(record.municipality)}`:''}</p></div><p><strong>Published radiocarbon result:</strong> ${esc(record.radiocarbonBP)} ± ${esc(record.radiocarbonRange)} BP${record.material?` · ${esc(record.material)}`:''}${record.datingType?` · ${esc(record.datingType)}`:''}.</p><p><strong>Timeline placement:</strong> approximately ${formatYear(record.displayRange[0])}–${formatYear(record.displayRange[1])}, calculated as 1950 CE − (BP ± the source’s reported range).</p><p class="context-note">This is an uncalibrated BP result, not a calibrated calendar interval. It is used only to place a dated human-remains observation on the atlas timeline. It does not establish continuous occupation, a culture boundary, ancestry, language, or population.</p><a href="${esc(paleohumansCatalog?.source.url??'https://paleohumans.org/dataset')}" target="_blank" rel="noopener">PaleoHumans dataset ↗</a>${paleohumansCatalog?.source.paper?`<a href="${esc(paleohumansCatalog.source.paper)}" target="_blank" rel="noopener">Dataset paper ↗</a>`:''}${sourceHTML(['paleohumans'])}`;
@@ -252,8 +334,9 @@ function evidenceHTML(item, compact=false) {
   }
   if(item.kind==='p3k14c'){
     const ranges=record.calibratedRanges95.map(([start,end])=>`${formatYear(start)}–${formatYear(end)}`).join(' · ');
+    const displayRange=p3k14cDisplayRange(record);
     const searchURL=`https://www.google.com/search?q=${encodeURIComponent(`"${record.site}" "${record.labId}" ${record.radiocarbonBP} radiocarbon`)}`;
-    return `<span class="section-label">P3K14C · CALIBRATED RADIOCARBON DETERMINATION</span><h2>${esc(record.site)}</h2><p>${esc(record.country||'country not recorded')} · coordinate precision ${esc(record.locationAccuracy)}/3.</p><p><strong>Published result:</strong> ${esc(record.radiocarbonBP)} ± ${esc(record.radiocarbonSd)} BP${record.material?` · ${esc(record.material)}`:''}${record.taxa?` · ${esc(record.taxa)}`:''}${record.method?` · ${esc(record.method)}`:''}${record.labId?` · lab ${esc(record.labId)}`:''}.</p><p><strong>IntCal20 calibration:</strong> target-95.4% highest-density interval${record.calibratedRanges95.length===1?'':'s'} ${ranges}.</p><p class="context-note">Each date was independently calibrated with Bchron and IntCal20. It dates one sampled material, not continuous occupation, a culture boundary, ancestry, language, or population. P3K14C coordinates below precision 3 are approximate; US and Canadian records may use deliberately obfuscated administrative-centroid locations.</p>${record.reference?`<p>Reference: ${esc(record.reference)}.</p>`:''}<a href="${esc(searchURL)}" target="_blank" rel="noopener">Search site and date context ↗</a>`;
+    return `<span class="section-label">P3K14C · CALIBRATED RADIOCARBON DETERMINATION</span><h2>${esc(record.site)}</h2><p>${esc(record.country||'country not recorded')} · coordinate precision ${esc(record.locationAccuracy)}/3.</p><p><strong>Published result:</strong> ${esc(record.radiocarbonBP)} ± ${esc(record.radiocarbonSd)} BP${record.material?` · ${esc(record.material)}`:''}${record.taxa?` · ${esc(record.taxa)}`:''}${record.method?` · ${esc(record.method)}`:''}${record.labId?` · lab ${esc(record.labId)}`:''}.</p><p><strong>IntCal20 calibration:</strong> target-95.4% highest-density interval${record.calibratedRanges95.length===1?'':'s'} ${ranges}.</p>${record.calibratedRanges95.length>1?`<p><strong>Timeline display envelope:</strong> ${formatYear(displayRange[0])}–${formatYear(displayRange[1])}. This keeps the map marker visible between separate calibration modes; it does not turn the gap into a continuous calibrated interval.</p>`:''}<p class="context-note">Each date was independently calibrated with Bchron and IntCal20. It dates one sampled material, not continuous occupation, a culture boundary, ancestry, language, or population. P3K14C coordinates below precision 3 are approximate; US and Canadian records may use deliberately obfuscated administrative-centroid locations.</p>${record.reference?`<p>Reference: ${esc(record.reference)}.</p>`:''}<a href="${esc(searchURL)}" target="_blank" rel="noopener">Search site and date context ↗</a>`;
   }
   if(item.kind==='road'){
     const searchURL=`https://www.google.com/search?q=${encodeURIComponent(`"${record.assemblage}" "${record.locality}"`)}`;
@@ -348,9 +431,8 @@ function renderArchaeologyPanel(year) {
   const p3k14c=archaeologySources.has('p3k14c')?p3k14cDatesAt(p3k14cCatalog,year,state.region,{materials:p3k14cMaterials,minimumLocationAccuracy:p3k14cMinimumLocationAccuracy}):[];
   const road=archaeologySources.has('road')?roadRecordsAt(roadCatalog,year,state.region).filter(record=>roadCategories.has(record.displayCategory)):[];
   const places=archaeologySources.has('pleiades')?pleiadesPlaceIndicesAt(pleiadesCatalog,year,state.region,{onlyCertain:true,preciseOnly:true,kinds:pleiadesKinds}):[];
-  $('#archaeology-count').textContent=(burials.length+levant.length+contexts.length+aadr.length+paleohumans.length+euppad.length+p3k14c.length+road.length+places.length).toLocaleString('en-US');
-  const loaded=[burialCatalog,levantCatalog,euroevolCatalog,contextCatalog,aadrCatalog,paleohumansCatalog,euppadCatalog,roadCatalog,pleiadesCatalog].filter(Boolean).length;
-  $('#archaeology-status').textContent=researchLoadErrors.length?researchLoadErrors.join(' '):loaded<9?'Loading archaeology and ancient-place collections…':`${burials.length} modelled burial dates, ${aadr.length} AADR ancient samples, ${paleohumans.length} PaleoHumans uncalibrated-date placements, ${euppad.length} EUPPAD calibrated-date placements, ${p3k14c.length} P3K14C calibrated radiocarbon determinations${p3k14cLoadState==='loading'?' (loading…)':''}, ${road.length} ROAD assemblage observations, ${levant.length} surveyed sites with matching phases, ${contexts.length} selected contexts, and ${places.length} Pleiades period-associated places match this year and region. ROAD uses correlation-derived BP bounds, placed against 1950 CE for browsing only; it is not a calibrated date or taxonomic attribution. These are source records, not a census of occupied sites.${year>=PLEIADES_MODERN_START_YEAR?' Pleiades Modern-period names and locations remain searchable but are hidden from the dated map.':''} EUROEVOL associations are searchable but undated.`;
+  const euroevolSiteCount=archaeologySources.has('euroevol')?euroevolCatalog?.sites.filter(site=>site.phases.some(phase=>phase.culture)).length??0:0;
+  $('#archaeology-count').textContent=(burials.length+levant.length+contexts.length+aadr.length+paleohumans.length+euppad.length+p3k14c.length+road.length+places.length+euroevolSiteCount).toLocaleString('en-US');
   if(state.location){
     const nearby=[...nearbyBurialEvidence(burialCatalog,year,state.location.lat,state.location.lon,80,{limit:10}).map(event=>({id:`burial:${event.id}`,title:event.site,sub:event.tradition,distance:event.distanceKm})),
       ...nearbyLevantSites(levantCatalog,year,state.location.lat,state.location.lon,35,10).map(site=>({id:`levant:${site.id}`,title:site.name,sub:site.phases.map(phase=>phase.period).slice(0,2).join(' / '),distance:site.distanceKm})),
@@ -395,7 +477,73 @@ async function loadEditorSession() {
   catch { editorSession=null; }
 }
 function noteText(delta) { return Array.isArray(delta?.ops)?delta.ops.map(op=>typeof op.insert==='string'?op.insert:'').join('').trim():''; }
-function initializeNoteEditor() { if(!editorNoteQuill) editorNoteQuill=new window.Quill('#note-editor',{theme:'snow',placeholder:'Write the note…',modules:{toolbar:[['bold','italic','underline'],[{header:[2,3,false]}],['blockquote','link'],[{list:'bullet'},{list:'ordered'}],['clean']]}}); }
+function noteLinkURL(value) {
+  try {
+    const url=new URL(String(value));
+    return ['http:','https:','mailto:'].includes(url.protocol)?url.href:null;
+  } catch { return null; }
+}
+function noteImageURL(value) {
+  try {
+    const url=new URL(String(value),location.origin);
+    return url.origin===location.origin&&url.pathname==='/api/human-atlas/note-images'&&/^note_[a-f0-9]{32}$/.test(url.searchParams.get('note')??'')&&/^img_[a-f0-9]{32}$/.test(url.searchParams.get('image')??'')?url.href:null;
+  } catch { return null; }
+}
+function noteBodyHTML(delta) {
+  if (!Array.isArray(delta?.ops)) return '';
+  let html='',text='';
+  const inline=(value,attributes={})=>{
+    let output=esc(value).replace(/\n/g,'');
+    if (attributes.link) { const href=noteLinkURL(attributes.link); if (href) output=`<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${output}</a>`; }
+    if (attributes.bold) output=`<strong>${output}</strong>`;
+    if (attributes.italic) output=`<em>${output}</em>`;
+    if (attributes.underline) output=`<u>${output}</u>`;
+    return output;
+  };
+  const flush=()=>{if(text.trim())html+=`<p>${text.trim()}</p>`;text='';};
+  for (const operation of delta.ops) {
+    if (typeof operation.insert==='string') {
+      const parts=operation.insert.split('\n');
+      for (let index=0;index<parts.length;index++) {
+        text+=inline(parts[index],operation.attributes);
+        if (index<parts.length-1)text+=' ';
+      }
+    } else if (operation.insert&&typeof operation.insert==='object') {
+      const src=noteImageURL(operation.insert.image);
+      if(src){flush();html+=`<a class="note-image" href="${esc(src)}" target="_blank" rel="noopener noreferrer"><img src="${esc(src)}" alt="Open note image" loading="lazy"></a>`;}
+    }
+  }
+  flush();return html;
+}
+function initializeNoteEditor() {
+  if(editorNoteQuill)return;
+  editorNoteQuill=new window.Quill('#note-editor',{theme:'snow',placeholder:'Write the note…',modules:{toolbar:[['bold','italic','underline'],[{header:[2,3,false]}],['blockquote','link'],[{list:'bullet'},{list:'ordered'}],['clean']]}});
+  editorNoteQuill.root.addEventListener('paste',event=>{
+    const image=[...event.clipboardData?.files??[]].find(file=>file.type.startsWith('image/'));
+    if(!image)return;
+    event.preventDefault();event.stopImmediatePropagation();uploadNoteImageFile(image);
+  },true);
+}
+async function uploadNoteImageFile(file) {
+  if(!editingNote){$('#note-editor-status').textContent='Save this note once before adding images.';return;}
+  if(!['image/jpeg','image/png','image/webp','image/gif','image/avif'].includes(file.type)||file.size>8*1024*1024){$('#note-editor-status').textContent='Choose a JPEG, PNG, WebP, GIF, or AVIF image smaller than 8 MB.';return;}
+  $('#note-editor-status').textContent='Uploading image…';
+  try{
+    const body=new FormData();body.append('image',file,file.name||'pasted-image');
+    const response=await fetch(`/api/human-atlas/note-images?note=${encodeURIComponent(editingNote.id)}`,{method:'POST',credentials:'same-origin',body}),result=await response.json();
+    if(!response.ok)throw new Error(result.error??'Image upload failed.');
+    const index=editorNoteQuill.getSelection(true)?.index??editorNoteQuill.getLength();
+    editorNoteQuill.insertEmbed(index,'image',result.image.url,'user');editorNoteQuill.setSelection(index+1,0,'silent');
+    $('#note-editor-status').textContent='Image added. Save the note to publish this revision.';
+  }catch(error){$('#note-editor-status').textContent=error.message;}
+}
+function uploadNoteImage() {
+  const picker=document.createElement('input');picker.type='file';picker.accept='image/jpeg,image/png,image/webp,image/gif,image/avif';
+  picker.onchange=()=>{
+    const file=picker.files?.[0];if(file)uploadNoteImageFile(file);
+  };
+  picker.click();
+}
 function openNotesAuth(mode='login') { notesAuthMode=mode; $('#notes-auth-title').textContent=mode==='login'?'Sign in to write.':'Request editor access.'; $('#notes-auth-submit').textContent=mode==='login'?'Sign in':'Request account'; $('#notes-auth-switch').textContent=mode==='login'?'Request an editor account':'I already have an account'; $('#notes-password').autocomplete=mode==='login'?'current-password':'new-password'; $('#notes-auth-status').textContent=''; $('#notes-auth-dialog').showModal(); }
 function openNoteEditor(note=null) {
   if(!state.location&&!note)return;
@@ -543,9 +691,10 @@ async function loadResearch() {
     ['Levant surveys','levant-sites.json',catalog=>{levantCatalog=catalog;}],
     ['EUROEVOL','euroevol-sites.json',catalog=>{euroevolCatalog=catalog;}],
     ['Selected contexts','archaeological-contexts.json',catalog=>{contextCatalog=catalog;}],
-    ['AADR samples','aadr-archaeological-samples.json',catalog=>{aadrCatalog=catalog;}],
+    ['AADR samples','aadr-archaeological-samples.json',catalog=>{aadrCatalog=catalog;buildHaplogroupIndex(catalog);renderHaplogroupBrowser();}],
     ['PaleoHumans','paleohumans-remains.json',catalog=>{paleohumansCatalog=catalog;}],
     ['EUPPAD','euppad-calibrated-dates.json',catalog=>{euppadCatalog=catalog;}],
+    ['Early pottery sites','early-pottery-sites.json',catalog=>{potteryCatalog=catalog;}],
     ['ROAD human-remains species','road-human-remains-species.json',catalog=>{roadSpeciesCatalog=catalog;}],
     ['ROAD explicit Neanderthal localities','road-neanderthal-localities.json',catalog=>{roadNeanderthalCatalog=catalog;}],
     ['ROAD pilot','road-near-east-pilot.json',catalog=>{roadCatalog=enrichRoadSpecies(catalog);}],
@@ -562,7 +711,7 @@ async function loadResearch() {
 }
 function updateEvidenceView(year) {
   if(!globe)return;
-  const key=`${year}/${catalogRevision}/${editorNotesRevision}/${state.languageFamily}/${state.layers.archaeology}/${state.layers.notes}/${state.layers.languages}/${[...archaeologySources].join(',')}/${[...roadCategories].join(',')}/${roadNeanderthalMarkers}/${[...p3k14cMaterials].join(',')}/${p3k14cMinimumLocationAccuracy}/${[...pleiadesKinds].join(',')}`;
+  const key=`${year}/${catalogRevision}/${editorNotesRevision}/${state.languageFamily}/${state.layers.archaeology}/${state.layers.notes}/${state.layers.languages}/${[...archaeologySources].join(',')}/${aadrStacks}/${haplogroupKind}/${haplogroupSelection??''}/${[...roadCategories].join(',')}/${roadNeanderthalMarkers}/${[...p3k14cMaterials].join(',')}/${p3k14cMinimumLocationAccuracy}/${[...pleiadesKinds].join(',')}`;
   if(key===evidenceKey)return;
   evidenceKey=key;
   const burialPoints=state.layers.archaeology&&archaeologySources.has('burials')?burialSitesAt(burialCatalog,year).map((group,index)=>({
@@ -570,34 +719,44 @@ function updateEvidenceView(year) {
     color:burialColor(group.traditions),uncertaintyYears:Math.max(...group.events.map(event=>event.modeledRange95[1]-event.modeledRange95[0])),
   })):[];
   const contextPoints=state.layers.archaeology&&archaeologySources.has('contexts')?contextsAt(contextCatalog,year).map(record=>({
-    id:`context:${record.id}`,kind:'context',lat:record.lat,lon:record.lon,record,color:'#d19a7d',
+    id:`context:${record.id}`,kind:'context',lat:record.lat,lon:record.lon,record,color:'#cb633d',
   })):[];
-  const aadrPoints=state.layers.archaeology&&archaeologySources.has('aadr')?aadrSamplesAt(aadrCatalog,year).map(record=>({
+  const aadrRecords=state.layers.archaeology&&archaeologySources.has('aadr')?aadrSamplesAt(aadrCatalog,year):[];
+  const aadrPoints=(aadrStacks?stackAadrSamples(aadrRecords):aadrRecords).map(record=>({
     id:`aadr:${record.id}`,kind:'aadr',lat:record.lat,lon:record.lon,record,color:aadrColor(record.sourceLabel),uncertaintyYears:record.dateRange[1]-record.dateRange[0],
-  })):[];
+    stackOffset:record.stackOffset,
+  }));
+  const haplogroupCoverage=state.layers.archaeology&&haplogroupSelection?haplogroupCoverageSites.filter(site=>site.firstYear<=year):[];
   const paleohumansPoints=state.layers.archaeology&&archaeologySources.has('paleohumans')?paleohumansRemainsAt(paleohumansCatalog,year).map(record=>({
-    id:`paleohumans:${record.id}`,kind:'paleohumans',lat:record.lat,lon:record.lon,record,color:'#d6bf87',uncertaintyYears:record.displayRange[1]-record.displayRange[0],
+    id:`paleohumans:${record.id}`,kind:'paleohumans',lat:record.lat,lon:record.lon,record,color:'#c6922d',uncertaintyYears:record.displayRange[1]-record.displayRange[0],
   })) :[];
   const euppadPoints=state.layers.archaeology&&archaeologySources.has('euppad')?euppadDatesAt(euppadCatalog,year).map(record=>({
-    id:`euppad:${record.id}`,kind:'euppad',lat:record.lat,lon:record.lon,record,color:'#79b9c4',uncertaintyYears:Math.max(...record.calibratedRanges95.map(([start,end])=>end-start)),
+    id:`euppad:${record.id}`,kind:'euppad',lat:record.lat,lon:record.lon,record,color:'#2993a8',uncertaintyYears:Math.max(...record.calibratedRanges95.map(([start,end])=>end-start)),
   })) :[];
   const p3k14cPoints=state.layers.archaeology&&archaeologySources.has('p3k14c')?p3k14cDatesAt(p3k14cCatalog,year,null,{materials:p3k14cMaterials,minimumLocationAccuracy:p3k14cMinimumLocationAccuracy,limit:20000}).map(record=>({
-    id:`p3k14c:${record.id}`,kind:'p3k14c',lat:record.lat,lon:record.lon,record,color:p3k14cColor(record.materialClass),uncertaintyYears:Math.max(...record.calibratedRanges95.map(([start,end])=>end-start)),
+    id:`p3k14c:${record.id}`,kind:'p3k14c',lat:record.lat,lon:record.lon,record,color:p3k14cColor(record.materialClass),uncertaintyYears:p3k14cDisplayRange(record)[1]-p3k14cDisplayRange(record)[0],
   })) :[];
+  const potteryPoints=state.layers.archaeology&&archaeologySources.has('pottery')?potterySitesAt(potteryCatalog,year).map(record=>({
+    id:`pottery:${record.id}`,kind:'pottery',lat:record.lat,lon:record.lon,record,color:{F:'#c87824',HG:'#158d88',ME:'#a94f79','F/ME':'#a8792d','HG/M':'#668b4b',un:'#68737d'}[record.economy]??'#68737d',uncertaintyYears:200,
+  })) :[];
+  const euroevolPoints=state.layers.archaeology&&archaeologySources.has('euroevol')?euroevolCatalog?.sites.filter(site=>site.phases.some(phase=>phase.culture)).map(site=>({
+    id:`euroevol:${site.id}`,kind:'euroevol',lat:site.lat,lon:site.lon,record:site,color:'#b9874b',
+  }))??[]:[];
   const roadPoints=state.layers.archaeology&&archaeologySources.has('road')?roadRecordsAt(roadCatalog,year).filter(record=>roadCategories.has(record.displayCategory)).map(record=>({
-    id:`road:${record.id}`,kind:'road',lat:record.lat,lon:record.lon,record,displayCategory:record.displayCategory,color:{lithics:'#d99b49','human-remains':'#e7dfc9',fauna:'#55afaa','plant-remains':'#83bb76',other:'#929697'}[record.displayCategory]??'#929697',accentStem:roadNeanderthalMarkers&&record.humanSpecies?.includes('neanderthalensis'),uncertaintyYears:record.displayRange[1]-record.displayRange[0],
+    id:`road:${record.id}`,kind:'road',lat:record.lat,lon:record.lon,record,displayCategory:record.displayCategory,color:{lithics:'#ce7e2c','human-remains':'#d6c06f',fauna:'#189995','plant-remains':'#599a43',other:'#67717a'}[record.displayCategory]??'#67717a',accentStem:roadNeanderthalMarkers&&record.humanSpecies?.includes('neanderthalensis'),uncertaintyYears:record.displayRange[1]-record.displayRange[0],
   })) :[];
   const levantPoints=state.layers.archaeology&&archaeologySources.has('levant')?activeLevantSiteIndices(levantCatalog,year).map(index=>{
-    const row=levantCatalog.sites[index];return{id:`levant:${row[0]}`,kind:'levant',index,lat:row[5],lon:row[6],color:'#8fc0a6'};
+    const row=levantCatalog.sites[index];return{id:`levant:${row[0]}`,kind:'levant',index,lat:row[5],lon:row[6],color:'#359a70'};
   }):[];
   const ancient=state.layers.languages?languageAttestationsForRegion(languageAttestationCatalog,year,REGIONS[0]).map(record=>({
-    id:record.id,kind:'attestation',lat:record.lat,lon:record.lon,color:'#aaa5dc',record,
+    id:record.id,kind:'attestation',lat:record.lat,lon:record.lon,color:'#8066ce',record,
   })):[];
   const modern=state.layers.languages?languagesForRegion(languageCatalog,year,REGIONS[0],state.languageFamily==='all'?null:state.languageFamily).map(record=>({
     id:record.id,kind:'modern-language',lat:record.lat,lon:record.lon,color:languageColor(record.familyName),record,
   })):[];
-  globe.setEvidencePoints(burialPoints.concat(contextPoints,aadrPoints,paleohumansPoints,euppadPoints,p3k14cPoints),levantPoints,ancient.concat(modern));
+  globe.setEvidencePoints({burials:burialPoints,contexts:contextPoints,aadr:aadrPoints,paleohumans:paleohumansPoints,euppad:euppadPoints,p3k14c:p3k14cPoints,pottery:potteryPoints,euroevol:euroevolPoints},levantPoints,ancient.concat(modern));
   globe.setRoadPoints(roadPoints);
+  globe.setHaplogroupCoverage(haplogroupCoverage);
   globe.setNotePoints(state.layers.notes?notesAt(editorNotes,year).map(note=>({...note,color:'#e2c794',uncertaintyYears:note.end-note.start})):[]);
   const indices=state.layers.archaeology&&archaeologySources.has('pleiades')?pleiadesPlaceIndicesAt(pleiadesCatalog,year,null,{onlyCertain:true,preciseOnly:true,kinds:pleiadesKinds}):[];
   const currentKey=indices.join(',');
@@ -605,17 +764,21 @@ function updateEvidenceView(year) {
     pleiadesKey=currentKey;
     globe.setPleiadesPoints(indices.map(index=>{
       const row=pleiadesCatalog.places[index],kind=pleiadesCatalog.dictionary.kinds[row[5]];
-      return{id:`pleiades:${row[0]}`,kind:'pleiades',index,lat:row[2],lon:row[3],placeKind:kind,color:kind==='archaeological site'?'#c0a5d6':kind==='built or funerary site'?'#d7ae9b':'#92b4ab'};
+      return{id:`pleiades:${row[0]}`,kind:'pleiades',index,lat:row[2],lon:row[3],placeKind:kind,color:kind==='archaeological site'?'#9168c9':kind==='built or funerary site'?'#ca7546':'#358f87'};
     }));
   }
 }
-function clearPlace() { state.location = null; state.detail = null; globe?.clearSelection(); lastEventKey = null; renderState(); }
+function clearPlace() { state.location = null; state.detail = null; familySelection = null; globe?.clearSelection(); lastEventKey = null; renderState(); renderFamilyMatches(); }
 function renderDetail() {
   const el = $('#place-info'), location = state.location, detail = state.detail;
   el.hidden = !location && !detail; $('#clear-location').hidden = el.hidden;
   if (el.hidden) return;
   let html = '<button class="detail-close" aria-label="Clear selected place">×</button>';
-  if (detail?.type === 'regional') {
+  if (detail?.type === 'family') {
+    const person=detail.item,path=familyPathToRoot(person);
+    const birth=person.birth;
+    html+=`<span class="section-label">PERSONAL ANCESTRY · LOCAL GEDCOM</span><h2>${esc(person.name)}</h2><p>${esc(familyBirthLabel(person))}</p>${birth?`<p class="context-note">Birth coordinate: ${esc(birth.coordinateSource??'GEDCOM-derived location')} · ${birth.lat.toFixed(4)}°, ${birth.lon.toFixed(4)}°. This is a personal FamilySearch-derived GEDCOM transcription, not independently verified evidence.</p>`:'<p class="context-note">No birth event is recorded for this person in the imported GEDCOM, so no map marker is available.</p>'}<p>${Math.max(0,path.length-1)} mapped relationship step${path.length===2?'':'s'} lead toward the selected GEDCOM root. The line shows recorded links and dated birth locations; it does not assert a migration route.</p>`;
+  } else if (detail?.type === 'regional') {
     const item=detail.item;
     html+=`<span class="section-label">${item.collection==='european'?'EUROPE':'NEAR EAST'} · ${esc(item.kind.toUpperCase())}</span><h2>${esc(item.name)}</h2><p>${formatYear(item.start)} – ${formatYear(item.end)}${item.kind==='city'||item.kind==='ethnonym'?' · selected viewing window':' · approximate mapping interval'}</p>${nearEastRole(item,Math.round(state.year))?`<p><strong>${esc(nearEastRole(item,Math.round(state.year)))}</strong></p>`:''}<p>${esc(item.note)}</p>${item.sourceInterval&&(item.sourceInterval[0]!==item.start||item.sourceInterval[1]!==item.end)?`<p class="context-note">This shape is from a ${formatYear(item.sourceInterval[0])}–${formatYear(item.sourceInterval[1])} source interval; its shape is held to the reviewed transition.</p>`:''}${item.confidence==='schematic'?'<p class="context-note">Schematic area; its edge is not a surveyed historical border.</p>':''}${item.url?`<a href="${esc(item.url)}" target="_blank" rel="noopener">Place record ↗</a>`:''}${sourceHTML(item.sources)}`;
   } else if (detail?.type === 'evidence') {
@@ -628,13 +791,16 @@ function renderDetail() {
     }else if(selected.kind==='pleiades'){
       current={...selected,record:pleiadesPlaceRecord(pleiadesCatalog,selected.index,year)??selected.record};
     }
-    html+=evidenceHTML(current,true);
+    if(selected.kind==='pottery'){
+      const record=selected.record;
+      html+=`<span class="section-label">EARLY POTTERY SITE · ${esc(record.economy)}</span><h2>${esc(record.site)}</h2><p>${formatYear(record.displayYear)} · source average ${record.averageCalBPIntCal09.toLocaleString('en-US')} cal BP (IntCal09)</p><p><strong>Economy type:</strong> ${esc(record.economy)} = ${esc(potteryEconomyType(record.economy))}.</p><p class="context-note">The map uses the paper's supplied calibrated average as a browsing point (±100 years), not a calibrated interval or continuous occupation.</p><p>Radiocarbon determination: ${record.radiocarbonBP.toLocaleString('en-US')} ± ${record.radiocarbonSd.toLocaleString('en-US')} BP.</p><a href="https://doi.org/10.15184/aqy.2016.68" target="_blank" rel="noopener">Jordan et al. (2016) ↗</a>`;
+    }else html+=evidenceHTML(current,true);
     if(selected.kind==='pleiades'&&year>=PLEIADES_MODERN_START_YEAR)html+=`<p class="context-note">Pleiades Modern-period names and locations remain searchable references. No Pleiades time-map point is shown at ${formatYear(year)}.</p>`;
     else if(selected.kind==='pleiades'&&!current.record.matchingTemporalAssociations.length)html+=`<p class="context-note">No source period association includes ${formatYear(year)}. The periods above are source context, not current-year matches.</p>`;
-    if(detail.item.kind!=='burial-site'&&detail.item.kind!=='p3k14c')html+=`<button class="outline-button" data-detail-research="${esc(detail.item.id)}">Open complete record ↗</button>`;
+    if(detail.item.kind!=='burial-site'&&detail.item.kind!=='p3k14c'&&detail.item.kind!=='pottery')html+=`<button class="outline-button" data-detail-research="${esc(detail.item.id)}">Open complete record ↗</button>`;
   } else if (detail?.type === 'note') {
     const note=detail.item,body=note.body;
-    html+=`<span class="section-label">EDITOR'S NOTE · ${esc((note.visibility??'public').toUpperCase())}</span><h2>${esc(note.title)}</h2><p>${formatYear(note.start)}–${formatYear(note.end)} · ${esc(note.author)}</p>${body?.text?`<div class="note-body">${body.text.split(/\n{2,}/).map(paragraph=>`<p>${esc(paragraph)}</p>`).join('')}</div>`:note.bodyError?`<p class="context-note">${esc(note.bodyError)}</p>`:'<p class="context-note">Loading note…</p>'}${note.canEdit&&body?.delta?'<button id="edit-note" class="outline-button">Edit note</button>':''}<p class="evidence-location">${note.lat.toFixed(4)}°, ${note.lon.toFixed(4)}°</p>`;
+    html+=`<span class="section-label">EDITOR'S NOTE · ${esc((note.visibility??'public').toUpperCase())}</span><h2>${esc(note.title)}</h2><p>${formatYear(note.start)}–${formatYear(note.end)} · ${esc(note.author)}</p>${body?.delta?`<div class="note-body">${noteBodyHTML(body.delta)}</div>`:note.bodyError?`<p class="context-note">${esc(note.bodyError)}</p>`:'<p class="context-note">Loading note…</p>'}${note.canEdit&&body?.delta?'<button id="edit-note" class="outline-button">Edit note</button>':''}<p class="evidence-location">${note.lat.toFixed(4)}°, ${note.lon.toFixed(4)}°</p>`;
   } else if (detail?.type === 'language') {
     const item=detail.item,record=item.record;
     if(item.kind==='attestation')html+=`<span class="section-label">HISTORICAL LANGUAGE ATTESTATION</span><h2>${esc(record.languages.map(language=>language.name).join(' / '))}</h2><p>${esc(record.placeLabel)} · ${formatYear(record.start)}–${formatYear(record.end)} · ${esc(record.dateLabel)}</p><p>${esc(record.sourceTitle)}</p><p class="context-note">The date range estimates when this inscription was made. It is not a period of continuous language use. The point is a representative findspot, sometimes a city centroid.</p><a href="${esc(record.sourceUrl)}" target="_blank" rel="noopener">EDH inscription ${esc(record.sourceId)} ↗</a>${sourceHTML(['edh'])}`;
@@ -656,17 +822,13 @@ function renderDetail() {
     html += sourceHTML(item.sources);
   }
   if (location) {
-    const grid=globe?.meta??meta, shown=globe?globe.populations:populations;
-    const c = location.index >= 0 ? grid.cells[location.index] : null, count = c && shown ? shown[location.index] : null;
     if (!detail) html += `<span class="section-label">SELECTED PLACE</span><h2>${Math.abs(location.lat).toFixed(1)}° ${location.lat >= 0 ? 'N' : 'S'} · ${Math.abs(location.lon).toFixed(1)}° ${location.lon >= 0 ? 'E' : 'W'}</h2>`;
-    if (c && count != null) html += `<dl><dt>Nearby ${grid.resolutionDegrees}° cell</dt><dd>${formatPeople(count)} people</dd><dt>Mean cell density</dt><dd>${(count / c[2]).toLocaleString('en-US', { maximumFractionDigits: 3 })} / km²</dd><dt>Cell footprint</dt><dd>${Math.round(c[2]).toLocaleString('en-US')} km²</dd></dl><p>Cell center: ${c[0]}°, ${c[1]}°. These are grid estimates, not settlement counts.${displayedPopulationYear!=null&&displayedPopulationYear!==Math.round(state.year)?` Displayed population: ${formatYear(displayedPopulationYear)} while detail loads.`:''}</p>`;
-    else html += `<p>${state.year < -10000 ? 'No quantitative population estimate is available at this date.' : 'No population grid cell is available near this point.'}</p>`;
     const territories = globe?.territoriesAt(location.lat, location.lon) ?? [];
     if (territories.length) html += territories.map(t => t.source==='regional'||t.source==='european'
       ? `<p class="territory-chip" style="border-color:${esc(t.color??'#d1ad68')}"><b>${esc(t.name)}</b> · ${esc(nearEastRole(t,Math.round(state.year))??t.kind)}${t.confidence==='schematic'?' · schematic':''}<small>${esc(t.note)}</small></p>`
       : `<p class="territory-chip">${esc(t.name)}${t.year != null ? ` · ${formatYear(t.year)} snapshot` : ' · broad schematic zone'}</p>`).join('');
     else html += '<p>No territorial label in the available snapshot. This does not mean the place was uninhabited or ungoverned.</p>';
-    if (!detail) html += sourceHTML(['hyde', ...(territories.some(t=>t.source==='basemaps') ? ['basemaps'] : []), ...territories.flatMap(t=>t.sources??[])]);
+    if (!detail) html += sourceHTML([...(territories.some(t=>t.source==='basemaps') ? ['basemaps'] : []), ...territories.flatMap(t=>t.sources??[])]);
   }
   el.innerHTML = html; el.querySelector('.detail-close').onclick = clearPlace;
   const jump = $('#event-jump'); if (jump) jump.onclick = () => setYear((detail.item.start + detail.item.end) / 2, true);
@@ -737,6 +899,7 @@ function renderState() {
   }
   const mapEvents = nearbyEvents(data.events, year, REGIONS[0], state.category).slice(0,100);
   globe?.setYear(year, data.migrations, mapEvents,sitesAt(siteCatalog?.sites??[],year,REGIONS[0])); updatePopulationView(year);updateEvidenceView(year);
+  if(familyAncestry){const familyKey=`${familySelection?.id??''}:${year}:${state.playing?'playing':'paused'}`;if(familyKey!==familyRenderKey){familyRenderKey=familyKey;globe?.setFamilyAncestry(familyVisibleRecords(year),familyPathToRoot(familySelection),year);}}
   renderSitePanel(year);
   renderNearEastPanel(year);
   renderEuropePanel(year);
@@ -744,7 +907,7 @@ function renderState() {
   renderNotesPanel(year);
   renderRoadExplorer(year);
   renderLanguagePanel(year);
-  $('#territory-status').textContent = boundaryDescription();
+  $('#territory-status')?.replaceChildren(document.createTextNode(boundaryDescription()));
   renderDetail();
 }
 function updatePopulationView(year) {
@@ -833,6 +996,7 @@ function onHover(hit) {
   const tooltip = $('#tooltip'); if (!hit) { tooltip.hidden = true; return; }
   let html;
   if (hit.event) html = `<strong>${esc(hit.event.title)}</strong><small>${formatYear(hit.event.start)} – ${formatYear(hit.event.end)} · click to read</small>`;
+  else if (hit.family) html = `<strong>${esc(hit.family.name)}</strong><small>${formatYear(hit.family.birth.year)} · ${esc(hit.family.birth.place??'place not recorded')} · click to follow lineage</small>`;
   else if (hit.riverName) html = `<strong>${esc(hit.riverName)}</strong><small>Modern river reference</small>`;
   else if (hit.site) html = `<strong>${esc(hit.site.title)}</strong><small>${phasesAt(hit.site,Math.round(state.year)).map(p=>esc(p.dateLabel)).join(' · ')} · click to read</small>`;
   else if (hit.regionalPlace) html=`<strong>${esc(hit.regionalPlace.name)}</strong><small>${esc(nearEastRole(hit.regionalPlace,Math.round(state.year))??(hit.regionalPlace.kind==='ethnonym'?'Ethnonym reference point':'Ancient city'))} · click to read</small>`;
@@ -848,10 +1012,10 @@ function onHover(hit) {
       const burialCultures=e.kind==='burial-site'?[...new Set(e.record.events.map(event=>event.culture).filter(Boolean))]:[];
       const levantPhases=e.kind==='levant'?levantSiteRecord(levantCatalog,e.index,Math.round(state.year))?.phases??[]:[];
       const phaseTypes=[...new Set(levantPhases.map(phase=>phase.type).filter(Boolean))];
-      const label=e.kind==='burial-site'?e.record.site:e.kind==='levant'?levantCatalog?.sites[e.index]?.[2]??'Surveyed site':e.kind==='context'?e.record.name:e.record?.site??'Archaeological evidence';
+      const label=e.kind==='burial-site'?e.record.site:e.kind==='levant'?levantCatalog?.sites[e.index]?.[2]??'Surveyed site':e.kind==='context'?e.record.name:e.kind==='euroevol'?e.record.name:e.record?.site??'Archaeological evidence';
       const detail=e.kind==='burial-site'?[`${e.record.eventCount} dated burial records`,burialCultures.length?`Culture: ${burialCultures.slice(0,3).join(' · ')}${burialCultures.length>3?` +${burialCultures.length-3} more`:''}`:''].filter(Boolean).join('<br>')
         :e.kind==='levant'?[`${levantPhases.length} dated survey phase${levantPhases.length===1?'':'s'}`,phaseTypes.length?`Type: ${phaseTypes.slice(0,3).join(' · ')}${phaseTypes.length>3?` +${phaseTypes.length-3} more`:''}`:''].filter(Boolean).join('<br>')
-        :e.kind==='context'?`${e.record.evidenceKind} · ${e.record.convention}`:e.kind==='aadr'?`AADR · ${e.record.sourceLabel}`:e.kind==='euppad'?`EUPPAD · IntCal20 calibrated date`:'Excavated evidence';
+        :e.kind==='context'?`${e.record.evidenceKind} · ${e.record.convention}`:e.kind==='aadr'?`AADR · ${e.record.sourceLabel}`:e.kind==='euppad'?`EUPPAD · IntCal20 calibrated date`:e.kind==='pottery'?potteryHoverLabel(e.record.economy):'Excavated evidence';
       html=`<strong>${esc(label)}</strong><small>${detail} · click to read</small>`;
     }
   }
@@ -867,15 +1031,28 @@ function onHover(hit) {
 function initializeControls() {
   $('#chapters').innerHTML = CHAPTERS.map(c=>`<button class="chapter" data-year="${c.year}" data-focus="${c.region}"><strong>${esc(c.title)}</strong><small>${esc(c.label)}</small></button>`).join('');
   $('#region-nav').innerHTML = REGIONS.map(r=>`<button data-region="${r.id}" aria-pressed="${r.id===state.region.id}">${r.name}</button>`).join('');
-  $('#archaeology-sources input[value="levant"]').checked=archaeologySources.has('levant');
   const p3k14cControl=document.createElement('label');
   p3k14cControl.innerHTML='<input type="checkbox" value="p3k14c"> P3K14C calibrated dates';
   $('#archaeology-sources').insertBefore(p3k14cControl,$('#archaeology-sources input[value="contexts"]').parentElement);
+  const potteryControl=document.createElement('label');
+  potteryControl.innerHTML='<input type="checkbox" value="pottery" checked> Early pottery sites · economy color';
+  $('#archaeology-sources').insertBefore(potteryControl,$('#archaeology-sources input[value="contexts"]').parentElement);
+  const euroevolControl=document.createElement('label');
+  euroevolControl.innerHTML='<input type="checkbox" value="euroevol"> EUROEVOL culture associations · undated';
+  $('#archaeology-sources').insertBefore(euroevolControl,$('#archaeology-sources input[value="contexts"]').parentElement);
+  syncArchaeologySourceControls();
   const p3k14cFilters=document.createElement('details');
   p3k14cFilters.className='dataset-filters';
   p3k14cFilters.innerHTML='<summary>P3K14C filters</summary><p class="context-note">Loaded only when enabled. These are sample determinations, not site types or occupation histories.</p><div id="p3k14c-filters"><section class="p3k14c-filter-group" aria-labelledby="p3k14c-precision-heading"><h4 id="p3k14c-precision-heading">Location precision</h4><label><input type="radio" name="p3k14c-accuracy" value="3"> Exact site coordinate</label><label><input type="radio" name="p3k14c-accuracy" value="2" checked> Near-site or area coordinate</label><label><input type="radio" name="p3k14c-accuracy" value="1"> Include administrative-scale coordinates</label></section><section class="p3k14c-filter-group" aria-labelledby="p3k14c-material-heading"><h4 id="p3k14c-material-heading">Sample material</h4><label class="p3k14c-material p3k14c-plant"><input type="checkbox" name="p3k14c-material" value="plant" checked> Plant / charcoal / wood</label><label class="p3k14c-material p3k14c-faunal"><input type="checkbox" name="p3k14c-material" value="faunal" checked> Faunal bone / antler</label><label class="p3k14c-material p3k14c-shell"><input type="checkbox" name="p3k14c-material" value="shell" checked> Shell</label><label class="p3k14c-material p3k14c-human"><input type="checkbox" name="p3k14c-material" value="human" checked> Human material</label><label class="p3k14c-material p3k14c-other"><input type="checkbox" name="p3k14c-material" value="other" checked> Other material</label><label class="p3k14c-material p3k14c-unspecified"><input type="checkbox" name="p3k14c-material" value="unspecified" checked> Unspecified material</label></section></div>';
-  $('#road-explorer-panel').insertBefore(p3k14cFilters,$('#road-explorer-panel .dataset-filters'));
-  $('.road-select')?.remove();
+  $('#road-explorer-panel .dataset-filters').before(p3k14cFilters);
+  const aadrFilters=document.createElement('details');
+  aadrFilters.className='dataset-filters';
+  aadrFilters.innerHTML='<summary>AADR settings</summary><label id="aadr-stacks-control"><input id="aadr-stacks" type="checkbox"> <span>Stack co-located samples</span></label><section id="haplogroup-browser"><div class="haplogroup-kinds" role="group" aria-label="Haplogroup type"><button type="button" data-haplogroup-kind="mt" aria-pressed="true">mtDNA</button><button type="button" data-haplogroup-kind="y" aria-pressed="false">Y-DNA</button></div><input id="haplogroup-search" type="search" placeholder="Filter exact haplogroups" aria-label="Filter haplogroups"><p id="haplogroup-status" class="context-note">Loading AADR haplogroups…</p><div id="haplogroup-list"></div></section>';
+  $('#road-explorer-panel .dataset-filters').before(aadrFilters);
+  $('#aadr-stacks').checked=aadrStacks;
+  $('#haplogroup-browser').onclick=event=>{const kind=event.target.closest('[data-haplogroup-kind]')?.dataset.haplogroupKind;if(kind){haplogroupKind=kind;haplogroupSelection=null;haplogroupCoverageSites=[];evidenceKey=null;for(const button of $('#haplogroup-browser').querySelectorAll('[data-haplogroup-kind]'))button.setAttribute('aria-pressed',String(button.dataset.haplogroupKind===kind));renderHaplogroupBrowser();renderState();return;}const label=event.target.closest('[data-haplogroup]')?.dataset.haplogroup;if(label)chooseHaplogroup(label);};
+  $('#haplogroup-search').oninput=event=>{haplogroupQuery=event.target.value;renderHaplogroupBrowser();};renderHaplogroupBrowser();
+  $('#road-explorer-panel .road-select')?.remove();
   $('#road-filters').append($('#road-neanderthal-filter'));
   $('#timeline-ticks').innerHTML = TIME_KNOTS.map((y,i)=>`<span style="left:${i/(TIME_KNOTS.length-1)*100}%">${y<0?`${Math.abs(y)>=1000?Math.abs(y)/1000+'k':Math.abs(y)} BCE`:y}</span>`).join('');
   renderTimelineMarkers(); renderCatalog();
@@ -890,16 +1067,16 @@ function initializeControls() {
   $('#timeline-markers').onclick=e=>{const b=e.target.closest('[data-event-jump]');if(b){const event=data.events.find(x=>x.id===b.dataset.eventJump);setYear(event.start,true);chooseEvent(event);}};
   $('#event-list').onclick=e=>{const b=e.target.closest('[data-event]');if(b)chooseEvent(data.events.find(x=>x.id===b.dataset.event));};
   $('#migration-list').onclick=e=>{const b=e.target.closest('[data-route]');if(b)chooseRoute(data.migrations.find(x=>x.id===b.dataset.route));};
-  $('#sites-button').onclick=()=>openSites();
   $('#aadr-groups-button').onclick=()=>openAadrGroupBrowser();
-  $('#sites-at-time').onclick=()=>openSites(sitesAt(siteCatalog?.sites??[],Math.round(state.year),state.region,state.location).length?'time':'all');
-  $('#site-list').onclick=e=>{const b=e.target.closest('[data-site]');if(b)chooseSite(siteCatalog.sites.find(s=>s.id===b.dataset.site));};
+  $('#sites-at-time')?.addEventListener('click',()=>openSites(sitesAt(siteCatalog?.sites??[],Math.round(state.year),state.region,state.location).length?'time':'all'));
+  $('#site-list')?.addEventListener('click',e=>{const b=e.target.closest('[data-site]');if(b)chooseSite(siteCatalog.sites.find(s=>s.id===b.dataset.site));});
   $('#near-east-list').onclick=e=>{const b=e.target.closest('[data-regional]');if(b){const item=nearEastForRegion(nearEastCatalog,Math.round(state.year),state.region).find(x=>x.id===b.dataset.regional);if(item)chooseRegional(item);}};
   $('#near-east-focus').onclick=()=>setRegion(REGIONS.find(r=>r.id==='near-east'));
   $('#europe-list').onclick=e=>{const b=e.target.closest('[data-european]');if(b){const item=europeanPeoplesForRegion(europeCatalog,Math.round(state.year),state.region).find(x=>x.id===b.dataset.european);if(item)chooseRegional(item);}};
   $('#europe-focus').onclick=()=>setRegion(REGIONS.find(r=>r.id==='europe'));
   $('#archaeology-browse').onclick=()=>openResearch({scope:'time'});
-  $('#archaeology-sources').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked){archaeologySources.add(event.target.value);if(event.target.value==='p3k14c')loadP3k14c();}else archaeologySources.delete(event.target.value);renderState();};
+  $('#archaeology-sources').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked){archaeologySources.add(event.target.value);if(event.target.value==='p3k14c')loadP3k14c();}else archaeologySources.delete(event.target.value);renderState();saveHash();};
+  $('#aadr-stacks').onchange=event=>{aadrStacks=event.target.checked;renderState();saveHash();};
   $('#road-filters').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)roadCategories.add(event.target.value);else roadCategories.delete(event.target.value);renderState();};
   $('#road-neanderthal-marker').onchange=event=>{roadNeanderthalMarkers=event.target.checked;renderState();};
   $('#pleiades-filters').onchange=event=>{if(!event.target.matches('input'))return;if(event.target.checked)pleiadesKinds.add(event.target.value);else pleiadesKinds.delete(event.target.value);renderState();};
@@ -916,6 +1093,7 @@ function initializeControls() {
   $('#notes-auth-switch').onclick=()=>openNotesAuth(notesAuthMode==='login'?'register':'login');
   $('#notes-auth-form').onsubmit=async event=>{event.preventDefault();const status=$('#notes-auth-status');status.textContent=notesAuthMode==='login'?'Signing in…':'Requesting account…';try{const response=await fetch(`/api/human-atlas/auth/${notesAuthMode}`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#notes-username').value,password:$('#notes-password').value})}),payload=await response.json();if(!response.ok)throw new Error(payload.error??'Account request failed.');if(notesAuthMode==='register'){status.textContent=payload.message;return;}editorSession=payload.user;$('#notes-auth-dialog').close();editorNotesLoadState='idle';await loadEditorNotes();if(state.location)openNoteEditor();}catch(error){status.textContent=error.message;}};
   $('#note-editor-form').onsubmit=submitNote;
+  $('#note-add-image').onclick=uploadNoteImage;
   $('#delete-note').onclick=async()=>{if(!editingNote||!confirm(`Delete “${editingNote.title}”? This cannot be undone.`))return;const status=$('#note-editor-status');status.textContent='Deleting…';try{const response=await fetch(`/api/human-atlas/notes?id=${encodeURIComponent(editingNote.id)}`,{method:'DELETE',credentials:'same-origin'}),payload=await response.json();if(!response.ok)throw new Error(payload.error??'Delete failed.');$('#note-editor-dialog').close();state.detail=null;editorNotesLoadState='idle';await loadEditorNotes();renderState();}catch(error){status.textContent=error.message;}};
   $('#note-visibility').onchange=()=>{$('#note-collaborators-label').hidden=$('#note-visibility').value!=='shared';};
   $('#notes-admin-users').onclick=async event=>{const button=event.target.closest('[data-approve-user]');if(!button)return;button.disabled=true;try{const response=await fetch('/api/human-atlas/admin/approve',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:button.dataset.approveUser})}),payload=await response.json();if(!response.ok)throw new Error(payload.error??'Approval failed.');await loadNotesAdmin();}catch(error){$('#notes-admin-status').textContent=error.message;button.disabled=false;}};
@@ -940,7 +1118,8 @@ function initializeControls() {
   };
   $('#event-category').onchange=e=>{state.category=e.target.value;renderState();};
   $('#clear-location').onclick=clearPlace;
-  for (const key in state.layers) {const el=$(`#layer-${key}`);el.checked=state.layers[key];el.onchange=async()=>{state.layers[key]=el.checked;if(key==='notes'&&el.checked){await loadEditorSession();editorNotesLoadState='idle';await loadEditorNotes();}globe?.setLayers(state.layers);renderState();saveHash();};}
+  for (const key in state.layers) {const el=$(`#layer-${key}`);el.checked=state.layers[key];el.onchange=async()=>{state.layers[key]=el.checked;if(key==='notes'&&el.checked){await loadEditorSession();editorNotesLoadState='idle';await loadEditorNotes();}syncPopulationAppearance();globe?.setLayers(state.layers);renderState();saveHash();};}
+  syncPopulationAppearance();
   if(state.layers.notes)loadEditorSession().then(()=>loadEditorNotes());
   $('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;$('#spike-width').value=state.spikeWidth*100;$('#spike-width-output').textContent=`${Math.round(state.spikeWidth*100)}%`;$('#density-colors').value=state.densityColors;$('#population-resolution').value=state.resolution;
   const scale=()=>{state.scale=$('#height-scale').value;state.gain=Number($('#height-gain').value);globe?.setScale(state.scale,state.gain);renderState();saveHash();};$('#height-scale').onchange=scale;$('#height-gain').oninput=scale;
@@ -948,7 +1127,7 @@ function initializeControls() {
   $('#spike-opacity').oninput=e=>{state.opacity=Number(e.target.value)/100;globe?.setPopulationOpacity(state.opacity);renderState();saveHash();};
   $('#spike-width').oninput=e=>{state.spikeWidth=Number(e.target.value)/100;globe?.setSpikeWidth(state.spikeWidth);$('#spike-width-output').textContent=`${Math.round(state.spikeWidth*100)}%`;saveHash();};
   $('#population-resolution').onchange=e=>setPopulationResolution(Number(e.target.value));
-  $('#zoom-in').onclick=()=>globe?.zoom(.82);$('#zoom-out').onclick=()=>globe?.zoom(1.2);$('#reset-view').onclick=()=>globe?.focus(state.region);
+  $('#zoom-in').onclick=()=>globe?.zoom(.82);$('#zoom-out').onclick=()=>globe?.zoom(1.2);$('#reset-view').onclick=()=>{globe?.focus(state.region);evidenceKey=null;pleiadesKey=null;renderState();};
   $('#sources-button').onclick=()=>showDialog('#sources-dialog');$('#snapshot-button').onclick=snapshot;
   $('#date-button').onclick=()=>{const y=Math.round(state.year);$('#jump-year').value=Math.max(1,Math.abs(y));$('#jump-era').value=y<=0?'bce':'ce';$('#jump-error').textContent='';showDialog('#date-dialog');};
   $('#jump-go').onclick=()=>{const year=Number($('#jump-year').value),bce=$('#jump-era').value==='bce';if(!Number.isInteger(year)||year<1||year>(bce?70000:MAX_YEAR)){$('#jump-error').textContent=`Enter a whole year from 1 to ${bce?70000:MAX_YEAR}.`;return;}setYear(bce?-year:year,true);$('#date-dialog').close();};
@@ -963,7 +1142,7 @@ function initializeControls() {
   addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.target.closest('input,select,textarea,button,a,summary'))return;if(e.code==='Space'){e.preventDefault();setPlaying(!state.playing);}if(e.code==='ArrowLeft'||e.code==='ArrowRight'){e.preventDefault();const step=state.year < -10000?1000:state.year<0?100:10;setYear(state.year+(e.code==='ArrowLeft'?-step:step),true);}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)setPlaying(false);});
   document.addEventListener('site-theme-change',event=>globe?.setTheme(event.detail.theme));
-  addEventListener('hashchange',()=>{setPlaying(false);readHash();for(const key in state.layers)$(`#layer-${key}`).checked=state.layers[key];if(languageCatalog)populateLanguageFamilies();$('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;$('#spike-width').value=state.spikeWidth*100;$('#spike-width-output').textContent=`${Math.round(state.spikeWidth*100)}%`;$('#density-colors').value=state.densityColors;setPopulationResolution(state.resolution);globe?.setPopulationOpacity(state.opacity);globe?.setSpikeWidth(state.spikeWidth);globe?.setDensityColorMode(state.densityColors);globe?.setLayers(state.layers);globe?.setScale(state.scale,state.gain);setRegion(state.region);});
+  addEventListener('hashchange',()=>{setPlaying(false);readHash();for(const key in state.layers)$(`#layer-${key}`).checked=state.layers[key];syncPopulationAppearance();syncArchaeologySourceControls();if(languageCatalog)populateLanguageFamilies();$('#height-scale').value=state.scale;$('#height-gain').value=state.gain;$('#spike-opacity').value=state.opacity*100;$('#spike-width').value=state.spikeWidth*100;$('#spike-width-output').textContent=`${Math.round(state.spikeWidth*100)}%`;$('#density-colors').value=state.densityColors;setPopulationResolution(state.resolution);globe?.setPopulationOpacity(state.opacity);globe?.setSpikeWidth(state.spikeWidth);globe?.setDensityColorMode(state.densityColors);globe?.setLayers(state.layers);globe?.setScale(state.scale,state.gain);setRegion(state.region);});
 }
 async function loadJSON(name) {const r=await fetch(`./data/${name}`);if(!r.ok)throw new Error(`${name} could not load (${r.status}).`);return r.json();}
 async function loadGzipJSON(name) {
@@ -974,6 +1153,7 @@ async function loadGzipJSON(name) {
 }
 async function start() {
   readHash();
+  initializeFamilyAncestryControls();
   try {
     const results=await Promise.all([loadJSON('population.json'),fetch('./data/population.f32').then(r=>{if(!r.ok)throw new Error('Population grid could not load.');return r.arrayBuffer();}),loadJSON('land.json'),loadJSON('borders.json'),loadJSON('comparison.json'),loadJSON('near-east.json'),loadJSON('physical.json')]);
     [meta,, ,borders,comparison,nearEastCatalog]=results;values=new Float32Array(results[1]);
@@ -981,15 +1161,15 @@ async function start() {
     buffer=new Float32Array(meta.cells.length);series=populationSeries(meta,values,REGIONS[0]);
     try {
       globe=new HistoryGlobe($('#globe'),meta,results[2],borders,nearEastCatalog,results[6],{
-        onLocation:place=>{setPlaying(false);state.location=place;state.detail=null;lastEventKey=null;renderState();},onEvent:chooseEvent,onSite:chooseSite,onRegional:chooseRegional,onEvidence:chooseEvidence,onNote:chooseNote,onLanguage:chooseLanguage,onHover,
-        onBorders:status=>{borderLoadStatus=status;if(ready){$('#territory-status').textContent=boundaryDescription(status);if(state.location)renderDetail();}},
+        onLocation:place=>{setPlaying(false);state.location=place;state.detail=null;lastEventKey=null;renderState();},onEvent:chooseEvent,onSite:chooseSite,onRegional:chooseRegional,onEvidence:chooseEvidence,onFamily:chooseFamily,onNote:chooseNote,onLanguage:chooseLanguage,onHover,
+        onBorders:status=>{borderLoadStatus=status;if(ready){const statusEl=$('#territory-status');if(statusEl)statusEl.textContent=boundaryDescription(status);if(state.location)renderDetail();}},
         onError:message=>{$('#map-error').hidden=false;$('#map-error').textContent=message;setPlaying(false);},
       });
       globe.setLayers(state.layers);globe.setScale(state.scale,state.gain);globe.setPopulationOpacity(state.opacity);globe.setSpikeWidth(state.spikeWidth);globe.setDensityColorMode(state.densityColors);globe.focus(state.region);
     } catch (error) {
       console.error(error);$('#map-error').hidden=false;$('#map-error').innerHTML='<strong>The 3D globe could not start.</strong><p>Enable WebGL and hardware acceleration, then reload. The timeline, sources, and population snapshots are still available.</p>';
     }
-    ready=true;initializeControls();renderState();if(state.resolution!==1)setPopulationResolution(state.resolution);$('#loading').hidden=true;loadSites();loadResearch();
+    ready=true;initializeControls();renderState();requestAnimationFrame(syncArchaeologySourceControls);if(state.resolution!==1)setPopulationResolution(state.resolution);if(archaeologySources.has('p3k14c'))loadP3k14c();$('#loading').hidden=true;loadSites();loadResearch();
     let previous=performance.now(),accumulator=0,fpsStart=previous,fpsFrames=0;
     function frame(now){const dt=clamp((now-previous)/1000,0,.1);previous=now;
       if(state.playing){state.year=state.mode==='era'?positionToYear(yearToPosition(state.year)+dt*state.speed/180):clamp(state.year+dt*100*state.speed,MIN_YEAR,MAX_YEAR);accumulator+=dt;if(accumulator>.08||state.year>=MAX_YEAR){if(Math.round(state.year)!==lastRenderedYear)renderState();accumulator=0;}if(state.year>=MAX_YEAR)setPlaying(false);}

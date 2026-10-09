@@ -6,6 +6,22 @@ export function aadrSamplesAt(catalog, year, region = null, limit = Infinity) {
     && pointInAtlasRegion(record.lat, record.lon, region)).slice(0, limit);
 }
 
+export function stackAadrSamples(records) {
+  const sites = new Map();
+  for (const record of records) {
+    const key = `${record.lat},${record.lon}`;
+    if (!sites.has(key)) sites.set(key, []);
+    sites.get(key).push(record);
+  }
+  return records.map(record => {
+    const site = sites.get(`${record.lat},${record.lon}`);
+    if (site.length === 1) return { ...record, stackOffset: 0, stackCount: 1 };
+    const ordered = [...site].sort((a, b) => ((a.dateRange[0] + a.dateRange[1]) - (b.dateRange[0] + b.dateRange[1])) || a.id.localeCompare(b.id));
+    const level = ordered.findIndex(candidate => candidate.id === record.id);
+    return { ...record, stackOffset: .006 + .008 * Math.sqrt(level), stackCount: site.length };
+  });
+}
+
 export function nearbyAadrSamples(catalog, year, lat, lon, radiusKm = 80, limit = 20) {
   if (!catalog || radiusKm <= 0) return [];
   const latitudeSpan = radiusKm / 111;

@@ -12,6 +12,8 @@ function markerTexture(shape = 'circle') {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#ffffff'; ctx.beginPath();
   if (shape === 'diamond') { ctx.moveTo(16, 2); ctx.lineTo(30, 16); ctx.lineTo(16, 30); ctx.lineTo(2, 16); }
+  else if (shape === 'hexagon') { for (let index = 0; index < 6; index++) { const angle = -Math.PI / 2 + index * Math.PI / 3; const x = 16 + 14 * Math.cos(angle), y = 16 + 14 * Math.sin(angle); if (index) ctx.lineTo(x, y); else ctx.moveTo(x, y); } }
+  else if (shape === 'triangle-down') { ctx.moveTo(2, 4); ctx.lineTo(30, 4); ctx.lineTo(16, 29); }
   else if (shape === 'triangle') { ctx.moveTo(16, 3); ctx.lineTo(30, 28); ctx.lineTo(2, 28); }
   else if (shape === 'square') ctx.rect(4, 4, 24, 24);
   else ctx.arc(16, 16, 13, 0, Math.PI * 2);
@@ -104,7 +106,7 @@ export class PointEvidenceLayer {
     const accentCapColors = this.accentCaps ? new Float32Array(accentRecords.length * 6) : null;
     const color = new THREE.Color();
     records.forEach((record, index) => {
-      const head = position(record.lat, record.lon, this.radius);
+      const head = position(record.lat, record.lon, this.radius + (record.stackOffset ?? 0));
       positions.set(head, index * 3);
       color.set(record.color ?? '#e4c28d');
       colors[index * 3] = color.r; colors[index * 3 + 1] = color.g; colors[index * 3 + 2] = color.b;
@@ -190,6 +192,23 @@ export class PointEvidenceLayer {
       if (Math.abs(record.lat - lat) > maxKm / 111 || wrappedLonDistance > lonWindow) continue;
       const distance = distanceKm(lat, lon, record.lat, record.lon);
       if (distance < bestDistance) { best = record; bestDistance = distance; }
+    }
+    return best;
+  }
+
+  nearestScreen(camera, width, height, x, y, maxPixels = 10) {
+    let best = null, bestDistance = maxPixels;
+    const positions = this.mesh.geometry.getAttribute('position');
+    if (!positions) return null;
+    const point = new THREE.Vector3(), cameraNormal = camera.position.clone().normalize(), horizon = 1 / camera.position.length();
+    for (let index = 0; index < this.records.length; index++) {
+      point.fromBufferAttribute(positions, index);
+      if (point.clone().normalize().dot(cameraNormal) <= horizon) continue;
+      point.project(camera);
+      if (point.z < -1 || point.z > 1) continue;
+      const dx = (point.x * .5 + .5) * width - x, dy = (-point.y * .5 + .5) * height - y;
+      const distance = Math.hypot(dx, dy);
+      if (distance < bestDistance) { best = this.records[index]; bestDistance = distance; }
     }
     return best;
   }

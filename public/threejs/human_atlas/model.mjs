@@ -11,7 +11,7 @@ export const REGIONS = [
   { id: 'americas', name: 'Americas', lat: 13, lon: -87, distance: 2.7, indices: [3, 4] },
   { id: 'oceania', name: 'Oceania', lat: -20, lon: 140, distance: 2.2, index: 5 },
 ];
-export const CATEGORY_COLORS = { migration: '#81cfbf', technology: '#e7c37e', society: '#b7a4e8', religion: '#d9a0bd', famine: '#dfaa6c', plague: '#ef8378', climate: '#8fbacb' };
+export const CATEGORY_COLORS = { migration: '#21b89f', technology: '#d99a32', society: '#8062d0', religion: '#c5578c', famine: '#d97829', plague: '#df5448', climate: '#398fb4' };
 export const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 export const mix = (a, b, t) => a + (b - a) * t;
 export function bracket(years, year) {
@@ -97,7 +97,7 @@ export function nearbyEvents(events, year, region, category = 'all', location = 
 }
 export function migrationProgress(route, year) { return clamp((year - route.start) / (route.end - route.start), 0, 1); }
 export function activeMigrations(routes, year) { return routes.filter(r => year >= r.start && year <= r.end + (r.hold ?? 0)); }
-export function sourceLinks(ids, sources) { return ids.map(id => sources.find(s => s.id === id)).filter(Boolean); }
+export function sourceLinks(ids = [], sources = []) { return ids.map(id => sources.find(s => s.id === id)).filter(Boolean); }
 function inRing(lon, lat, ring) {
   // Unwrap consecutive vertices, then put the query in the same longitude
   // interval. Wrapping each vertex around the query creates false interiors

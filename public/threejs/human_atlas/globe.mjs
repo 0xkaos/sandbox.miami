@@ -6,14 +6,17 @@ import { activeNearEast, nearEastAt } from './near-east.mjs';
 import { activeEuropeanPeoples, europeanPeoplesAt } from './europe.mjs';
 import { CroppedAreaLayer } from './cropped-area-layer.mjs';
 import { PointEvidenceLayer } from './point-evidence-layer.mjs';
+import { HaplogroupCoverageLayer } from './haplogroup-coverage-layer.mjs';
 
 const R = Math.PI / 180;
 const NEAR_EAST_BOUNDS = { west:25, south:20, east:60, north:43 };
 const SUPERSEDED_BORDERS = new Set(['Ur','Semites','Canaan','Judea']);
-// The land sphere writes depth at radius 1. Territory colors are translucent
-// overlays, so floor markers can sit close to land and draw after those layers.
-const POINT_FLOOR_RADIUS = 1.0025;
-const COAST_LINE_RADIUS = 1.003;
+// Every flat map feature shares this small clearance above the terrain. Layer
+// order, rather than separate radii, keeps translucent overlays legible.
+const MAP_SURFACE_RADIUS = 1.0025;
+const NEANDERTHAL_STEM_HEIGHT = .015;
+const LANGUAGE_STEM_HEIGHT = .025;
+const NOTE_STEM_HEIGHT = .03;
 const LOCAL_VIEW_DISTANCE = 1.7;
 const MIN_NAVIGATION_DISTANCE = 1.13;
 const LOCAL_ORBIT_TILT = 40 * R;
@@ -27,6 +30,14 @@ export function latLonVector(lat, lon, radius = 1) {
   return new THREE.Vector3(radius * Math.cos(lat * R) * Math.cos(lon * R), radius * Math.sin(lat * R), -radius * Math.cos(lat * R) * Math.sin(lon * R));
 }
 function vectorLatLon(p) { return { lat: Math.asin(clamp(p.y / p.length(), -1, 1)) / R, lon: Math.atan2(-p.z, p.x) / R }; }
+function globeArcPoints(points) {
+  const arc=[];
+  for(let index=1;index<points.length;index++){
+    const start=points[index-1].clone().normalize(),end=points[index].clone().normalize(),angle=start.angleTo(end),sinAngle=Math.sin(angle),steps=Math.max(2,Math.ceil(angle/(Math.PI/30)));
+    for(let step=index===1?0:1;step<=steps;step++){const t=step/steps,point=sinAngle<.00001?start.clone().lerp(end,t):start.clone().multiplyScalar(Math.sin((1-t)*angle)/sinAngle).addScaledVector(end,Math.sin(t*angle)/sinAngle);arc.push(point.normalize().multiplyScalar(MAP_SURFACE_RADIUS+.011));}
+  }
+  return arc;
+}
 function smoothstep(edge0, edge1, value) { const t=clamp((value-edge0)/(edge1-edge0),0,1); return t*t*(3-2*t); }
 // A 4K equirectangular texture keeps coastlines and historical boundaries
 // legible at the atlas's closest viewing distance.
@@ -94,7 +105,7 @@ function riverHoverTargets(features) {
     const name = feature.properties?.name;
     if (!name) continue;
     const line = new THREE.LineSegments(
-      sphericalLineGeometry([feature], 1.0045),
+      sphericalLineGeometry([feature], MAP_SURFACE_RADIUS),
       new THREE.LineBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
     );
     line.userData.riverName = name;
@@ -183,7 +194,7 @@ function routePoints(route) {
   // endpoint clearance and the arc's rise are half their former height.
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    points.push(curve.getPoint(t).normalize().multiplyScalar(1 + .5 * (.015 + .13 * Math.sin(Math.PI * t))));
+    points.push(curve.getPoint(t).normalize().multiplyScalar(MAP_SURFACE_RADIUS + .5 * .13 * Math.sin(Math.PI * t)));
   }
   return points;
 }
@@ -194,7 +205,7 @@ export class HistoryGlobe {
     this.container = container; this.meta = meta; this.borders = borders; this.nearEast = nearEast; this.land=land; this.callbacks = callbacks;
     this.theme=window.SandboxTheme?.get()??'forest';
     const palette=BASE_PALETTES[this.theme]??BASE_PALETTES.forest;
-    this.layers = { population: true, territories: true, migrations: true, events: true, sites: true, archaeology: true, notes: false, languages: false, rivers: false, contours: false };
+    this.layers = { population: false, territories: true, migrations: false, events: false, archaeology: true, notes: false, languages: false, rivers: false, contours: false };
     this.scale = 'log'; this.gain = 1; this.populationOpacity = 1; this.densityColorMode = 'current'; this.year = -3000; this.routes = []; this.phase = 0; this.disposed = false; this.dirty = true;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(38, 1, .005, 30);
@@ -217,15 +228,15 @@ export class HistoryGlobe {
     this.baseMapContext=ctx;paintBaseMap(ctx,land,palette);
     this.surface = new THREE.Mesh(new THREE.SphereGeometry(1,128,64), new THREE.MeshPhongMaterial({ map:canvasTexture(canvas), specular:palette.specular, shininess:12 }));
     this.scene.add(this.surface);
-    this.coastLines=sphericalLines(land.features,COAST_LINE_RADIUS,palette.shore,.85);this.scene.add(this.coastLines);
-    this.contourLines=sphericalLines(physical.contours?.features??[],1.0032,palette.contours,.22,null,2.3);this.contourLines.visible=false;this.scene.add(this.contourLines);
-    this.riverLines=sphericalLines(physical.rivers?.features??[],1.0035,palette.rivers,.68,null,2.4);this.riverLines.visible=false;this.scene.add(this.riverLines);
+    this.coastLines=sphericalLines(land.features,MAP_SURFACE_RADIUS,palette.shore,.85);this.scene.add(this.coastLines);
+    this.contourLines=sphericalLines(physical.contours?.features??[],MAP_SURFACE_RADIUS,palette.contours,.22,null,2.3);this.contourLines.visible=false;this.scene.add(this.contourLines);
+    this.riverLines=sphericalLines(physical.rivers?.features??[],MAP_SURFACE_RADIUS,palette.rivers,.68,null,2.4);this.riverLines.visible=false;this.scene.add(this.riverLines);
     this.riverHoverTargets=riverHoverTargets(physical.rivers?.features??[]);this.riverHoverTargets.visible=false;this.scene.add(this.riverHoverTargets);
     this.atmosphere = new THREE.Mesh(new THREE.SphereGeometry(1.017,96,48),new THREE.ShaderMaterial({
       uniforms:{tint:{value:new THREE.Vector3(...palette.haze)}},vertexShader:'varying vec3 vNormal; varying vec3 vView; void main(){ vec4 p=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vView=normalize(-p.xyz);gl_Position=projectionMatrix*p;}',
       fragmentShader:'uniform vec3 tint; varying vec3 vNormal; varying vec3 vView; void main(){float a=pow(1.0-abs(dot(normalize(vNormal),normalize(vView))),4.0);gl_FragColor=vec4(tint,a*0.19);}',
       transparent:true,depthWrite:false,side:THREE.FrontSide,
-    })); this.scene.add(this.atmosphere);
+    })); this.atmosphere.visible=new URLSearchParams(location.search).get('atmosphere')==='on'; this.scene.add(this.atmosphere);
     // A single surface blends premultiplied colors, avoiding both z-fighting
     // between shells and the dark pulse caused by stacking two alpha layers.
     this.emptyBorder = canvasTexture(textureCanvas(2));
@@ -248,7 +259,7 @@ export class HistoryGlobe {
           #include <colorspace_fragment>
         }`,
     }));
-    this.territoryMesh.scale.setScalar(1.002);this.territoryMesh.renderOrder=1;this.territoryMesh.visible=false;this.scene.add(this.territoryMesh);
+    this.territoryMesh.scale.setScalar(MAP_SURFACE_RADIUS);this.territoryMesh.renderOrder=1;this.territoryMesh.visible=false;this.scene.add(this.territoryMesh);
     this.emptyRegion=canvasTexture(textureCanvas(2));
     this.regionUniforms={oldMap:{value:this.emptyRegion},map:{value:this.emptyRegion},weight:{value:1},bounds:{value:new THREE.Vector4(
       (NEAR_EAST_BOUNDS.west+180)/360,(NEAR_EAST_BOUNDS.south+90)/180,
@@ -266,32 +277,42 @@ export class HistoryGlobe {
           #include <colorspace_fragment>
         }`,
     }));
-    this.regionMesh.scale.setScalar(1.004);this.regionMesh.renderOrder=2;this.regionMesh.visible=false;this.scene.add(this.regionMesh);
+    this.regionMesh.scale.setScalar(MAP_SURFACE_RADIUS);this.regionMesh.renderOrder=2;this.regionMesh.visible=false;this.scene.add(this.regionMesh);
     this.regionTexture=null;this.regionPrevious=null;this.regionPending=null;this.regionFade=1;this.regionKey=null;
     this.europeCatalog=null;this.europeLayer=null;
     this.textureCache=new Map();this.displayBorder=null;this.previousBorder=null;this.pendingBorder=null;this.borderFade=1;
-    this.earlyMesh = new THREE.Mesh(this.surface.geometry.clone(),new THREE.MeshBasicMaterial({transparent:true,opacity:.38,depthWrite:false}));this.earlyMesh.scale.setScalar(1.002);this.scene.add(this.earlyMesh);
-    this.geoCache = new Map(); this.borderKey = null; this.borderData = null; this.borderRequest = 0;
+    this.earlyMesh = new THREE.Mesh(this.surface.geometry.clone(),new THREE.MeshBasicMaterial({transparent:true,opacity:.38,depthWrite:false}));this.earlyMesh.scale.setScalar(MAP_SURFACE_RADIUS*1.0008);this.earlyMesh.renderOrder=2.5;this.scene.add(this.earlyMesh);
+    this.geoCache = new Map(); this.borderKey = null; this.borderData = null; this.borderRequest = 0; this.borderLoadingKey = null;
     this.dotObject = new THREE.Object3D();this.color = new THREE.Color();this.up = new THREE.Vector3(0,1,0);
     this.spikeUniforms={heightGain:{value:.2},linearHeight:{value:0},widthGain:{value:1.5},studyColors:{value:1},lowDensityColor:{value:new THREE.Color('#766846')},highDensityColor:{value:new THREE.Color('#ffe6ac')}};
     this.setPopulationGrid(meta);
     this.routeGroup = new THREE.Group();this.eventGroup = new THREE.Group();this.siteGroup = new THREE.Group();this.regionalPlaceGroup=new THREE.Group();this.scene.add(this.routeGroup,this.eventGroup,this.siteGroup,this.regionalPlaceGroup);
-    this.burialDots=new PointEvidenceLayer(this.scene,{size:4,radius:POINT_FLOOR_RADIUS,zoomLimit:2.2,opacity:.82});
-    this.levantDots=new PointEvidenceLayer(this.scene,{size:2.6,radius:POINT_FLOOR_RADIUS,zoomLimit:1.43,opacity:.68});
+    this.burialDots=new PointEvidenceLayer(this.scene,{size:4,radius:MAP_SURFACE_RADIUS,zoomLimit:2.2,opacity:.94,shape:'triangle'});
+    this.contextDots=new PointEvidenceLayer(this.scene,{size:3.7,radius:MAP_SURFACE_RADIUS,zoomLimit:2.2,opacity:.94,shape:'diamond'});
+    this.aadrDots=new PointEvidenceLayer(this.scene,{size:3.8,radius:MAP_SURFACE_RADIUS,stemBaseRadius:MAP_SURFACE_RADIUS,stemOpacity:.7,zoomLimit:2.2,opacity:.94,shape:'circle'});
+    this.haplogroupCoverage=new HaplogroupCoverageLayer(this.scene,this.surface.geometry,MAP_SURFACE_RADIUS);
+    this.paleohumansDots=new PointEvidenceLayer(this.scene,{size:3.9,radius:MAP_SURFACE_RADIUS,zoomLimit:2.2,opacity:.94,shape:'hexagon'});
+    this.euppadDots=new PointEvidenceLayer(this.scene,{size:3.9,radius:MAP_SURFACE_RADIUS,zoomLimit:2.2,opacity:.94,shape:'triangle-down'});
+    this.p3k14cDots=new PointEvidenceLayer(this.scene,{size:3.8,radius:MAP_SURFACE_RADIUS,zoomLimit:2.2,opacity:.94,shape:'diamond'});
+    this.potteryDots=new PointEvidenceLayer(this.scene,{size:3.8,radius:MAP_SURFACE_RADIUS,zoomLimit:2.2,opacity:.94,shape:'square'});
+    this.euroevolDots=new PointEvidenceLayer(this.scene,{size:2.9,radius:MAP_SURFACE_RADIUS,zoomLimit:2.05,opacity:.8,shape:'circle'});
+    this.levantDots=new PointEvidenceLayer(this.scene,{size:2.6,radius:MAP_SURFACE_RADIUS,zoomLimit:1.43,opacity:.84});
     this.pleiadesDots={
-      settlement:new PointEvidenceLayer(this.scene,{size:2.7,radius:POINT_FLOOR_RADIUS,zoomLimit:1.58,opacity:.68,shape:'circle'}),
-      'built or funerary site':new PointEvidenceLayer(this.scene,{size:3.1,radius:POINT_FLOOR_RADIUS,zoomLimit:1.58,opacity:.76,shape:'square'}),
-      'archaeological site':new PointEvidenceLayer(this.scene,{size:3.4,radius:POINT_FLOOR_RADIUS,zoomLimit:1.58,opacity:.84,shape:'triangle'}),
+      settlement:new PointEvidenceLayer(this.scene,{size:2.7,radius:MAP_SURFACE_RADIUS,zoomLimit:2.2,opacity:.84,shape:'circle'}),
+      'built or funerary site':new PointEvidenceLayer(this.scene,{size:3.1,radius:MAP_SURFACE_RADIUS,zoomLimit:2.2,opacity:.9,shape:'square'}),
+      'archaeological site':new PointEvidenceLayer(this.scene,{size:3.8,radius:MAP_SURFACE_RADIUS,zoomLimit:2.2,opacity:1,shape:'triangle'}),
     };
     this.roadDots={
-      lithics:new PointEvidenceLayer(this.scene,{size:3.3,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.0185,accentStemOpacity:.96,zoomLimit:2.05,opacity:.84,shape:'circle'}),
-      'human-remains':new PointEvidenceLayer(this.scene,{size:4.2,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.0185,accentStemOpacity:.96,zoomLimit:2.05,opacity:.92,shape:'diamond'}),
-      fauna:new PointEvidenceLayer(this.scene,{size:4,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.0185,accentStemOpacity:.96,zoomLimit:2.05,opacity:.88,shape:'triangle'}),
-      'plant-remains':new PointEvidenceLayer(this.scene,{size:3.8,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.0185,accentStemOpacity:.96,zoomLimit:2.05,opacity:.88,shape:'square'}),
-      other:new PointEvidenceLayer(this.scene,{size:3.1,radius:POINT_FLOOR_RADIUS,accentStemBaseRadius:1.0185,accentStemOpacity:.96,zoomLimit:2.05,opacity:.72,shape:'circle'}),
+      lithics:new PointEvidenceLayer(this.scene,{size:3.3,radius:MAP_SURFACE_RADIUS,accentStemBaseRadius:MAP_SURFACE_RADIUS+NEANDERTHAL_STEM_HEIGHT,accentStemOpacity:.96,zoomLimit:2.05,opacity:.94,shape:'square'}),
+      'human-remains':new PointEvidenceLayer(this.scene,{size:4.2,radius:MAP_SURFACE_RADIUS,accentStemBaseRadius:MAP_SURFACE_RADIUS+NEANDERTHAL_STEM_HEIGHT,accentStemOpacity:.96,zoomLimit:2.05,opacity:.96,shape:'square'}),
+      fauna:new PointEvidenceLayer(this.scene,{size:4,radius:MAP_SURFACE_RADIUS,accentStemBaseRadius:MAP_SURFACE_RADIUS+NEANDERTHAL_STEM_HEIGHT,accentStemOpacity:.96,zoomLimit:2.05,opacity:.94,shape:'square'}),
+      'plant-remains':new PointEvidenceLayer(this.scene,{size:3.8,radius:MAP_SURFACE_RADIUS,accentStemBaseRadius:MAP_SURFACE_RADIUS+NEANDERTHAL_STEM_HEIGHT,accentStemOpacity:.96,zoomLimit:2.05,opacity:.94,shape:'square'}),
+      other:new PointEvidenceLayer(this.scene,{size:3.1,radius:MAP_SURFACE_RADIUS,accentStemBaseRadius:MAP_SURFACE_RADIUS+NEANDERTHAL_STEM_HEIGHT,accentStemOpacity:.96,zoomLimit:2.05,opacity:.9,shape:'square'}),
     };
-    this.languageDots=new PointEvidenceLayer(this.scene,{size:4,radius:1.027,stemBaseRadius:POINT_FLOOR_RADIUS,stemOpacity:.58,zoomLimit:2.2,opacity:.8});
-    this.noteDots=new PointEvidenceLayer(this.scene,{size:5.1,radius:1.029,stemBaseRadius:POINT_FLOOR_RADIUS,stemOpacity:.7,zoomLimit:2.4,opacity:.94,shape:'diamond'});
+    this.languageDots=new PointEvidenceLayer(this.scene,{size:4,radius:MAP_SURFACE_RADIUS+LANGUAGE_STEM_HEIGHT,stemBaseRadius:MAP_SURFACE_RADIUS,zoomLimit:2.2,opacity:.8});
+    this.noteDots=new PointEvidenceLayer(this.scene,{size:5.1,radius:MAP_SURFACE_RADIUS+NOTE_STEM_HEIGHT,stemBaseRadius:MAP_SURFACE_RADIUS,zoomLimit:2.4,opacity:.94,shape:'diamond'});
+    this.familyDots=new PointEvidenceLayer(this.scene,{size:4.2,radius:MAP_SURFACE_RADIUS+.008,stemBaseRadius:MAP_SURFACE_RADIUS,stemOpacity:.55,zoomLimit:2.3,opacity:.96,shape:'circle'});
+    this.familyLineGroup=new THREE.Group();this.scene.add(this.familyLineGroup);
     this.regionalLabels=[];
     this.selection = new THREE.Mesh(new THREE.RingGeometry(.0175,.0185,48),new THREE.MeshBasicMaterial({color:0xe7d4a0,side:THREE.DoubleSide,transparent:true,opacity:.85,depthWrite:false}));this.selection.renderOrder=6;this.selection.visible=false;this.scene.add(this.selection);
     this.raycaster = new THREE.Raycaster();this.pointer = new THREE.Vector2();
@@ -303,7 +324,7 @@ export class HistoryGlobe {
     const el=this.renderer.domElement;el.addEventListener('pointerdown',this.onDown);el.addEventListener('pointerup',this.onUp);el.addEventListener('pointermove',this.onMove);el.addEventListener('pointerleave',this.onLeave);
     this.onContextLost=e=>{e.preventDefault();this.callbacks.onError?.('The graphics context was lost. Reload this page to restore the globe. Your browser may be low on graphics memory.');};el.addEventListener('webglcontextlost',this.onContextLost);
     this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(container);this.resize();
-    this.labels = [['EUROPE',54,15],['NILE VALLEY',24,31],['ANATOLIA',39,34],['SAHARA',23,0],['SOUTH ASIA',21,79],['EAST ASIA',36,112],['SAHUL',-24,133],['NORTH AMERICA',43,-106],['SOUTH AMERICA',-15,-60]].map(([name,lat,lon])=>{const el=document.createElement('span');el.className='globe-label';el.textContent=name;document.querySelector('#map-labels').appendChild(el);return{el,position:latLonVector(lat,lon,POINT_FLOOR_RADIUS)};});
+    this.labels = [['EUROPE',54,15],['NILE VALLEY',24,31],['ANATOLIA',39,34],['SAHARA',23,0],['SOUTH ASIA',21,79],['EAST ASIA',36,112],['SAHUL',-24,133],['NORTH AMERICA',43,-106],['SOUTH AMERICA',-15,-60]].map(([name,lat,lon])=>{const el=document.createElement('span');el.className='globe-label';el.textContent=name;document.querySelector('#map-labels').appendChild(el);return{el,position:latLonVector(lat,lon,MAP_SURFACE_RADIUS)};});
   }
   resize(){const {width,height}=this.container.getBoundingClientRect();if(!width||!height)return;this.width=width;this.height=height;this.camera.aspect=width/height;this.camera.updateProjectionMatrix();this.navigationCamera.aspect=width/height;this.navigationCamera.updateProjectionMatrix();this.renderer.setSize(width,height);this.dirty=true;}
   updateCameraPresentation(){
@@ -313,7 +334,7 @@ export class HistoryGlobe {
     const normal=this.navigationCamera.position.clone().normalize();
     const north=new THREE.Vector3(0,1,0).addScaledVector(normal,-normal.y);
     if(north.lengthSq()<.00001){this.camera.position.copy(this.navigationCamera.position);this.camera.quaternion.copy(this.navigationCamera.quaternion);this.camera.updateMatrixWorld();return;}
-    const point=normal.multiplyScalar(POINT_FLOOR_RADIUS),altitude=radius-1;
+    const point=normal.multiplyScalar(MAP_SURFACE_RADIUS),altitude=radius-1;
     const localPosition=point.clone().addScaledVector(normal,altitude*Math.cos(LOCAL_ORBIT_TILT)).addScaledVector(north.normalize(),-altitude*Math.sin(LOCAL_ORBIT_TILT));
     const localOrientation=new THREE.Quaternion();this.camera.position.copy(localPosition);this.camera.lookAt(point);localOrientation.copy(this.camera.quaternion);
     this.camera.position.copy(this.navigationCamera.position).lerp(localPosition,blend);
@@ -339,19 +360,19 @@ export class HistoryGlobe {
     this.atmosphere.material.uniforms.tint.value.set(...palette.haze);
     this.dirty=true;
   }
-  setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.siteGroup.visible=this.layers.sites;this.regionalPlaceGroup.visible=this.layers.territories;this.riverLines.visible=this.layers.rivers;this.riverHoverTargets.visible=this.layers.rivers;this.contourLines.visible=this.layers.contours;this.burialDots.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());this.levantDots.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());for(const layer of Object.values(this.pleiadesDots))layer.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());for(const layer of Object.values(this.roadDots))layer.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());this.languageDots.setVisible(!!this.layers.languages,this.navigationCamera.position.length());this.noteDots.setVisible(!!this.layers.notes,this.navigationCamera.position.length());this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);this.dirty=true;}
+  setLayers(layers){Object.assign(this.layers,layers);this.spikes.visible=this.layers.population&&!!this.populations;this.routeGroup.visible=this.layers.migrations;this.eventGroup.visible=this.layers.events;this.siteGroup.visible=this.layers.events;this.regionalPlaceGroup.visible=this.layers.territories;this.riverLines.visible=this.layers.rivers;this.riverHoverTargets.visible=this.layers.rivers;this.contourLines.visible=this.layers.contours;for(const layer of [this.burialDots,this.contextDots,this.aadrDots,this.paleohumansDots,this.euppadDots,this.p3k14cDots,this.potteryDots,this.euroevolDots,this.levantDots])layer.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());this.haplogroupCoverage.setVisible(!!this.layers.archaeology);for(const layer of Object.values(this.pleiadesDots))layer.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());for(const layer of Object.values(this.roadDots))layer.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());this.languageDots.setVisible(!!this.layers.languages,this.navigationCamera.position.length());this.noteDots.setVisible(!!this.layers.notes,this.navigationCamera.position.length());this.updateBordersOpacity();if(this.populations)this.updatePopulation(this.populations);this.dirty=true;}
   setEuropeanCatalog(catalog){
     this.europeLayer?.dispose();this.europeCatalog=catalog;this.europeLayer=null;
     if(catalog){
       const [west,south,east,north]=catalog.bounds??[-15,30,50,72];
-      this.europeLayer=new CroppedAreaLayer(this.scene,this.surface.geometry,{west,south,east,north},{width:2048,height:1440});
+      this.europeLayer=new CroppedAreaLayer(this.scene,this.surface.geometry,{west,south,east,north},{width:2048,height:1440,surfaceRadius:MAP_SURFACE_RADIUS});
       this.europeLayer.setVisible(this.layers.territories);
     }
     this.setRegionalYear(this.year);this.dirty=true;
   }
-  setEvidencePoints(burials=[],levant=[],languages=[]){
-    this.burialDots.setRecords(burials);this.levantDots.setRecords(levant);this.languageDots.setRecords(languages);
-    this.burialDots.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());
+  setEvidencePoints({burials=[],contexts=[],aadr=[],paleohumans=[],euppad=[],p3k14c=[],pottery=[],euroevol=[]}={},levant=[],languages=[]){
+    this.burialDots.setRecords(burials);this.contextDots.setRecords(contexts);this.aadrDots.setRecords(aadr);this.paleohumansDots.setRecords(paleohumans);this.euppadDots.setRecords(euppad);this.p3k14cDots.setRecords(p3k14c);this.potteryDots.setRecords(pottery);this.euroevolDots.setRecords(euroevol);this.levantDots.setRecords(levant);this.languageDots.setRecords(languages);
+    for(const layer of [this.burialDots,this.contextDots,this.aadrDots,this.paleohumansDots,this.euppadDots,this.p3k14cDots,this.potteryDots,this.euroevolDots])layer.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());
     this.levantDots.setVisible(!!this.layers.archaeology,this.navigationCamera.position.length());
     this.languageDots.setVisible(!!this.layers.languages,this.navigationCamera.position.length());
     this.dirty=true;
@@ -370,6 +391,7 @@ export class HistoryGlobe {
     }
     this.dirty=true;
   }
+  setHaplogroupCoverage(records=[]){this.haplogroupCoverage.setRecords(records);this.haplogroupCoverage.setVisible(!!this.layers.archaeology);this.dirty=true;}
   setNotePoints(records=[]){
     this.noteDots.setRecords(records);
     this.noteDots.setVisible(!!this.layers.notes,this.camera.position.length);
@@ -453,6 +475,7 @@ export class HistoryGlobe {
     if(this.routeKey!==key){
       this.routeKey=key;disposeGroup(this.routeGroup);this.routeVisuals=[];
       for(const route of active){const points=routePoints(route);const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:route.color,transparent:true,opacity:.55}));this.routeGroup.add(line);
+        for(const [lat,lon] of [route.points[0],route.points.at(-1)]){const endpoint=new THREE.Mesh(new THREE.RingGeometry(.0038,.005,4),new THREE.MeshBasicMaterial({color:route.color,side:THREE.DoubleSide,transparent:true,opacity:.72,depthWrite:false}));endpoint.position.copy(latLonVector(lat,lon,MAP_SURFACE_RADIUS));endpoint.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),endpoint.position.clone().normalize());endpoint.rotation.z=Math.PI/4;endpoint.renderOrder=5.2;this.routeGroup.add(endpoint);}
         const dots=new THREE.Points(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(new Float32Array(18*3),3)),new THREE.PointsMaterial({color:route.color,size:.011,sizeAttenuation:true,transparent:true,opacity:.9,depthWrite:false}));this.routeGroup.add(dots);
         const head=new THREE.Mesh(new THREE.SphereGeometry(.007,8,8),new THREE.MeshBasicMaterial({color:route.color}));this.routeGroup.add(head);
         this.routeVisuals.push({route,points,dots,head});
@@ -460,20 +483,35 @@ export class HistoryGlobe {
     }
     const eventKey=events.map(e=>e.id).join('|');
     if(this.eventKey!==eventKey){this.eventKey=eventKey;disposeGroup(this.eventGroup);for(const event of events){
-      const m=new THREE.Mesh(new THREE.RingGeometry(.0045,.009,4),new THREE.MeshBasicMaterial({color:CATEGORY_COLORS[event.kind]??'#e2c794',side:THREE.DoubleSide,transparent:true,depthWrite:false}));
-      m.position.copy(latLonVector(event.lat,event.lon,POINT_FLOOR_RADIUS));m.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),m.position.clone().normalize());
+      const m=new THREE.Mesh(new THREE.RingGeometry(.0048,.0062,4),new THREE.MeshBasicMaterial({color:CATEGORY_COLORS[event.kind]??'#e2c794',side:THREE.DoubleSide,transparent:true,opacity:.95,depthWrite:false}));
+      m.position.copy(latLonVector(event.lat,event.lon,MAP_SURFACE_RADIUS));m.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),m.position.clone().normalize());
       m.renderOrder=5.4;m.userData.event=event;setMarkerPickRadius(m,.012);this.eventGroup.add(m);
     }}
     const siteKey=sites.map(s=>s.id).join('|');
     if(this.siteKey!==siteKey){this.siteKey=siteKey;disposeGroup(this.siteGroup);for(const site of sites){
-      const marker=new THREE.Mesh(new THREE.RingGeometry(.008,.012,24),new THREE.MeshBasicMaterial({color:'#f0bb83',side:THREE.DoubleSide,transparent:true,depthWrite:false}));
-      marker.position.copy(latLonVector(site.lat,site.lon,POINT_FLOOR_RADIUS));marker.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),marker.position.clone().normalize());marker.renderOrder=5.3;
+      const marker=new THREE.Mesh(new THREE.RingGeometry(.0065,.008,24),new THREE.MeshBasicMaterial({color:'#f0bb83',side:THREE.DoubleSide,transparent:true,opacity:.95,depthWrite:false}));
+      marker.position.copy(latLonVector(site.lat,site.lon,MAP_SURFACE_RADIUS));marker.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),marker.position.clone().normalize());marker.renderOrder=5.3;
       // The hollow center is selectable; the land sphere blocks the far side.
       setMarkerPickRadius(marker,.014);
       marker.userData.site=site;this.siteGroup.add(marker);
     }}
     this.updateBordersOpacity();
   }
+  setFamilyAncestry(records, lineage = [], year = null) {
+    this.familyDots.setRecords(records);
+    disposeGroup(this.familyLineGroup);this.familyPathPoints=null;this.familyPathHead=null;
+    if (lineage.length > 1) {
+      const revealed=lineage.filter(person=>person.birth&& (year==null||person.birth.year<=year));
+      const points=revealed.map(person=>latLonVector(person.birth.lat,person.birth.lon,MAP_SURFACE_RADIUS+.011));
+      if(points.length<2){this.dirty=true;return;}
+      const linePoints=globeArcPoints(points);
+      const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePoints),new THREE.LineBasicMaterial({color:'#edc978',transparent:true,opacity:.92,depthWrite:false}));
+      line.renderOrder=5.8;this.familyLineGroup.add(line);
+      const head=new THREE.Mesh(new THREE.SphereGeometry(.009,10,10),new THREE.MeshBasicMaterial({color:'#fff0b5'}));head.renderOrder=5.9;head.position.copy(linePoints.at(-1));this.familyLineGroup.add(head);this.familyPathPoints=linePoints;this.familyPathHead=head;
+    }
+    this.dirty=true;
+  }
+  setHaplogroupCoverage(records) { this.haplogroupCoverage.setRecords(records);this.dirty=true; }
   beginRegion(next){
     this.regionPrevious=this.regionTexture;this.regionTexture=next.texture;this.regionKey=next.key;this.regionFade=0;
     this.regionUniforms.oldMap.value=this.regionPrevious??this.emptyRegion;
@@ -500,7 +538,7 @@ export class HistoryGlobe {
       this.regionalPlaceKey=placeKey;disposeGroup(this.regionalPlaceGroup);
       for(const label of this.regionalLabels)label.el.remove();this.regionalLabels=[];
       for(const place of allPlaces){
-        const point=latLonVector(place.lat,place.lon,POINT_FLOOR_RADIUS);
+        const point=latLonVector(place.lat,place.lon,MAP_SURFACE_RADIUS);
         const marker=new THREE.Mesh(new THREE.CircleGeometry(.0042,12),new THREE.MeshBasicMaterial({color:place.color??(place.kind==='ethnonym'?'#c8a9c3':'#e5d39c'),side:THREE.DoubleSide,transparent:true,depthWrite:false}));
         marker.position.copy(point);marker.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),point.clone().normalize());marker.renderOrder=4.8;marker.userData.regionalPlace=place;
         // Give the small dot a usable hit area without selecting the far side.
@@ -536,6 +574,31 @@ export class HistoryGlobe {
     this.updateBordersOpacity();
   }
   queueBorder(pair){if(this.borderFade<1)this.pendingBorder=pair;else this.beginBorder(pair);}
+  async loadCurrentBorders(){
+    const key=this.borderKey,b=this.currentBorderBracket;
+    if(!key||!b||this.borderData||this.borderError||this.borderLoadingKey||this.disposed)return;
+    this.borderLoadingKey=key;
+    try{
+      const data=await Promise.all([this.loadGeo(b.a),this.loadGeo(b.b)]);
+      if(this.disposed)return;
+      const current=this.currentBorderBracket,currentKey=current?`${current.a}/${current.b}`:null;
+      if(currentKey===key&&key===this.borderKey){
+        this.borderData=data;
+        const textures=[this.textureFor(b.a,data[0]),this.textureFor(b.b,data[1])];
+        this.queueBorder({key,bracket:current,data,textures});
+        this.updateBordersOpacity();this.callbacks.onBorders?.({bracket:current,ready:true});
+      }
+    }catch(error){
+      if(key===this.borderKey&&!this.disposed){
+        this.borderError=error.message+' Keeping the last available map. Select another era and return, or reload, to retry.';
+        this.callbacks.onBorders?.({error:this.borderError});
+      }
+    }finally{
+      this.borderLoadingKey=null;
+      const current=this.currentBorderBracket,currentKey=current?`${current.a}/${current.b}`:null;
+      if(!this.disposed&&currentKey&&currentKey!==key)this.loadCurrentBorders();
+    }
+  }
   advanceBorders(dt){
     const target=this.displayBorder?.bracket?.t??0,delta=target-this.borderUniforms.weight.value;
     if(Math.abs(delta)>.00001){this.borderUniforms.weight.value+=delta*(1-Math.exp(-dt*18));this.dirty=true;}
@@ -567,23 +630,20 @@ export class HistoryGlobe {
     if(this.displayBorder?.key===key)this.displayBorder.bracket=b;
     if(this.pendingBorder?.key===key)this.pendingBorder.bracket=b;
     if(b.t>.5&&b.b+1<this.borders.snapshots.length)this.loadGeo(b.b+1).catch(()=>{});
-    if(key===this.borderKey){this.updateBordersOpacity();this.callbacks.onBorders?.({bracket:b,ready:!!this.borderData,loading:!this.borderData&&!this.borderError,error:this.borderError});return;}
-    // Preserve the complete displayed pair until the replacement is ready.
-    this.borderKey=key;this.borderData=null;this.borderError=null;this.pendingBorder=null;
-    const request=++this.borderRequest;this.updateBordersOpacity();this.callbacks.onBorders?.({bracket:b,loading:true});
-    try{
-      const data=await Promise.all([this.loadGeo(b.a),this.loadGeo(b.b)]);
-      if(request!==this.borderRequest||this.disposed)return;
-      this.borderData=data;
-      const textures=[this.textureFor(b.a,data[0]),this.textureFor(b.b,data[1])];
-      this.queueBorder({key,bracket:this.currentBorderBracket,data,textures});
-      this.updateBordersOpacity();this.callbacks.onBorders?.({bracket:this.currentBorderBracket,ready:true});
-    }catch(error){if(request===this.borderRequest&&!this.disposed){this.borderError=error.message+' Keeping the last available map. Select another era and return, or reload, to retry.';this.callbacks.onBorders?.({error:this.borderError});}}
+    if(key!==this.borderKey){
+      // Preserve both the displayed map and any prepared next map until the
+      // newest replacement is ready. Dropping a pending pair here can leave
+      // fast timeline playback stuck on its original territory texture.
+      this.borderKey=key;this.borderData=null;this.borderError=null;
+    }
+    this.updateBordersOpacity();
+    this.loadCurrentBorders();
+    this.callbacks.onBorders?.({bracket:b,ready:!!this.borderData,loading:!this.borderData&&!this.borderError,error:this.borderError});
   }
   updateBordersOpacity(){
     this.dirty=true;
     this.territoryMesh.visible=this.layers.territories&&!!(this.displayBorder?.data||this.previousBorder?.data);
-    this.earlyMesh.visible=this.layers.territories&&!this.currentBorderBracket;
+    this.earlyMesh.visible=this.layers.territories&&this.earlyKey!=='';
     this.regionMesh.visible=this.layers.territories&&!!this.regionTexture&&(this.regionTexture!==this.emptyRegion||this.regionFade<1);
     this.europeLayer?.setVisible(this.layers.territories);
   }
@@ -592,8 +652,9 @@ export class HistoryGlobe {
     const european=europeanPeoplesAt(this.europeCatalog,this.year,lat,lon)
       .filter(item=>item.kind!=='ethnonym')
       .map(item=>({...item,source:'european'}));
-    regional.push(...european);
-    if(!this.currentBorderBracket)return regional.concat(EARLY_ZONES.filter(z=>this.year>=z.start&&this.year<=z.end&&containsPoint(z.geometry,lon,lat)).map(z=>({name:z.name,source:z.source,year:null})));
+    const early=EARLY_ZONES.filter(z=>this.year>=z.start&&this.year<=z.end&&containsPoint(z.geometry,lon,lat)).map(z=>({name:z.name,source:z.source,sources:[z.source],year:null}));
+    regional.push(...european,...early);
+    if(!this.currentBorderBracket)return regional;
     const pair=this.displayBorder,b=pair?.bracket;if(!b||!pair.data)return regional;
     const out=[];for(const i of(b.a===b.b||b.t===0?[0]:[0,1]))for(const feature of pair.data[i].features){
       const name=feature.properties.name;
@@ -602,13 +663,15 @@ export class HistoryGlobe {
     }return regional.concat(out);
   }
   nearestCell(lat,lon){let best=-1,bestDistance=Infinity;for(let i=0;i<this.meta.cells.length;i++){const c=this.meta.cells[i];if(Math.abs(c[0]-lat)>this.meta.resolutionDegrees*2)continue;const d=distanceKm(lat,lon,c[0],c[1]);if(d<bestDistance){bestDistance=d;best=i;}}return bestDistance<170*this.meta.resolutionDegrees?best:-1;}
-  selectLocation(lat,lon){this.selection.position.copy(latLonVector(lat,lon,POINT_FLOOR_RADIUS));this.selection.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),this.selection.position.clone().normalize());this.selection.visible=true;}
+  selectLocation(lat,lon){this.selection.position.copy(latLonVector(lat,lon,MAP_SURFACE_RADIUS));this.selection.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),this.selection.position.clone().normalize());this.selection.visible=true;}
   clearSelection(){this.selection.visible=false;}
   pick(event,click){
     const rect=this.renderer.domElement.getBoundingClientRect();this.pointer.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);this.raycaster.setFromCamera(this.pointer,this.camera);
     this.raycaster.params.Line.threshold=.004;
+    const family=this.familyDots.mesh.visible?this.familyDots.nearestScreen(this.camera,rect.width,rect.height,event.clientX-rect.left,event.clientY-rect.top):null;
+    if(family){if(click)this.callbacks.onFamily?.(family);else this.callbacks.onHover?.({family,x:event.clientX-rect.left,y:event.clientY-rect.top});return;}
     const targets=[this.surface];if(this.layers.events)targets.push(...this.eventGroup.children);
-    if(this.layers.sites)targets.push(...this.siteGroup.children);
+    if(this.layers.events)targets.push(...this.siteGroup.children);
     if(this.layers.territories)targets.push(...this.regionalPlaceGroup.children);
     const hit=this.raycaster.intersectObjects(targets,false)[0];
     if(!hit){this.callbacks.onHover?.(null);return;}
@@ -616,12 +679,12 @@ export class HistoryGlobe {
     if(hit.object.userData.regionalPlace){const place=hit.object.userData.regionalPlace;if(click)this.callbacks.onRegional?.(place);else this.callbacks.onHover?.({regionalPlace:place,x:event.clientX-rect.left,y:event.clientY-rect.top});return;}
     const place=vectorLatLon(hit.point);place.index=this.nearestCell(place.lat,place.lon);place.territories=this.territoriesAt(place.lat,place.lon);
     const nearby=[
-      [this.burialDots,35,'evidence'],[this.levantDots,18,'evidence'],...Object.values(this.roadDots).map(layer=>[layer,26,'evidence']),
+      [this.burialDots,35,'evidence'],[this.contextDots,35,'evidence'],[this.aadrDots,35,'evidence'],[this.paleohumansDots,35,'evidence'],[this.euppadDots,35,'evidence'],[this.p3k14cDots,35,'evidence'],[this.potteryDots,35,'evidence'],[this.euroevolDots,24,'evidence'],[this.levantDots,18,'evidence'],...Object.values(this.roadDots).map(layer=>[layer,26,'evidence']),
       ...Object.values(this.pleiadesDots).map(layer=>[layer,15,'evidence']),[this.languageDots,35,'language'],[this.noteDots,45,'note'],
     ].filter(([layer])=>layer.mesh.visible)
       .map(([layer,radius,kind])=>({record:layer.nearest(place.lat,place.lon,radius),kind}))
       .filter(item=>item.record)
-      .sort((a,b)=>distanceKm(place.lat,place.lon,a.record.lat,a.record.lon)-distanceKm(place.lat,place.lon,b.record.lat,b.record.lon));
+      .sort((a,b)=>(b.kind==='family')-(a.kind==='family')||distanceKm(place.lat,place.lon,a.record.lat,a.record.lon)-distanceKm(place.lat,place.lon,b.record.lat,b.record.lon));
     if(nearby.length){
       const {record,kind}=nearby[0];
       if(click){if(kind==='language')this.callbacks.onLanguage?.(record);else if(kind==='note')this.callbacks.onNote?.(record);else this.callbacks.onEvidence?.(record);}
@@ -641,14 +704,17 @@ export class HistoryGlobe {
     this.advanceBorders(dt);this.advanceRegion(dt);
     if(this.europeLayer?.advance(dt))this.dirty=true;this.controls.update();this.updateCameraPresentation();
     const cameraDistance=this.navigationCamera.position.length();
-    if(this.burialDots.setVisible(!!this.layers.archaeology,cameraDistance))this.dirty=true;
+    for(const layer of [this.burialDots,this.contextDots,this.aadrDots,this.paleohumansDots,this.euppadDots,this.p3k14cDots,this.potteryDots,this.euroevolDots])if(layer.setVisible(!!this.layers.archaeology,cameraDistance))this.dirty=true;
+    if(this.haplogroupCoverage.setVisible(!!this.layers.archaeology))this.dirty=true;
     for(const layer of Object.values(this.roadDots))if(layer.setVisible(!!this.layers.archaeology,cameraDistance))this.dirty=true;
     if(this.levantDots.setVisible(!!this.layers.archaeology,cameraDistance))this.dirty=true;
     for(const layer of Object.values(this.pleiadesDots))if(layer.setVisible(!!this.layers.archaeology,cameraDistance))this.dirty=true;
+    if(this.familyDots.setVisible(true,cameraDistance))this.dirty=true;
     if(this.languageDots.setVisible(!!this.layers.languages,cameraDistance))this.dirty=true;
     if(this.noteDots.setVisible(!!this.layers.notes,cameraDistance))this.dirty=true;
     if(!this.dirty&&!playing&&!this.destination)return;if(playing)this.phase+=dt;
     for(const v of this.routeVisuals??[]){const p=migrationProgress(v.route,this.year),positions=v.dots.geometry.attributes.position;for(let i=0;i<18;i++){const t=p===0?0:((i/18+this.phase*.1)%1)*p;const point=along(v.points,t);positions.setXYZ(i,point.x,point.y,point.z);}positions.needsUpdate=true;v.head.position.copy(along(v.points,p));}
+    if(this.familyPathHead&&this.familyPathPoints)this.familyPathHead.position.copy(this.familyPathPoints.at(-1));
     const cameraNormal=this.navigationCamera.position.clone().normalize(),horizon=1/this.navigationCamera.position.length();
     for(const label of this.labels){const visible=label.position.clone().normalize().dot(cameraNormal)>horizon+.07;label.el.hidden=!visible;if(visible){const p=label.position.clone().project(this.camera);label.el.style.left=`${(p.x*.5+.5)*this.width}px`;label.el.style.top=`${(-p.y*.5+.5)*this.height}px`;}}
     const labelPriority=['Ur','Babylon','Nineveh','Samaria','Jerusalem','Uruk','Ashur','Ebla','Hazor'];
@@ -665,5 +731,5 @@ export class HistoryGlobe {
     }
     this.renderer.render(this.scene,this.camera);this.dirty=false;
   }
-  dispose(){this.disposed=true;this.borderRequest++;this.resizeObserver.disconnect();this.controls.dispose();this.europeLayer?.dispose();this.burialDots.dispose();this.levantDots.dispose();for(const layer of Object.values(this.pleiadesDots))layer.dispose();for(const layer of Object.values(this.roadDots))layer.dispose();this.languageDots.dispose();this.scene.traverse(o=>{o.geometry?.dispose();if(o.material){o.material.map?.dispose();o.material.dispose();}});for(const texture of this.textureCache.values())texture.dispose();this.emptyBorder.dispose();for(const texture of [this.regionTexture,this.regionPrevious,this.regionPending?.texture,this.emptyRegion])texture?.dispose();this.renderer.dispose();for(const label of [...this.labels,...this.regionalLabels])label.el.remove();}
+  dispose(){this.disposed=true;this.borderRequest++;this.resizeObserver.disconnect();this.controls.dispose();this.europeLayer?.dispose();for(const layer of [this.burialDots,this.contextDots,this.aadrDots,this.paleohumansDots,this.euppadDots,this.p3k14cDots,this.potteryDots,this.euroevolDots,this.levantDots,this.familyDots])layer.dispose();this.haplogroupCoverage.dispose();for(const layer of Object.values(this.pleiadesDots))layer.dispose();for(const layer of Object.values(this.roadDots))layer.dispose();this.languageDots.dispose();this.scene.traverse(o=>{o.geometry?.dispose();if(o.material){o.material.map?.dispose();o.material.dispose();}});for(const texture of this.textureCache.values())texture.dispose();this.emptyBorder.dispose();for(const texture of [this.regionTexture,this.regionPrevious,this.regionPending?.texture,this.emptyRegion])texture?.dispose();this.renderer.dispose();for(const label of [...this.labels,...this.regionalLabels])label.el.remove();}
 }

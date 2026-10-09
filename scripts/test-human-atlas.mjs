@@ -1,10 +1,11 @@
+import { p3k14cDatesAt, nearbyP3k14cDates, p3k14cDatesSnapshot, p3k14cDisplayRange } from '../public/threejs/human_atlas/p3k14c-dates.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { MIN_YEAR, MAX_YEAR, TIME_KNOTS, REGIONS, bracket, yearToPosition, positionToYear, populationAt, summarize, densityHeight, containsPoint, borderBracket, nearbyEvents, activeMigrations, migrationProgress } from '../public/threejs/human_atlas/model.mjs';
-import { SOURCES, EVENTS, MIGRATIONS } from '../public/threejs/human_atlas/history.mjs';
+import { SOURCES, EVENTS, MIGRATIONS, EARLY_ZONES } from '../public/threejs/human_atlas/history.mjs';
 import { makeSnapshot, snapshotCSV } from '../public/threejs/human_atlas/snapshot.mjs';
 import { validateResearch } from '../public/threejs/human_atlas/import.mjs';
 import { PopulationDetail } from '../public/threejs/human_atlas/population-detail.mjs';
@@ -12,9 +13,10 @@ import { sitesAt, phasesAt, searchSites, siteSnapshot, hasSiteLocation } from '.
 import { activeNearEast, nearEastAt, nearEastForRegion, nearEastSnapshot } from '../public/threejs/human_atlas/near-east.mjs';
 import { paleohumansRemainsAt, paleohumansRemainsSnapshot } from '../public/threejs/human_atlas/paleohumans-remains.mjs';
 import { euppadDatesAt, euppadDatesSnapshot } from '../public/threejs/human_atlas/euppad-dates.mjs';
-import { nearbyP3k14cDates, p3k14cDatesAt, p3k14cDatesSnapshot } from '../public/threejs/human_atlas/p3k14c-dates.mjs';
+import { potterySitesAt } from '../public/threejs/human_atlas/pottery-dates.mjs';
 import { roadRecordsAt, roadSnapshot } from '../public/threejs/human_atlas/road-pilot.mjs';
 import { nearbyNotes, normalizeEditorNote, notesAt } from '../public/threejs/human_atlas/editor-notes.mjs';
+import { stackAadrSamples } from '../public/threejs/human_atlas/aadr-samples.mjs';
 
 const dir = new URL('../public/threejs/human_atlas/data/', import.meta.url);
 const meta = JSON.parse(readFileSync(new URL('population.json', dir)));
@@ -28,9 +30,94 @@ const nearEast = JSON.parse(readFileSync(new URL('near-east.json', dir)));
 const paleohumans = JSON.parse(readFileSync(new URL('paleohumans-remains.json', dir)));
 const euppad = JSON.parse(readFileSync(new URL('euppad-calibrated-dates.json', dir)));
 const p3k14c = JSON.parse(gunzipSync(readFileSync(new URL('p3k14c-calibrated-dates.json.gz', dir))));
+const pottery = JSON.parse(readFileSync(new URL('early-pottery-sites.json', dir)));
 const road = JSON.parse(readFileSync(new URL('road-near-east-pilot.json', dir)));
 const roadSpecies = JSON.parse(readFileSync(new URL('road-human-remains-species.json', dir)));
 const roadNeanderthals = JSON.parse(readFileSync(new URL('road-neanderthal-localities.json', dir)));
+const euroevol = JSON.parse(readFileSync(new URL('euroevol-sites.json', dir)));
+
+test('early farming zones hand off to a documented LBK activity envelope', () => {
+  const farming = EARLY_ZONES.find(zone => zone.name === 'Spread of farming · southeastern Europe');
+  const lbk = EARLY_ZONES.find(zone => zone.name === 'Linear Pottery culture · activity envelope');
+  assert.deepEqual([farming.start, farming.end], [-6500, -5400]);
+  assert.equal(lbk.source, 'euroevol');
+  assert.equal(lbk.softEdge, true);
+  assert.deepEqual([lbk.start, lbk.end], [-5500, -4900]);
+  assert.deepEqual(lbk.geometry.coordinates[0][0], lbk.geometry.coordinates[0].at(-1));
+  assert.match(SOURCES.find(source => source.id === 'euroevol').detail, /246 unique coordinates from 251 exact Linearbandkeramik/i);
+});
+
+test('EUROEVOL cultural activity envelopes retain their declared approximate windows', () => {
+  const expected = [
+    ['Cardial', -6400, -5500], ['Ertebolle', -5400, -3950], ['Lengyel', -5000, -4000],
+    ['Chasseen', -4500, -3500], ['Michelsberg', -4400, -3500], ['Trichterbecher', -4100, -2800],
+    ['Cortaillod', -3900, -3500], ['Pitted Ware', -3500, -2300], ['Globular Amphora', -3400, -2800],
+  ];
+  for (const [name, start, end] of expected) {
+    const zone = EARLY_ZONES.find(candidate => candidate.name === `${name} · activity envelope`);
+    assert.ok(zone, `${name} envelope exists`);
+    assert.deepEqual([zone.start, zone.end], [start, end]);
+    assert.equal(zone.source, 'euroevol');
+    assert.equal(zone.softEdge, true);
+    const polygons = zone.geometry.type === 'Polygon' ? [zone.geometry.coordinates] : zone.geometry.coordinates;
+    assert.ok(polygons.every(polygon => Object.is(polygon[0][0][0], polygon[0].at(-1)[0]) && Object.is(polygon[0][0][1], polygon[0].at(-1)[1])));
+  }
+  const pittedWare = EARLY_ZONES.find(zone => zone.name === 'Pitted Ware · activity envelope');
+  assert.equal(pittedWare.geometry.type, 'MultiPolygon');
+  assert.equal(pittedWare.geometry.coordinates.length, 2);
+});
+
+test('Corded Ware envelope keeps its multi-source Volga component separate', () => {
+  const cordedWare = EARLY_ZONES.find(zone => zone.name === 'Corded Ware · activity envelope');
+  const source = SOURCES.find(candidate => candidate.id === 'corded-ware-envelope');
+  assert.deepEqual([cordedWare.start, cordedWare.end], [-2900, -2300]);
+  assert.equal(cordedWare.source, 'corded-ware-envelope');
+  assert.equal(cordedWare.softEdge, true);
+  assert.equal(cordedWare.geometry.type, 'MultiPolygon');
+  assert.equal(cordedWare.geometry.coordinates.length, 2);
+  assert.match(source.detail, /477 deduplicated coordinate pairs/i);
+  assert.match(source.detail, /257 Bourgeois.*201 exact Corded Ware EUROEVOL.*40 AADR/is);
+  for (const polygon of cordedWare.geometry.coordinates) assert.deepEqual(polygon[0][0], polygon[0].at(-1));
+});
+
+test('Bell Beaker envelope keeps its multi-source reference pockets separate', () => {
+  const bellBeaker = EARLY_ZONES.find(zone => zone.name === 'Bell Beaker · activity envelope');
+  const source = SOURCES.find(candidate => candidate.id === 'bell-beaker-envelope');
+  assert.deepEqual([bellBeaker.start, bellBeaker.end], [-2800, -1800]);
+  assert.equal(bellBeaker.source, 'bell-beaker-envelope');
+  assert.equal(bellBeaker.softEdge, true);
+  assert.equal(bellBeaker.geometry.type, 'MultiPolygon');
+  assert.equal(bellBeaker.geometry.coordinates.length, 4);
+  assert.match(source.detail, /468 deduplicated coordinate pairs/i);
+  assert.match(source.detail, /290 Bourgeois.*118 exact Bell Beaker EUROEVOL.*79 AADR/is);
+  for (const polygon of bellBeaker.geometry.coordinates) assert.deepEqual(polygon[0][0], polygon[0].at(-1));
+});
+
+test('EUROEVOL preserves culture-labelled sites as undated reference evidence', () => {
+  assert.equal(euroevol.source.license, 'CC0 1.0');
+  assert.equal(euroevol.counts.sites, 4756);
+  assert.equal(euroevol.sites.length, 4756);
+  const culturalSites = euroevol.sites.filter(site => site.phases.some(phase => phase.culture));
+  const lbkSites = euroevol.sites.filter(site => site.phases.some(phase => phase.culture === 'Linearbandkeramik'));
+  assert.equal(culturalSites.length, 2053);
+  assert.equal(lbkSites.length, 251);
+  assert.ok(culturalSites.every(site => site.temporalStatus === 'undated-phase-association'));
+});
+
+test('early pottery catalog preserves all supplementary rows and source-calibrated placement', () => {
+  assert.equal(pottery.schemaVersion, 1);
+  assert.equal(pottery.source.doi, 'https://doi.org/10.15184/aqy.2016.68');
+  assert.equal(pottery.records.length, 942);
+  assert.equal(new Set(pottery.records.map(record => record.id)).size, 942);
+  const istok = pottery.records.find(record => record.site === 'Istok 4');
+  assert.deepEqual([istok.lat, istok.lon], [null, null]);
+  for (const record of pottery.records) {
+    assert.equal(record.displayYear, 1950 - record.averageCalBPIntCal09, record.id);
+    assert.ok(['F', 'F/ME', 'HG', 'HG/M', 'ME', 'un'].includes(record.economy), record.id);
+  }
+  assert.ok(!potterySitesAt(pottery, istok.displayYear).includes(istok));
+  assert.ok(potterySitesAt(pottery, -3868).some(record => record.site === 'Abingdon'));
+});
 
 test('PaleoHumans catalog preserves dated-result provenance without claiming calibration', () => {
   assert.equal(paleohumans.schemaVersion, 1);
@@ -105,13 +192,29 @@ test('P3K14C preserves calibrated sample determinations with source-grounded fil
   const snapshot = p3k14cDatesSnapshot(p3k14c, year, world, { minimumLocationAccuracy: 2 });
   assert.equal(snapshot.totalRecords, precise.length);
   assert.match(snapshot.status, /sampled material/i);
+  assert.match(snapshot.status, /display envelope/i);
   assert.match(snapshot.status, /not continuous occupation/i);
+  const multiModal = { id: 'multi-modal', lat: 0, lon: 0, locationAccuracy: 3, materialClass: 'plant', calibratedRanges95: [[-7575, -7559], [-7544, -7319], [-7220, -7199]] };
+  assert.deepEqual(p3k14cDisplayRange(multiModal), [-7575, -7199]);
+  assert.deepEqual(p3k14cDatesAt({ records: [multiModal] }, -7300, world), [multiModal]);
 });
 
 test('nearby P3K14C dates apply their limit after local spatial filtering', () => {
   const nearby = nearbyP3k14cDates(p3k14c, -1366, 52.625, 18.625, 80, { limit: 20 });
   assert.ok(nearby.some(record => record.id === 'p3k14c-095334'));
   assert.ok(nearby.every(record => record.distanceKm <= 80));
+});
+
+test('co-located AADR samples receive a compressed date-ordered visual stack', () => {
+  const records = [
+    { id: 'later', lat: 50, lon: 10, dateRange: [-1000, -900] },
+    { id: 'earlier', lat: 50, lon: 10, dateRange: [-1200, -1100] },
+    { id: 'separate', lat: 51, lon: 10, dateRange: [-1200, -1100] },
+  ];
+  const stacked = stackAadrSamples(records);
+  assert.deepEqual(stacked.map(record => record.stackCount), [2, 2, 1]);
+  assert.ok(stacked.find(record => record.id === 'earlier').stackOffset < stacked.find(record => record.id === 'later').stackOffset);
+  assert.equal(stacked.find(record => record.id === 'separate').stackOffset, 0);
 });
 
 test('editor notes use explicit time spans and spatial queries', () => {
